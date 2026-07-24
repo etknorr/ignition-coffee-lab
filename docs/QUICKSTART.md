@@ -49,7 +49,7 @@ Connect your components according to this pinout:
 
 ```bash
 # Clone the repository
-git clone https://github.com/ia-eknorr/ignition-coffee-lab.git
+git clone https://github.com/etknorr/ignition-coffee-lab.git
 cd ignition-coffee-lab
 
 # Copy files to your Pico W
@@ -150,4 +150,4 @@ For detailed troubleshooting, see the [main README](../README.md#troubleshooting
 
 - Enable debug mode: Set `DEBUG_MODE = True` in `main.py`
 - Check serial output for detailed error messages
-- See [GitHub Issues](https://github.com/ia-eknorr/ignition-coffee-lab/issues) for known issues
+- See [GitHub Issues](https://github.com/etknorr/ignition-coffee-lab/issues) for known issues
