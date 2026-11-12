@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""Phase 2 verification: /log navigation, background selection, reset,
+mobile main + config popup, final normalize. Companion to
+screenshot_roastery_artisan_verify.py (roast flow)."""
+import json
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import api27m  # noqa: E402
+from playwright.sync_api import sync_playwright  # noqa: E402
+
+LAB = os.path.dirname(os.path.abspath(__file__))
+SHOTS = os.path.join(LAB, 'showcase', 'shots')
+URL = 'http://localhost:8088/data/perspective/client/Roastery/'
+B = '[default]Roastery/CurrentBatch'
+R = '[default]Roastery'
+FAILURES = []
+
+
+def read_tags(paths):
+    st, out = api27m.api('GET', '/tags/read',
+                         body=json.dumps({'tags': paths}))
+    assert st == 200, (st, out)
+    return {p.split('/')[-1]: r.get('value')
+            for p, r in zip(paths, out['results'])}
+
+
+def write_tags(pairs):
+    st, out = api27m.api('POST', '/tags/write', body=json.dumps(
+        {'tagPaths': [p for p, _ in pairs],
+         'values': [v for _, v in pairs]}))
+    assert st == 200, (st, out)
+
+
+def check(name, cond, detail=''):
+    print(('PASS ' if cond else 'FAIL ') + name, detail)
+    if not cond:
+        FAILURES.append(name)
+
+
+def dismiss_modal(page):
+    page.wait_for_timeout(2500)
+    if page.get_by_text('Personal Use Only').count() > 0:
+        try:
+            page.get_by_text('AGREE & CLOSE').first.click(timeout=8000)
+        except Exception:
+            try:
+                box = page.get_by_text('Personal Use Only') \
+                    .first.bounding_box()
+                page.mouse.click(box['x'] + box['width'] / 2 + 115,
+                                 box['y'] + box['height'] - 32)
+            except Exception:
+                pass
+        page.wait_for_timeout(2500)
+
+
+def scroll_top(page):
+    page.evaluate("""() => {
+        window.scrollTo(0, 0);
+        document.querySelectorAll('*').forEach(el => {
+            if (el.scrollTop) el.scrollTop = 0;
+        });
+    }""")
+    page.wait_for_timeout(700)
+
+
+def click_button(page, name, first=False):
+    loc = page.get_by_role('button', name=name)
+    if first:
+        loc = loc.first
+    try:
+        loc.click(timeout=10000)
+    except Exception:
+        page.wait_for_timeout(1500)
+        loc.click(force=True, timeout=10000)
+    page.wait_for_timeout(600)
+
+
+def main():
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = browser.new_page(viewport={'width': 1600, 'height': 1680})
+        page.goto(URL, wait_until='networkidle', timeout=60000)
+        page.wait_for_timeout(9000)
+        dismiss_modal(page)
+        if read_tags([B + '/State'])['State'] != 'Idle':
+            click_button(page, 'Reset')
+            page.wait_for_timeout(2500)
+        check('idle before log flow',
+              read_tags([B + '/State'])['State'] == 'Idle')
+
+        # ---- log page via the header button ----
+        page.get_by_role('button', name='Roast Log', exact=True).click()
+        page.wait_for_timeout(4500)
+        check('log url in client route', page.url.endswith('/log'),
+              page.url)
+        check('log view rendered',
+              page.get_by_role('button',
+                               name='View as Background').count() >= 1)
+        scroll_top(page)
+        page.screenshot(path=os.path.join(
+            SHOTS, 'roastery-artisan-log.png'))
+        print('shot roastery-artisan-log.png')
+
+        # ---- select newest row, view as background ----
+        page.get_by_text('Ethiopia Guji').first.click()
+        page.wait_for_timeout(1500)
+        page.get_by_role('button', name='View as Background').click()
+        page.wait_for_timeout(4500)
+        v = read_tags([R + '/BackgroundLabel'])
+        check('background label set',
+              'Batch' in str(v['BackgroundLabel']), str(v))
+        check('returned to main page',
+              page.url.rstrip('/').endswith('Roastery'), page.url)
+        scroll_top(page)
+        page.screenshot(path=os.path.join(
+            SHOTS, 'roastery-artisan-background.png'))
+        print('shot roastery-artisan-background.png')
+        page.close()
+
+        # ---- mobile ----
+        m = browser.new_page(viewport={'width': 390, 'height': 844})
+        m.goto(URL, wait_until='networkidle', timeout=60000)
+        m.wait_for_timeout(9000)
+        dismiss_modal(m)
+        widths = m.evaluate("""() => [document.documentElement.scrollWidth,
+                                      document.body.scrollWidth]""")
+        check('mobile no horizontal overflow',
+              all(w <= 391 for w in widths), str(widths))
+        m.screenshot(path=os.path.join(
+            SHOTS, 'roastery-artisan-mobile.png'))
+        print('shot roastery-artisan-mobile.png')
+        click_button(m, 'Roast Setup', first=True)
+        m.wait_for_timeout(3500)
+        m.screenshot(path=os.path.join(
+            SHOTS, 'roastery-artisan-config-mobile.png'))
+        print('shot roastery-artisan-config-mobile.png')
+        pop = m.locator('.ia_popup').first.bounding_box()
+        check('mobile popup fits width',
+              pop is not None and pop['width'] <= 392,
+              f"popup width {pop['width'] if pop else None}")
+        m.close()
+        browser.close()
+
+    # ---- final normalize: clean idle batch, no background ----
+    empty_bg = json.dumps({'columns': [{'name': 't_stamp',
+                                         'type': 'java.util.Date'},
+                                        {'name': 'bg',
+                                         'type': 'java.lang.Double'}],
+                           'rows': []})
+    write_tags([(B + '/Farm', 'Buku Abel'), (B + '/WeightOutG', 0),
+                (B + '/FanLevel', 5), (B + '/HeatLevel', 5),
+                (R + '/BackgroundLabel', ''),
+                (R + '/BackgroundCurveJson', ''),
+                (R + '/BackgroundDS', empty_bg)])
+    v = read_tags([B + '/State', B + '/Farm', B + '/FanLevel'])
+    check('final state clean idle',
+          v['State'] == 'Idle' and v['Farm'] == 'Buku Abel'
+          and v['FanLevel'] == 5, str(v))
+    print('FAILURES:', FAILURES if FAILURES else 'none')
+    return 1 if FAILURES else 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

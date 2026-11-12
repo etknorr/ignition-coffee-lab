@@ -1,0 +1,266 @@
+{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 1200,
+      "height": 108
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "root"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "backgroundColor": "rgba(38, 25, 15, 0.88)",
+        "border": "1px solid #4a3220",
+        "borderRadius": "16px",
+        "boxShadow": "0 2px 6px rgba(0, 0, 0, 0.45), 0 14px 34px rgba(0, 0, 0, 0.35)",
+        "padding": "14px 18px",
+        "gap": "10px"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "HeadRow"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "center"
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "Heading"
+            },
+            "props": {
+              "text": "Phases",
+              "style": {
+                "fontSize": "13px",
+                "fontWeight": "700",
+                "color": "#e08a3c",
+                "textTransform": "uppercase",
+                "letterSpacing": "0.08em"
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "DtrLabel"
+            },
+            "props": {
+              "text": "DTR",
+              "style": {
+                "fontSize": "13px",
+                "fontWeight": "700",
+                "color": "#e08a3c"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, 'DTR ' + numberFormat(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, '0.0') + '%', 'DTR target ' + numberFormat(({[default]Roastery/CurrentBatch/TargetDropSec} - {[default]Roastery/CurrentBatch/TargetFCSec}) * 100.0 / {[default]Roastery/CurrentBatch/TargetDropSec}, '0.0') + '%')"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Bar"
+        },
+        "props": {
+          "direction": "row",
+          "style": {
+            "gap": "4px",
+            "width": "100%"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "DrySeg"
+            },
+            "props": {
+              "direction": "row",
+              "justify": "center",
+              "alignItems": "center",
+              "style": {
+                "backgroundColor": "#b45309",
+                "borderRadius": "8px",
+                "padding": "7px 4px",
+                "minWidth": "86px"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "DrySegText"
+                },
+                "props": {
+                  "text": "DRYING",
+                  "style": {
+                    "fontSize": "12px",
+                    "fontWeight": "700",
+                    "color": "#ffffff",
+                    "textAlign": "center",
+                    "whiteSpace": "nowrap",
+                    "overflow": "hidden"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "'DRYING  ' + if({[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/DryEndElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/DryEndElapsedSec} % 60, '00') + ' \u00b7 ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, {[default]Roastery/CurrentBatch/DryEndElapsedSec} * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, {[default]Roastery/CurrentBatch/TargetDryEndSec} * 100.0 / {[default]Roastery/CurrentBatch/TargetDropSec}), '0') + '%', 'target ' + numberFormat(floor({[default]Roastery/CurrentBatch/TargetDryEndSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/TargetDryEndSec} % 60, '00'))"
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "propConfig": {
+              "props.style.width": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, {[default]Roastery/CurrentBatch/DryEndElapsedSec} * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, {[default]Roastery/CurrentBatch/TargetDryEndSec} * 100.0 / {[default]Roastery/CurrentBatch/TargetDropSec}), '0.0') + '%'"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "MaiSeg"
+            },
+            "props": {
+              "direction": "row",
+              "justify": "center",
+              "alignItems": "center",
+              "style": {
+                "backgroundColor": "#92400e",
+                "borderRadius": "8px",
+                "padding": "7px 4px",
+                "minWidth": "86px"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "MaiSegText"
+                },
+                "props": {
+                  "text": "MAILLARD",
+                  "style": {
+                    "fontSize": "12px",
+                    "fontWeight": "700",
+                    "color": "#ffffff",
+                    "textAlign": "center",
+                    "whiteSpace": "nowrap",
+                    "overflow": "hidden"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "'MAILLARD  ' + if({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, numberFormat(floor(({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) / 60), '00') + ':' + numberFormat(({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) % 60, '00') + ' \u00b7 ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, ({[default]Roastery/CurrentBatch/TargetFCSec} - {[default]Roastery/CurrentBatch/TargetDryEndSec}) * 100.0 / {[default]Roastery/CurrentBatch/TargetDropSec}), '0') + '%', 'target ' + numberFormat(floor(({[default]Roastery/CurrentBatch/TargetFCSec} - {[default]Roastery/CurrentBatch/TargetDryEndSec}) / 60), '00') + ':' + numberFormat(({[default]Roastery/CurrentBatch/TargetFCSec} - {[default]Roastery/CurrentBatch/TargetDryEndSec}) % 60, '00'))"
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "propConfig": {
+              "props.style.width": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, ({[default]Roastery/CurrentBatch/TargetFCSec} - {[default]Roastery/CurrentBatch/TargetDryEndSec}) * 100.0 / {[default]Roastery/CurrentBatch/TargetDropSec}), '0.0') + '%'"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "DevSeg"
+            },
+            "props": {
+              "direction": "row",
+              "justify": "center",
+              "alignItems": "center",
+              "style": {
+                "backgroundColor": "#7c2d12",
+                "borderRadius": "8px",
+                "padding": "7px 4px",
+                "minWidth": "86px"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "DevSegText"
+                },
+                "props": {
+                  "text": "DEVELOPMENT",
+                  "style": {
+                    "fontSize": "12px",
+                    "fontWeight": "700",
+                    "color": "#ffffff",
+                    "textAlign": "center",
+                    "whiteSpace": "nowrap",
+                    "overflow": "hidden"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "'DEVELOPMENT  ' + if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, numberFormat(floor(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) / 60), '00') + ':' + numberFormat(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) % 60, '00') + ' \u00b7 ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, ({[default]Roastery/CurrentBatch/TargetDropSec} - {[default]Roastery/CurrentBatch/TargetFCSec}) * 100.0 / {[default]Roastery/CurrentBatch/TargetDropSec}), '0') + '%', 'target ' + numberFormat(floor(({[default]Roastery/CurrentBatch/TargetDropSec} - {[default]Roastery/CurrentBatch/TargetFCSec}) / 60), '00') + ':' + numberFormat(({[default]Roastery/CurrentBatch/TargetDropSec} - {[default]Roastery/CurrentBatch/TargetFCSec}) % 60, '00'))"
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "propConfig": {
+              "props.style.width": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, ({[default]Roastery/CurrentBatch/TargetDropSec} - {[default]Roastery/CurrentBatch/TargetFCSec}) * 100.0 / {[default]Roastery/CurrentBatch/TargetDropSec}), '0.0') + '%'"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

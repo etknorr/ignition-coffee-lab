@@ -1,0 +1,626 @@
+{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 1200,
+      "height": 210
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "root"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "backgroundColor": "rgba(38, 25, 15, 0.88)",
+        "border": "1px solid #4a3220",
+        "borderRadius": "16px",
+        "boxShadow": "0 2px 6px rgba(0, 0, 0, 0.45), 0 14px 34px rgba(0, 0, 0, 0.35)",
+        "padding": "16px 18px",
+        "gap": "10px"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "Heading"
+        },
+        "props": {
+          "text": "Roast Events",
+          "style": {
+            "fontSize": "13px",
+            "fontWeight": "700",
+            "color": "#e08a3c",
+            "textTransform": "uppercase",
+            "letterSpacing": "0.08em"
+          }
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "StandardRow"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "gap": "8px"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "ChargeCell"
+            },
+            "props": {
+              "path": "Views/EventCell",
+              "params": {
+                "name": "Charge",
+                "timeText": "--:--",
+                "tempText": "---",
+                "done": false
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "104px"
+            },
+            "propConfig": {
+              "props.params.timeText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/State} != 'Idle', '00:00', '--:--')"
+                  }
+                }
+              },
+              "props.params.tempText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/State} != 'Idle', numberFormat({[default]Roastery/CurrentBatch/ChargeTempF}, '0') + ' F', '---')"
+                  }
+                }
+              },
+              "props.params.done": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/State} != 'Idle'"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "DryEndCell"
+            },
+            "props": {
+              "path": "Views/EventCell",
+              "params": {
+                "name": "Dry End",
+                "timeText": "--:--",
+                "tempText": "---",
+                "done": false
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "104px"
+            },
+            "propConfig": {
+              "props.params.timeText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/DryEndElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/DryEndElapsedSec} % 60, '00'), '--:--')"
+                  }
+                }
+              },
+              "props.params.tempText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, numberFormat({[default]Roastery/CurrentBatch/DryEndTempF}, '0') + ' F', '---')"
+                  }
+                }
+              },
+              "props.params.done": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "FCStartCell"
+            },
+            "props": {
+              "path": "Views/EventCell",
+              "params": {
+                "name": "FC Start",
+                "timeText": "--:--",
+                "tempText": "---",
+                "done": false
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "104px"
+            },
+            "propConfig": {
+              "props.params.timeText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} % 60, '00'), '--:--')"
+                  }
+                }
+              },
+              "props.params.tempText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, numberFormat({[default]Roastery/CurrentBatch/FirstCrackStartTempF}, '0') + ' F', '---')"
+                  }
+                }
+              },
+              "props.params.done": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "FCEndCell"
+            },
+            "props": {
+              "path": "Views/EventCell",
+              "params": {
+                "name": "FC End",
+                "timeText": "--:--",
+                "tempText": "---",
+                "done": false
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "104px"
+            },
+            "propConfig": {
+              "props.params.timeText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/FirstCrackEndElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/FirstCrackEndElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/FirstCrackEndElapsedSec} % 60, '00'), '--:--')"
+                  }
+                }
+              },
+              "props.params.tempText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/FirstCrackEndElapsedSec} >= 0, numberFormat({[default]Roastery/CurrentBatch/FirstCrackEndTempF}, '0') + ' F', '---')"
+                  }
+                }
+              },
+              "props.params.done": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/FirstCrackEndElapsedSec} >= 0"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "SCStartCell"
+            },
+            "props": {
+              "path": "Views/EventCell",
+              "params": {
+                "name": "SC Start",
+                "timeText": "--:--",
+                "tempText": "---",
+                "done": false
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "104px"
+            },
+            "propConfig": {
+              "props.params.timeText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/SecondCrackStartElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/SecondCrackStartElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/SecondCrackStartElapsedSec} % 60, '00'), '--:--')"
+                  }
+                }
+              },
+              "props.params.tempText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/SecondCrackStartElapsedSec} >= 0, numberFormat({[default]Roastery/CurrentBatch/SecondCrackStartTempF}, '0') + ' F', '---')"
+                  }
+                }
+              },
+              "props.params.done": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/SecondCrackStartElapsedSec} >= 0"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "SCEndCell"
+            },
+            "props": {
+              "path": "Views/EventCell",
+              "params": {
+                "name": "SC End",
+                "timeText": "--:--",
+                "tempText": "---",
+                "done": false
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "104px"
+            },
+            "propConfig": {
+              "props.params.timeText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/SecondCrackEndElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/SecondCrackEndElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/SecondCrackEndElapsedSec} % 60, '00'), '--:--')"
+                  }
+                }
+              },
+              "props.params.tempText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/SecondCrackEndElapsedSec} >= 0, numberFormat({[default]Roastery/CurrentBatch/SecondCrackEndTempF}, '0') + ' F', '---')"
+                  }
+                }
+              },
+              "props.params.done": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/SecondCrackEndElapsedSec} >= 0"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "DropCell"
+            },
+            "props": {
+              "path": "Views/EventCell",
+              "params": {
+                "name": "Drop",
+                "timeText": "--:--",
+                "tempText": "---",
+                "done": false
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "104px"
+            },
+            "propConfig": {
+              "props.params.timeText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/DropElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/DropElapsedSec} % 60, '00'), '--:--')"
+                  }
+                }
+              },
+              "props.params.tempText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, numberFormat({[default]Roastery/CurrentBatch/DropTempF}, '0') + ' F', '---')"
+                  }
+                }
+              },
+              "props.params.done": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/DropElapsedSec} >= 0"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "CustomRow"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "gap": "8px"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "CustomCell1"
+            },
+            "props": {
+              "path": "Views/EventCell",
+              "params": {
+                "name": "Custom 1",
+                "timeText": "--:--",
+                "tempText": "---",
+                "done": false
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "104px"
+            },
+            "propConfig": {
+              "props.params.timeText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/CustomEvent1ElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/CustomEvent1ElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/CustomEvent1ElapsedSec} % 60, '00'), '--:--')"
+                  }
+                }
+              },
+              "props.params.tempText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/CustomEvent1ElapsedSec} >= 0, numberFormat({[default]Roastery/CurrentBatch/CustomEvent1TempF}, '0') + ' F', '---')"
+                  }
+                }
+              },
+              "props.params.done": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/CustomEvent1ElapsedSec} >= 0"
+                  }
+                }
+              },
+              "props.params.name": {
+                "binding": {
+                  "type": "tag",
+                  "config": {
+                    "tagPath": "[default]Roastery/CurrentBatch/CustomEvent1Name",
+                    "mode": "direct",
+                    "bidirectional": false
+                  },
+                  "bidirectional": false
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "CustomCell2"
+            },
+            "props": {
+              "path": "Views/EventCell",
+              "params": {
+                "name": "Custom 2",
+                "timeText": "--:--",
+                "tempText": "---",
+                "done": false
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "104px"
+            },
+            "propConfig": {
+              "props.params.timeText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/CustomEvent2ElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/CustomEvent2ElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/CustomEvent2ElapsedSec} % 60, '00'), '--:--')"
+                  }
+                }
+              },
+              "props.params.tempText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/CustomEvent2ElapsedSec} >= 0, numberFormat({[default]Roastery/CurrentBatch/CustomEvent2TempF}, '0') + ' F', '---')"
+                  }
+                }
+              },
+              "props.params.done": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/CustomEvent2ElapsedSec} >= 0"
+                  }
+                }
+              },
+              "props.params.name": {
+                "binding": {
+                  "type": "tag",
+                  "config": {
+                    "tagPath": "[default]Roastery/CurrentBatch/CustomEvent2Name",
+                    "mode": "direct",
+                    "bidirectional": false
+                  },
+                  "bidirectional": false
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "CustomCell3"
+            },
+            "props": {
+              "path": "Views/EventCell",
+              "params": {
+                "name": "Custom 3",
+                "timeText": "--:--",
+                "tempText": "---",
+                "done": false
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "104px"
+            },
+            "propConfig": {
+              "props.params.timeText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/CustomEvent3ElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/CustomEvent3ElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/CustomEvent3ElapsedSec} % 60, '00'), '--:--')"
+                  }
+                }
+              },
+              "props.params.tempText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/CustomEvent3ElapsedSec} >= 0, numberFormat({[default]Roastery/CurrentBatch/CustomEvent3TempF}, '0') + ' F', '---')"
+                  }
+                }
+              },
+              "props.params.done": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/CustomEvent3ElapsedSec} >= 0"
+                  }
+                }
+              },
+              "props.params.name": {
+                "binding": {
+                  "type": "tag",
+                  "config": {
+                    "tagPath": "[default]Roastery/CurrentBatch/CustomEvent3Name",
+                    "mode": "direct",
+                    "bidirectional": false
+                  },
+                  "bidirectional": false
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "CustomCell4"
+            },
+            "props": {
+              "path": "Views/EventCell",
+              "params": {
+                "name": "Custom 4",
+                "timeText": "--:--",
+                "tempText": "---",
+                "done": false
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "104px"
+            },
+            "propConfig": {
+              "props.params.timeText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/CustomEvent4ElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/CustomEvent4ElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/CustomEvent4ElapsedSec} % 60, '00'), '--:--')"
+                  }
+                }
+              },
+              "props.params.tempText": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/CustomEvent4ElapsedSec} >= 0, numberFormat({[default]Roastery/CurrentBatch/CustomEvent4TempF}, '0') + ' F', '---')"
+                  }
+                }
+              },
+              "props.params.done": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/CustomEvent4ElapsedSec} >= 0"
+                  }
+                }
+              },
+              "props.params.name": {
+                "binding": {
+                  "type": "tag",
+                  "config": {
+                    "tagPath": "[default]Roastery/CurrentBatch/CustomEvent4Name",
+                    "mode": "direct",
+                    "bidirectional": false
+                  },
+                  "bidirectional": false
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

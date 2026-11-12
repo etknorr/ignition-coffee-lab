@@ -1,0 +1,151 @@
+{
+  "custom": {},
+  "params": {
+    "name": "Event",
+    "timeText": "--:--",
+    "tempText": "---",
+    "done": false
+  },
+  "propConfig": {
+    "params.name": {
+      "paramDirection": "input"
+    },
+    "params.timeText": {
+      "paramDirection": "input"
+    },
+    "params.tempText": {
+      "paramDirection": "input"
+    },
+    "params.done": {
+      "paramDirection": "input"
+    }
+  },
+  "props": {
+    "defaultSize": {
+      "width": 120,
+      "height": 84
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "root"
+    },
+    "props": {
+      "direction": "column",
+      "alignItems": "center",
+      "style": {
+        "backgroundColor": "rgba(21, 14, 8, 0.55)",
+        "border": "1px solid #3d2716",
+        "borderRadius": "12px",
+        "padding": "9px 6px",
+        "gap": "2px"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "NameLabel"
+        },
+        "props": {
+          "text": "Event",
+          "style": {
+            "fontSize": "11px",
+            "fontWeight": "700",
+            "color": "#8a7360",
+            "textTransform": "uppercase",
+            "letterSpacing": "0.08em",
+            "textAlign": "center"
+          }
+        },
+        "propConfig": {
+          "props.text": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "view.params.name"
+              }
+            }
+          },
+          "props.style.color": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "view.params.done"
+              },
+              "transforms": [
+                {
+                  "type": "map",
+                  "inputType": "scalar",
+                  "outputType": "color",
+                  "fallback": "#8a7360",
+                  "mappings": [
+                    {
+                      "input": true,
+                      "output": "#e08a3c"
+                    },
+                    {
+                      "input": false,
+                      "output": "#8a7360"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "TimeLabel"
+        },
+        "props": {
+          "text": "--:--",
+          "style": {
+            "fontSize": "17px",
+            "fontWeight": "700",
+            "color": "#f3e7d3",
+            "textAlign": "center"
+          }
+        },
+        "propConfig": {
+          "props.text": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "view.params.timeText"
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "TempLabel"
+        },
+        "props": {
+          "text": "---",
+          "style": {
+            "fontSize": "12px",
+            "fontWeight": "600",
+            "color": "#b89b7d",
+            "textAlign": "center"
+          }
+        },
+        "propConfig": {
+          "props.text": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "view.params.tempText"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

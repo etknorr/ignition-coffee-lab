@@ -1,0 +1,14 @@
+# API tokens and secrets, never commit these
+apitoken*.txt
+.env
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+
+# Gateway data from a local Ignition install
+gateway*/
+data/

@@ -1,0 +1,976 @@
+{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 460,
+      "height": 430
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "root"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "backgroundColor": "rgba(38, 25, 15, 0.88)",
+        "border": "1px solid #4a3220",
+        "borderRadius": "16px",
+        "boxShadow": "0 2px 6px rgba(0, 0, 0, 0.45), 0 14px 34px rgba(0, 0, 0, 0.35)",
+        "padding": "16px 18px",
+        "gap": "9px"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "HeadRow"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "center"
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "Heading"
+            },
+            "props": {
+              "text": "Batch Metadata",
+              "style": {
+                "fontSize": "13px",
+                "fontWeight": "700",
+                "color": "#e08a3c",
+                "textTransform": "uppercase",
+                "letterSpacing": "0.08em"
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "EditButton"
+            },
+            "props": {
+              "text": "Edit",
+              "style": {
+                "fontSize": "12px",
+                "fontWeight": "700",
+                "color": "#ffffff",
+                "backgroundColor": "#3e2723",
+                "borderRadius": "8px",
+                "padding": "6px 16px",
+                "cursor": "pointer",
+                "border": "none"
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "C",
+                  "type": "popup",
+                  "config": {
+                    "type": "open",
+                    "id": "roastery-config",
+                    "viewPath": "Views/Config",
+                    "title": "Roast Setup",
+                    "modal": true,
+                    "showCloseIcon": true,
+                    "draggable": true,
+                    "resizable": true,
+                    "overlayDismiss": true,
+                    "position": {
+                      "width": "min(700px, 94vw)",
+                      "height": "min(880px, 94vh)"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Row0"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "gap": "12px"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "BeanPair"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "gap": "2px"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "BeanCap"
+                },
+                "props": {
+                  "text": "Bean",
+                  "style": {
+                    "fontSize": "11px",
+                    "fontWeight": "700",
+                    "color": "#8a7360",
+                    "textTransform": "uppercase",
+                    "letterSpacing": "0.1em"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "V00"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "fontSize": "14px",
+                    "fontWeight": "600",
+                    "color": "#f3e7d3"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/BeanName",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "128px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "OriginPair"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "gap": "2px"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "OriginCap"
+                },
+                "props": {
+                  "text": "Origin",
+                  "style": {
+                    "fontSize": "11px",
+                    "fontWeight": "700",
+                    "color": "#8a7360",
+                    "textTransform": "uppercase",
+                    "letterSpacing": "0.1em"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "V01"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "fontSize": "14px",
+                    "fontWeight": "600",
+                    "color": "#f3e7d3"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/Origin",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "128px"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Row1"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "gap": "12px"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "RegionPair"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "gap": "2px"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "RegionCap"
+                },
+                "props": {
+                  "text": "Region",
+                  "style": {
+                    "fontSize": "11px",
+                    "fontWeight": "700",
+                    "color": "#8a7360",
+                    "textTransform": "uppercase",
+                    "letterSpacing": "0.1em"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "V10"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "fontSize": "14px",
+                    "fontWeight": "600",
+                    "color": "#f3e7d3"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/Region",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "128px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "FarmPair"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "gap": "2px"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "FarmCap"
+                },
+                "props": {
+                  "text": "Farm",
+                  "style": {
+                    "fontSize": "11px",
+                    "fontWeight": "700",
+                    "color": "#8a7360",
+                    "textTransform": "uppercase",
+                    "letterSpacing": "0.1em"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "V11"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "fontSize": "14px",
+                    "fontWeight": "600",
+                    "color": "#f3e7d3"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/Farm",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "128px"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Row2"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "gap": "12px"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AltitudePair"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "gap": "2px"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AltitudeCap"
+                },
+                "props": {
+                  "text": "Altitude",
+                  "style": {
+                    "fontSize": "11px",
+                    "fontWeight": "700",
+                    "color": "#8a7360",
+                    "textTransform": "uppercase",
+                    "letterSpacing": "0.1em"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "V20"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "fontSize": "14px",
+                    "fontWeight": "600",
+                    "color": "#f3e7d3"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/Altitude",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "128px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "VarietyPair"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "gap": "2px"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "VarietyCap"
+                },
+                "props": {
+                  "text": "Variety",
+                  "style": {
+                    "fontSize": "11px",
+                    "fontWeight": "700",
+                    "color": "#8a7360",
+                    "textTransform": "uppercase",
+                    "letterSpacing": "0.1em"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "V21"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "fontSize": "14px",
+                    "fontWeight": "600",
+                    "color": "#f3e7d3"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/Variety",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "128px"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Row3"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "gap": "12px"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "ProcessPair"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "gap": "2px"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "ProcessCap"
+                },
+                "props": {
+                  "text": "Process",
+                  "style": {
+                    "fontSize": "11px",
+                    "fontWeight": "700",
+                    "color": "#8a7360",
+                    "textTransform": "uppercase",
+                    "letterSpacing": "0.1em"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "V30"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "fontSize": "14px",
+                    "fontWeight": "600",
+                    "color": "#f3e7d3"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/Process",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "128px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "HarvestPair"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "gap": "2px"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "HarvestCap"
+                },
+                "props": {
+                  "text": "Harvest",
+                  "style": {
+                    "fontSize": "11px",
+                    "fontWeight": "700",
+                    "color": "#8a7360",
+                    "textTransform": "uppercase",
+                    "letterSpacing": "0.1em"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "V31"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "fontSize": "14px",
+                    "fontWeight": "600",
+                    "color": "#f3e7d3"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/HarvestYear",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false,
+                      "transforms": [
+                        {
+                          "type": "format",
+                          "formatType": "numeric",
+                          "formatValue": "0"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "128px"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Row4"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "gap": "12px"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "MoisturePair"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "gap": "2px"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "MoistureCap"
+                },
+                "props": {
+                  "text": "Moisture",
+                  "style": {
+                    "fontSize": "11px",
+                    "fontWeight": "700",
+                    "color": "#8a7360",
+                    "textTransform": "uppercase",
+                    "letterSpacing": "0.1em"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "V40"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "fontSize": "14px",
+                    "fontWeight": "600",
+                    "color": "#f3e7d3"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/MoisturePct",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false,
+                      "transforms": [
+                        {
+                          "type": "format",
+                          "formatType": "numeric",
+                          "formatValue": "0.0"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "128px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "DensityPair"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "gap": "2px"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "DensityCap"
+                },
+                "props": {
+                  "text": "Density",
+                  "style": {
+                    "fontSize": "11px",
+                    "fontWeight": "700",
+                    "color": "#8a7360",
+                    "textTransform": "uppercase",
+                    "letterSpacing": "0.1em"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "V41"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "fontSize": "14px",
+                    "fontWeight": "600",
+                    "color": "#f3e7d3"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/DensityGL",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false,
+                      "transforms": [
+                        {
+                          "type": "format",
+                          "formatType": "numeric",
+                          "formatValue": "0"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "128px"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Row5"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "gap": "12px"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "ChargePair"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "gap": "2px"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "ChargeCap"
+                },
+                "props": {
+                  "text": "Charge",
+                  "style": {
+                    "fontSize": "11px",
+                    "fontWeight": "700",
+                    "color": "#8a7360",
+                    "textTransform": "uppercase",
+                    "letterSpacing": "0.1em"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "V50"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "fontSize": "14px",
+                    "fontWeight": "600",
+                    "color": "#f3e7d3"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/ChargeWeightG",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false,
+                      "transforms": [
+                        {
+                          "type": "format",
+                          "formatType": "numeric",
+                          "formatValue": "0"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "128px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "OperatorPair"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "gap": "2px"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "OperatorCap"
+                },
+                "props": {
+                  "text": "Operator",
+                  "style": {
+                    "fontSize": "11px",
+                    "fontWeight": "700",
+                    "color": "#8a7360",
+                    "textTransform": "uppercase",
+                    "letterSpacing": "0.1em"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "V51"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "fontSize": "14px",
+                    "fontWeight": "600",
+                    "color": "#f3e7d3"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/OperatorName",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "128px"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "UnitsNote"
+        },
+        "props": {
+          "text": "Moisture in %, density in g/L, charge in g",
+          "style": {
+            "fontSize": "11px",
+            "color": "#8a7360"
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "title": "Roastery",
+  "description": "Artisan coffee roasting console",
+  "enabled": true,
+  "inheritable": false,
+  "parent": ""
+}

@@ -1,0 +1,168 @@
+{
+  "custom": {},
+  "params": {
+    "title": "Stat",
+    "valueText": "0.0",
+    "unit": "",
+    "accent": "#e08a3c"
+  },
+  "propConfig": {
+    "params.title": {
+      "paramDirection": "input"
+    },
+    "params.valueText": {
+      "paramDirection": "input"
+    },
+    "params.unit": {
+      "paramDirection": "input"
+    },
+    "params.accent": {
+      "paramDirection": "input"
+    }
+  },
+  "props": {
+    "defaultSize": {
+      "width": 220,
+      "height": 104
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "root"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "backgroundColor": "rgba(38, 25, 15, 0.88)",
+        "border": "1px solid #4a3220",
+        "borderRadius": "16px",
+        "boxShadow": "0 2px 6px rgba(0, 0, 0, 0.45), 0 14px 34px rgba(0, 0, 0, 0.35)",
+        "padding": "12px 16px",
+        "gap": "5px"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "AccentBar"
+        },
+        "props": {
+          "direction": "row",
+          "style": {
+            "height": "3px",
+            "borderRadius": "2px",
+            "backgroundColor": "#e08a3c"
+          }
+        },
+        "children": [],
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "3px"
+        },
+        "propConfig": {
+          "props.style.backgroundColor": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "view.params.accent"
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "TitleLabel"
+        },
+        "props": {
+          "text": "Stat",
+          "style": {
+            "fontSize": "11px",
+            "fontWeight": "700",
+            "color": "#8a7360",
+            "textTransform": "uppercase",
+            "letterSpacing": "0.1em"
+          }
+        },
+        "propConfig": {
+          "props.text": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "view.params.title"
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "ValueRow"
+        },
+        "props": {
+          "direction": "row",
+          "alignItems": "baseline",
+          "style": {
+            "gap": "6px"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "ValueLabel"
+            },
+            "props": {
+              "text": "0.0",
+              "style": {
+                "fontSize": "30px",
+                "fontWeight": "700",
+                "color": "#f3e7d3",
+                "lineHeight": "1.05"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.params.valueText"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "UnitLabel"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "fontSize": "12px",
+                "fontWeight": "600",
+                "color": "#b89b7d"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.params.unit"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
