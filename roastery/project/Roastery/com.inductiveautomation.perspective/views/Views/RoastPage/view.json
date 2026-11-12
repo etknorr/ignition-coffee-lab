@@ -486,7 +486,7 @@
                               "name": "time",
                               "label": {
                                 "enabled": true,
-                                "text": "Time",
+                                "text": "Elapsed (mm:ss)",
                                 "color": ""
                               },
                               "visible": true,
@@ -529,7 +529,7 @@
                                   "size": 0.05
                                 },
                                 "inputFormat": "yyyy-MM-dd kk:mm:ss",
-                                "format": "M/d"
+                                "format": "mm:ss"
                               },
                               "value": {
                                 "range": {
@@ -4191,39 +4191,13 @@
                         "propConfig": {
                           "props.dataSources.trend": {
                             "binding": {
-                              "type": "tag-history",
+                              "type": "tag",
                               "config": {
-                                "dateRange": {
-                                  "type": "mostRecent",
-                                  "mostRecent": 30,
-                                  "mostRecentUnits": "MIN"
-                                },
-                                "tags": [
-                                  {
-                                    "path": "[default]Roastery/CurrentBatch/BeanTempF",
-                                    "alias": "bean",
-                                    "aggregate": "Average"
-                                  },
-                                  {
-                                    "path": "[default]Roastery/CurrentBatch/RateOfRiseF",
-                                    "alias": "ror",
-                                    "aggregate": "Average"
-                                  }
-                                ],
-                                "queryOptions": {
-                                  "returnFormat": "wide",
-                                  "returnSize": {
-                                    "type": "interval",
-                                    "interval": "5 sec"
-                                  }
-                                },
-                                "polling": {
-                                  "enabled": true,
-                                  "rate": 5
-                                },
-                                "valueFormat": "dataset",
-                                "ignoreBadQuality": true
-                              }
+                                "tagPath": "[default]Roastery/LiveCurveDS",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
                             }
                           },
                           "props.dataSources.plan": {
@@ -4310,7 +4284,7 @@
                             },
                             "props": {
                               "dataSources": {
-                                "events": []
+                                "live": []
                               },
                               "xAxes": [
                                 {
@@ -4360,7 +4334,7 @@
                                       "size": 0.05
                                     },
                                     "inputFormat": "yyyy-MM-dd kk:mm:ss",
-                                    "format": "M/d"
+                                    "format": "mm:ss"
                                   },
                                   "value": {
                                     "range": {
@@ -4502,7 +4476,7 @@
                                     "visible": true
                                   },
                                   "data": {
-                                    "source": "events",
+                                    "source": "live",
                                     "x": "t_stamp",
                                     "y": "fan"
                                   },
@@ -4766,7 +4740,7 @@
                                     "visible": true
                                   },
                                   "data": {
-                                    "source": "events",
+                                    "source": "live",
                                     "x": "t_stamp",
                                     "y": "heat"
                                   },
@@ -5022,18 +4996,18 @@
                               ],
                               "legend": {
                                 "enabled": true,
-                                "position": "right"
+                                "position": "bottom"
                               },
                               "style": {
                                 "backgroundColor": "transparent"
                               }
                             },
                             "propConfig": {
-                              "props.dataSources.events": {
+                              "props.dataSources.live": {
                                 "binding": {
                                   "type": "tag",
                                   "config": {
-                                    "tagPath": "[default]Roastery/EventsLog",
+                                    "tagPath": "[default]Roastery/LiveCurveDS",
                                     "mode": "direct",
                                     "bidirectional": false
                                   },
@@ -5051,14 +5025,14 @@
                         "position": {
                           "grow": 0,
                           "shrink": 0,
-                          "basis": "104px"
+                          "basis": "150px"
                         }
                       }
                     ],
                     "position": {
                       "grow": 0,
                       "shrink": 0,
-                      "basis": "520px"
+                      "basis": "560px"
                     }
                   },
                   {
@@ -5100,7 +5074,7 @@
                       "direction": "row",
                       "wrap": "wrap",
                       "style": {
-                        "classes": "roast-gap-12"
+                        "classes": "roast-gap-12 roast-flexmin"
                       }
                     },
                     "children": [
@@ -5637,7 +5611,7 @@
                           "name": "time",
                           "label": {
                             "enabled": true,
-                            "text": "Time",
+                            "text": "Elapsed (mm:ss)",
                             "color": ""
                           },
                           "visible": true,
@@ -5680,7 +5654,7 @@
                               "size": 0.05
                             },
                             "inputFormat": "yyyy-MM-dd kk:mm:ss",
-                            "format": "M/d"
+                            "format": "mm:ss"
                           },
                           "value": {
                             "range": {
@@ -9342,39 +9316,13 @@
                     "propConfig": {
                       "props.dataSources.trend": {
                         "binding": {
-                          "type": "tag-history",
+                          "type": "tag",
                           "config": {
-                            "dateRange": {
-                              "type": "mostRecent",
-                              "mostRecent": 30,
-                              "mostRecentUnits": "MIN"
-                            },
-                            "tags": [
-                              {
-                                "path": "[default]Roastery/CurrentBatch/BeanTempF",
-                                "alias": "bean",
-                                "aggregate": "Average"
-                              },
-                              {
-                                "path": "[default]Roastery/CurrentBatch/RateOfRiseF",
-                                "alias": "ror",
-                                "aggregate": "Average"
-                              }
-                            ],
-                            "queryOptions": {
-                              "returnFormat": "wide",
-                              "returnSize": {
-                                "type": "interval",
-                                "interval": "5 sec"
-                              }
-                            },
-                            "polling": {
-                              "enabled": true,
-                              "rate": 5
-                            },
-                            "valueFormat": "dataset",
-                            "ignoreBadQuality": true
-                          }
+                            "tagPath": "[default]Roastery/LiveCurveDS",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
                         }
                       },
                       "props.dataSources.plan": {
@@ -9427,11 +9375,210 @@
                       "shrink": 1,
                       "basis": "0px"
                     }
+                  }
+                ],
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "430px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "TilesRow"
+                },
+                "props": {
+                  "direction": "row",
+                  "wrap": "wrap",
+                  "style": {
+                    "classes": "roast-gap-12 roast-flexmin"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.view",
+                    "meta": {
+                      "name": "BeanTile"
+                    },
+                    "props": {
+                      "path": "Views/Tile",
+                      "params": {
+                        "title": "Bean Temp",
+                        "valueText": "0.0",
+                        "unit": "deg F",
+                        "accent": "#3b82f6"
+                      }
+                    },
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "38%"
+                    },
+                    "propConfig": {
+                      "props.params.valueText": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/BeanTempF",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false,
+                          "transforms": [
+                            {
+                              "type": "format",
+                              "formatType": "numeric",
+                              "formatValue": "0.0"
+                            }
+                          ]
+                        }
+                      }
+                    }
                   },
+                  {
+                    "type": "ia.display.view",
+                    "meta": {
+                      "name": "RorTile"
+                    },
+                    "props": {
+                      "path": "Views/Tile",
+                      "params": {
+                        "title": "Rate of Rise",
+                        "valueText": "0.0",
+                        "unit": "F/min",
+                        "accent": "#14b8a6"
+                      }
+                    },
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "38%"
+                    },
+                    "propConfig": {
+                      "props.params.valueText": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/RateOfRiseF",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false,
+                          "transforms": [
+                            {
+                              "type": "format",
+                              "formatType": "numeric",
+                              "formatValue": "0.0"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.display.view",
+                    "meta": {
+                      "name": "FanTile"
+                    },
+                    "props": {
+                      "path": "Views/Tile",
+                      "params": {
+                        "title": "Fan",
+                        "valueText": "5",
+                        "unit": "/ 9",
+                        "accent": "#3b82f6"
+                      }
+                    },
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "38%"
+                    },
+                    "propConfig": {
+                      "props.params.valueText": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/FanLevel",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false,
+                          "transforms": [
+                            {
+                              "type": "format",
+                              "formatType": "numeric",
+                              "formatValue": "0"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.display.view",
+                    "meta": {
+                      "name": "HeatTile"
+                    },
+                    "props": {
+                      "path": "Views/Tile",
+                      "params": {
+                        "title": "Heat",
+                        "valueText": "5",
+                        "unit": "/ 9",
+                        "accent": "#ef4444"
+                      }
+                    },
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "38%"
+                    },
+                    "propConfig": {
+                      "props.params.valueText": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/HeatLevel",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false,
+                          "transforms": [
+                            {
+                              "type": "format",
+                              "formatType": "numeric",
+                              "formatValue": "0"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "auto"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "TraceCard"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-card roast-gap-8"
+                  }
+                },
+                "children": [
                   {
                     "type": "ia.display.label",
                     "meta": {
-                      "name": "TraceCaption"
+                      "name": "TraceCardCap"
                     },
                     "props": {
                       "text": "Fan / Heat Levels",
@@ -9448,7 +9595,7 @@
                   {
                     "type": "ia.container.flex",
                     "meta": {
-                      "name": "TraceWrap"
+                      "name": "TraceWrapM"
                     },
                     "props": {
                       "direction": "row"
@@ -9461,7 +9608,7 @@
                         },
                         "props": {
                           "dataSources": {
-                            "events": []
+                            "live": []
                           },
                           "xAxes": [
                             {
@@ -9511,7 +9658,7 @@
                                   "size": 0.05
                                 },
                                 "inputFormat": "yyyy-MM-dd kk:mm:ss",
-                                "format": "M/d"
+                                "format": "mm:ss"
                               },
                               "value": {
                                 "range": {
@@ -9653,7 +9800,7 @@
                                 "visible": true
                               },
                               "data": {
-                                "source": "events",
+                                "source": "live",
                                 "x": "t_stamp",
                                 "y": "fan"
                               },
@@ -9917,7 +10064,7 @@
                                 "visible": true
                               },
                               "data": {
-                                "source": "events",
+                                "source": "live",
                                 "x": "t_stamp",
                                 "y": "heat"
                               },
@@ -10173,18 +10320,18 @@
                           ],
                           "legend": {
                             "enabled": true,
-                            "position": "right"
+                            "position": "bottom"
                           },
                           "style": {
                             "backgroundColor": "transparent"
                           }
                         },
                         "propConfig": {
-                          "props.dataSources.events": {
+                          "props.dataSources.live": {
                             "binding": {
                               "type": "tag",
                               "config": {
-                                "tagPath": "[default]Roastery/EventsLog",
+                                "tagPath": "[default]Roastery/LiveCurveDS",
                                 "mode": "direct",
                                 "bidirectional": false
                               },
@@ -10200,297 +10347,16 @@
                       }
                     ],
                     "position": {
-                      "grow": 0,
-                      "shrink": 0,
-                      "basis": "84px"
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "0px"
                     }
                   }
                 ],
                 "position": {
                   "grow": 0,
                   "shrink": 0,
-                  "basis": "400px"
-                }
-              },
-              {
-                "type": "ia.container.flex",
-                "meta": {
-                  "name": "TilesRow"
-                },
-                "props": {
-                  "direction": "row",
-                  "wrap": "wrap",
-                  "style": {
-                    "classes": "roast-gap-12"
-                  }
-                },
-                "children": [
-                  {
-                    "type": "ia.display.view",
-                    "meta": {
-                      "name": "BeanTile"
-                    },
-                    "props": {
-                      "path": "Views/Tile",
-                      "params": {
-                        "title": "Bean Temp",
-                        "valueText": "0.0",
-                        "unit": "deg F",
-                        "accent": "#3b82f6"
-                      }
-                    },
-                    "position": {
-                      "grow": 1,
-                      "shrink": 1,
-                      "basis": "148px"
-                    },
-                    "propConfig": {
-                      "props.params.valueText": {
-                        "binding": {
-                          "type": "tag",
-                          "config": {
-                            "tagPath": "[default]Roastery/CurrentBatch/BeanTempF",
-                            "mode": "direct",
-                            "bidirectional": false
-                          },
-                          "bidirectional": false,
-                          "transforms": [
-                            {
-                              "type": "format",
-                              "formatType": "numeric",
-                              "formatValue": "0.0"
-                            }
-                          ]
-                        }
-                      }
-                    }
-                  },
-                  {
-                    "type": "ia.display.view",
-                    "meta": {
-                      "name": "RorTile"
-                    },
-                    "props": {
-                      "path": "Views/Tile",
-                      "params": {
-                        "title": "Rate of Rise",
-                        "valueText": "0.0",
-                        "unit": "F/min",
-                        "accent": "#14b8a6"
-                      }
-                    },
-                    "position": {
-                      "grow": 1,
-                      "shrink": 1,
-                      "basis": "148px"
-                    },
-                    "propConfig": {
-                      "props.params.valueText": {
-                        "binding": {
-                          "type": "tag",
-                          "config": {
-                            "tagPath": "[default]Roastery/CurrentBatch/RateOfRiseF",
-                            "mode": "direct",
-                            "bidirectional": false
-                          },
-                          "bidirectional": false,
-                          "transforms": [
-                            {
-                              "type": "format",
-                              "formatType": "numeric",
-                              "formatValue": "0.0"
-                            }
-                          ]
-                        }
-                      }
-                    }
-                  },
-                  {
-                    "type": "ia.display.view",
-                    "meta": {
-                      "name": "DevTile"
-                    },
-                    "props": {
-                      "path": "Views/Tile",
-                      "params": {
-                        "title": "Deviation",
-                        "valueText": "--",
-                        "unit": "",
-                        "accent": "#0c7bb3"
-                      }
-                    },
-                    "position": {
-                      "grow": 1,
-                      "shrink": 1,
-                      "basis": "148px"
-                    },
-                    "propConfig": {
-                      "props.params.valueText": {
-                        "binding": {
-                          "type": "property",
-                          "config": {
-                            "path": "view.custom.deviationText"
-                          }
-                        }
-                      }
-                    }
-                  },
-                  {
-                    "type": "ia.display.view",
-                    "meta": {
-                      "name": "FanTile"
-                    },
-                    "props": {
-                      "path": "Views/Tile",
-                      "params": {
-                        "title": "Fan",
-                        "valueText": "5",
-                        "unit": "/ 9",
-                        "accent": "#3b82f6"
-                      }
-                    },
-                    "position": {
-                      "grow": 1,
-                      "shrink": 1,
-                      "basis": "148px"
-                    },
-                    "propConfig": {
-                      "props.params.valueText": {
-                        "binding": {
-                          "type": "tag",
-                          "config": {
-                            "tagPath": "[default]Roastery/CurrentBatch/FanLevel",
-                            "mode": "direct",
-                            "bidirectional": false
-                          },
-                          "bidirectional": false,
-                          "transforms": [
-                            {
-                              "type": "format",
-                              "formatType": "numeric",
-                              "formatValue": "0"
-                            }
-                          ]
-                        }
-                      }
-                    }
-                  },
-                  {
-                    "type": "ia.display.view",
-                    "meta": {
-                      "name": "HeatTile"
-                    },
-                    "props": {
-                      "path": "Views/Tile",
-                      "params": {
-                        "title": "Heat",
-                        "valueText": "5",
-                        "unit": "/ 9",
-                        "accent": "#ef4444"
-                      }
-                    },
-                    "position": {
-                      "grow": 1,
-                      "shrink": 1,
-                      "basis": "148px"
-                    },
-                    "propConfig": {
-                      "props.params.valueText": {
-                        "binding": {
-                          "type": "tag",
-                          "config": {
-                            "tagPath": "[default]Roastery/CurrentBatch/HeatLevel",
-                            "mode": "direct",
-                            "bidirectional": false
-                          },
-                          "bidirectional": false,
-                          "transforms": [
-                            {
-                              "type": "format",
-                              "formatType": "numeric",
-                              "formatValue": "0"
-                            }
-                          ]
-                        }
-                      }
-                    }
-                  },
-                  {
-                    "type": "ia.display.view",
-                    "meta": {
-                      "name": "PhaseTile"
-                    },
-                    "props": {
-                      "path": "Views/Tile",
-                      "params": {
-                        "title": "Phase",
-                        "valueText": "Pre-charge",
-                        "unit": "",
-                        "accent": "#16a34a",
-                        "valueClass": "roast-value-md"
-                      }
-                    },
-                    "position": {
-                      "grow": 1,
-                      "shrink": 1,
-                      "basis": "148px"
-                    },
-                    "propConfig": {
-                      "props.params.valueText": {
-                        "binding": {
-                          "type": "property",
-                          "config": {
-                            "path": "view.custom.phaseText"
-                          }
-                        }
-                      }
-                    }
-                  },
-                  {
-                    "type": "ia.display.view",
-                    "meta": {
-                      "name": "TargetTile"
-                    },
-                    "props": {
-                      "path": "Views/Tile",
-                      "params": {
-                        "title": "Target Drop",
-                        "valueText": "415",
-                        "unit": "deg F",
-                        "accent": "#64748b"
-                      }
-                    },
-                    "position": {
-                      "grow": 1,
-                      "shrink": 1,
-                      "basis": "148px"
-                    },
-                    "propConfig": {
-                      "props.params.valueText": {
-                        "binding": {
-                          "type": "tag",
-                          "config": {
-                            "tagPath": "[default]Roastery/CurrentBatch/TargetDropTempF",
-                            "mode": "direct",
-                            "bidirectional": false
-                          },
-                          "bidirectional": false,
-                          "transforms": [
-                            {
-                              "type": "format",
-                              "formatType": "numeric",
-                              "formatValue": "0"
-                            }
-                          ]
-                        }
-                      }
-                    }
-                  }
-                ],
-                "position": {
-                  "grow": 0,
-                  "shrink": 0,
-                  "basis": "auto"
+                  "basis": "205px"
                 }
               },
               {

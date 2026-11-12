@@ -32,3 +32,21 @@
 .psc-roast-btn { min-height: 44px; }
 .psc-roast-tab-btn { min-height: 48px; }
 .psc-roast-tab-btn:hover { background: var(--containerNested); }
+
+/* ---- v4.1 declutter (Eric's phone, 360px) ---------------------
+   Flex children may shrink below their content width inside a
+   roast-flexmin row (the tiles row bled past the right edge of
+   a 360px phone because tiles refused to shrink). */
+.psc-roast-flexmin > * { min-width: 0; }
+
+/* Tab bar compaction under 560px: at 360px the theme button's
+   fixed 88px plus three growing tabs left about 46px per tab,
+   clipping 'Settings' to 'Setting'. Smaller type, tighter
+   padding, a narrower theme button and less nub clearance. */
+@media (max-width: 560px) {
+  .psc-roast-tabbar { padding: 6px 62px 6px 6px; gap: 6px; }
+  .psc-roast-tabbar > * { min-width: 0; }
+  .psc-roast-tabbar > *:first-child { flex: 0 0 56px !important; }
+  .psc-roast-tab-btn { font-size: 13px; padding: 8px 2px;
+    white-space: nowrap; overflow: hidden; }
+}

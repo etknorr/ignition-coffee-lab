@@ -1135,3 +1135,117 @@ restart the gateway; the sink re-initialized, registrations
 reappeared, and the trend came back. A plain trial check during
 the same window also proved the UI trial reset survives
 restarts (5448 s left after one).
+
+## V4.1 addendum (2026-11-12, Eric's live phone feedback)
+
+Eric used the v4 build live (a simulator roast on batch 1042,
+left sitting in Cooling) and reported three defects, all
+confirmed from his screenshot and reproduced in the lab before
+fixing:
+
+1. The bean temperature and RoR lines were MISSING from the
+   Roast Curve; only the dashed target and the marker lines
+   drew. Diagnosis, with data: those two series were bound to a
+   tag history query with a mostRecent 30 MIN window. His roast
+   had been charged about 105 minutes before the screenshot, so
+   the entire roast fell outside the window. The target and
+   markers still drew because they are tag datasets, not
+   history. The wall clock date axis (date format defaulting to
+   M/d, hence ticks reading "11/12") spanned charge to now and
+   compressed the 7 minute roast into a sliver at the left.
+2. The axis must be elapsed roast time, Artisan style.
+3. On his phone (narrower than the 390px test width) the tile
+   row bled past the right edge (gray slivers), the levels chart
+   legend clipped ("H..." for Heat), and the tab bar clipped
+   "Settings" to "Setting".
+
+### The elapsed axis and LiveCurveDS
+
+Every chart dataset is now anchored to the roast's own zero.
+X values are java.util.Date at epoch + elapsed seconds, and
+every XY chart's date axis sets date.format to "mm:ss" with the
+title "Elapsed (mm:ss)" (the builder's _elapsed_axis helper;
+the main chart, the levels strip, and the Log detail chart all
+use it). roastery.core.marks_dataset, build_overlays (target,
+background, background RoR), and batches.stage_detail all emit
+epoch based x values now; stage_detail also no longer depends
+on the batch having a stored roast_start (the generated
+fixture batches have none and their detail curves used to
+stage empty; fixtures now also record roast_start/roast_end).
+
+The live curve has a new dataset tag, LiveCurveDS (columns
+t_stamp, bean, ror, fan, heat), rebuilt by
+roastery.core.build_live_curve from the recorded CurveSamples
+on every appended sample and on every press. The samples are
+the stored truth (one row per temperature change with elapsed
+seconds); RoR is recomputed over them with compute_ror_series
+and the current parameters (live variant), so the drawn curve
+is the same math as RateOfRiseF and the saved batches, and it
+survives indefinitely: a roast from hours ago still draws in
+full, because nothing is windowed. The Fan / Heat levels strip
+reads fan and heat from the same dataset on the same axis. Tag
+history remains recorded on the probe tags (historian), but no
+chart binds to it anymore.
+
+### The levels strip height trap
+
+After the rebind, the strip drew its series clamped to the top
+edge of the plot with only the maximum tick label surviving.
+Config and data were each proven innocent with isolated probes
+(the same chart renders Eric's real 1,100+ row dataset
+correctly at 198px height, and fails identically at about
+108px): below roughly 120px of chart height the XY chart
+collapses its value axis when a bottom legend is present. The
+v4 strip was 104px with a right side legend; v4.1's bottom
+legend at that height triggered the collapse. The strip now
+gets 150px inside the desktop chart card and a 205px card of
+its own on mobile. Two wrong hypotheses were tested and
+rejected on the way (step line rendering on a date axis, and
+Integer typed fan/heat columns): both plot fine at adequate
+height.
+
+### Mobile declutter (360px and 390px verified)
+
+- Tiles: the small layout shows four tiles (Bean Temp, Rate of
+  Rise, Fan, Heat) in a 2x2, percentage basis plus a
+  roast-flexmin row rule (flex children may shrink below
+  content width; the seven 148px tiles could not, and bled).
+  Measured at 360px: four tiles of 160px, two rows, nothing
+  past the edge. Deviation, Phase, and Target Drop remain one
+  glance away in the HUD, the phase bar, and the summary.
+- The levels strip moved out of the chart card on mobile into
+  its own card under the tiles, with the bottom legend (the
+  right side legend clipped at phone widths). The main chart
+  card keeps the full 430px for the curve.
+- Tab bar under 560px (advanced stylesheet): tighter padding,
+  13px labels, a 56px theme button, less session nub clearance;
+  "Settings" is fully readable at 360px. The batch chip
+  truncates with an ellipsis instead of running off the card.
+- The verify suite now carries a 360px context asserting no
+  visible app element extends past the right edge (the Maker
+  project update modal parks fully off canvas after a scan and
+  is excluded as session chrome), plus dataset level checks:
+  LiveCurveDS rows carry elapsed (epoch) x values, bean temps,
+  calculated RoR, and fan/heat; marker x values are epoch
+  based; the axis title reads "Elapsed (mm:ss)".
+
+Verification: verify_roastery_v4.py passes 50 of 50 (the 44 v4
+checks plus 6 v4.1 checks), validate_roastery_artisan.py and
+ChartLab validation pass. Screenshots (lab showcase folder,
+not in the repo): roastery-v41-before-360.png and
+roastery-v41-before-desktop.png reproduce Eric's screenshot on
+his own live session before the fix; roastery-v41-after2-*
+show the same session after (both lines, mm:ss axis, strip
+steps, 2x2 tiles, full tab labels);
+roastery-v41-roast-360.png and the suite's
+roastery-v4-roast-desktop.png show a controlled mid roast with
+the RoR plateau at the simulator's exact 25 F/min.
+
+Eric's live roast data was not discarded: before the suite
+reset the workspace, his 1,417 curve samples and batch tags
+were backed up to eric-roast-1042-backup.json in the lab, and
+his 16 button presses stand in the batch_events table. The
+workspace batch number was 1042, which collides with the
+generated database fixture of the same number, so a library
+save would have been refused by the duplicate guard; the roast
+itself ran on the simulator source.

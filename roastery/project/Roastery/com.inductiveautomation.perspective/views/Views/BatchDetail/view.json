@@ -234,7 +234,7 @@
                       "name": "time",
                       "label": {
                         "enabled": true,
-                        "text": "Time",
+                        "text": "Elapsed (mm:ss)",
                         "color": ""
                       },
                       "visible": true,
@@ -277,7 +277,7 @@
                           "size": 0.05
                         },
                         "inputFormat": "yyyy-MM-dd kk:mm:ss",
-                        "format": "M/d"
+                        "format": "mm:ss"
                       },
                       "value": {
                         "range": {

@@ -668,30 +668,31 @@ def stage_detail(batch_number):
                            float(bt)))
     rors = core.compute_ror_series(points, core.ror_params(),
                                    offline=True)
-    start = batch['roastStart']
+    # X values are elapsed dates (epoch + t_offset seconds), the
+    # v4.1 axis: the detail chart reads exactly like the live
+    # chart, and no longer depends on the batch having a stored
+    # roast_start wall clock (the generated fixture batches have
+    # none, and their detail curves used to stage empty).
     rows = []
-    mrows = []
-    if start is not None:
-        start_ms = start.getTime()
-        for (t, bt), (_t2, ror) in zip(points, rors):
-            rows.append([Date(long(start_ms + t * 1000)), bt, ror])
-        evs = []
-        events = doc.get('events') or {}
-        for key, lbl in (('charge', 'CHARGE'), ('dryEnd', 'DRY END'),
-                         ('fcStart', 'FC START'), ('fcEnd', 'FC END'),
-                         ('scStart', 'SC START'), ('scEnd', 'SC END'),
-                         ('drop', 'DROP')):
-            e = events.get(key)
-            if e and e.get('t') is not None:
-                evs.append((float(e['t']), lbl))
-        for c in events.get('custom') or []:
-            if c.get('t') is not None:
-                evs.append((float(c['t']),
-                            (c.get('name') or 'CUSTOM').upper()))
+    for (t, bt), (_t2, ror) in zip(points, rors):
+        rows.append([Date(long(t * 1000)), bt, ror])
+    evs = []
+    events = doc.get('events') or {}
+    for key, lbl in (('charge', 'CHARGE'), ('dryEnd', 'DRY END'),
+                     ('fcStart', 'FC START'), ('fcEnd', 'FC END'),
+                     ('scStart', 'SC START'), ('scEnd', 'SC END'),
+                     ('drop', 'DROP')):
+        e = events.get(key)
+        if e and e.get('t') is not None:
+            evs.append((float(e['t']), lbl))
+    for c in events.get('custom') or []:
+        if c.get('t') is not None:
+            evs.append((float(c['t']),
+                        (c.get('name') or 'CUSTOM').upper()))
     system.tag.writeBlocking(
         [DETAIL_DS, DETAIL_MARKS],
         [system.dataset.toDataSet(['t_stamp', 'bt', 'ror'], rows),
-         core.marks_dataset(start_ms, evs)])
+         core.marks_dataset(evs)])
     return True
 
 

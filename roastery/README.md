@@ -41,11 +41,14 @@ Perspective project, the tag and UDT setup, and the view builder.
   (chart hero plus a control rail), control first on the phone.
 - Live roast curve (classic XY chart; the 2027 canvas line chart
   has no markLine support and drew dual axis history incorrectly
-  on this beta) with bean temperature history, rate of rise, a
-  dashed target profile from four editable target points, an
-  optional background (ghost) roast, and labeled vertical marker
-  lines at every stamped event (one named series per event over
-  a column-per-event dataset built by the library).
+  on this beta) plotted against elapsed roast time (mm:ss,
+  Artisan style): the bean temperature line and the rate of rise
+  line are built by the library from the recorded curve samples
+  (never a wall clock tag history query), with a dashed target
+  profile from four editable target points, an optional
+  background (ghost) roast, and labeled vertical marker lines at
+  every stamped event (one named series per event over a
+  column-per-event dataset built by the library).
 - The full Artisan event set: Charge, Dry End, First Crack Start
   and End, Second Crack Start and End, and Drop, each stamping
   elapsed time and bean temperature, plus four custom event

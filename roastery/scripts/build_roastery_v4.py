@@ -229,6 +229,11 @@ BACKGROUND_DS = '[default]Roastery/BackgroundDS'
 BACKGROUND_JSON = '[default]Roastery/BackgroundCurveJson'
 MARKS_DS = '[default]Roastery/EventMarksDS'
 BGROR_DS = '[default]Roastery/BackgroundRorDS'
+LIVE_DS = '[default]Roastery/LiveCurveDS'
+# fan and heat are Double in the chart dataset, matching the
+# EventsLog doubles the v4 strip chart read; the stored
+# CurveSamples keep Integer levels.
+LIVE_COLS = ['t_stamp', 'bean', 'ror', 'fan', 'heat']
 SELECTED_TAG = '[default]Roastery/SelectedBatchNumber'
 NQ_EVENTS_INSERT = 'Roastery/Events/InsertPress'
 
@@ -293,6 +298,10 @@ def typed_empty_dataset(cols, seed):
 
 def empty_curve_dataset():
     return typed_empty_dataset(CURVE_COLS, CURVE_SEED)
+
+
+def empty_live_dataset():
+    return typed_empty_dataset(LIVE_COLS, [None, 0.0, 0.0, 0.0, 0.0])
 
 
 def empty_log_dataset():
@@ -733,6 +742,14 @@ def record_press(action):
         except Exception:
             # Capture must never break the control it rides on.
             pass
+    try:
+        # A press can move fan or heat between temperature
+        # changes; refresh the chart dataset so the levels strip
+        # shows the step at once (build_live_curve is also called
+        # on every appended curve sample).
+        build_live_curve()
+    except Exception:
+        pass
     return counter
 
 
@@ -755,7 +772,7 @@ _MARK_COL_FOR = {'CHARGE': 'charge', 'DRY END': 'dryEnd',
                  'DROP': 'drop'}
 
 
-def marks_dataset(start_ms, evs):
+def marks_dataset(evs):
     """Build the marker dataset shared by the live chart and the
     Log detail chart. One column per event: an event's line lives
     in its own column, so the chart can give it its own series,
@@ -765,13 +782,17 @@ def marks_dataset(start_ms, evs):
     invisible bullets, inside or below the plot area), so series
     naming is the labeling route. Each event contributes a top
     point (455 F), a bottom point (152 F) and an all null gap row
-    in its column so consecutive events never connect."""
+    in its column so consecutive events never connect.
+
+    X values are ELAPSED dates (epoch + elapsed seconds), the
+    v4.1 axis: every chart dataset is anchored to the roast's own
+    zero, never to wall clock, and the axis formats them mm:ss."""
     from java.util import Date
     idx = dict((c, i + 1) for i, c in enumerate(MARK_COLS[1:]))
     rows = []
     for e, lbl in sorted(evs):
         col = _MARK_COL_FOR.get(lbl, 'notes')
-        ts = Date(long(start_ms + e * 1000))
+        ts = Date(long(e * 1000))
         top = [ts] + [None] * (len(MARK_COLS) - 1)
         top[idx[col]] = MARK_TOP
         bot = [ts] + [None] * (len(MARK_COLS) - 1)
@@ -797,9 +818,7 @@ def build_marks():
     rows = []
     start = vals['StartTime']
     evs = []
-    start_ms = 0
     if start is not None and vals['State'] != 'Idle':
-        start_ms = start.getTime()
         evs = [(0, 'CHARGE')]
         for stem, lbl in MARK_EVENTS[1:]:
             e = vals[stem + 'ElapsedSec']
@@ -810,7 +829,7 @@ def build_marks():
             if e is not None and e >= 0:
                 nm = vals['CustomEvent%dName' % i] or 'CUSTOM'
                 evs.append((int(e), nm.upper()))
-    ds = marks_dataset(start_ms, evs)
+    ds = marks_dataset(evs)
     system.tag.writeBlocking([MARKS_DS], [ds])
 
 
@@ -833,12 +852,48 @@ def append_curve_sample(elapsed, t_stamp, temp, ror, fan, heat):
     ds = system.dataset.addRow(ds, [float(elapsed), t_stamp, float(temp),
                                     float(ror), int(fan), int(heat)])
     system.tag.writeBlocking([CURVE_SAMPLES], [ds])
+    build_live_curve()
 
 
+def build_live_curve():
+    """Rebuild LiveCurveDS, the dataset the Roast page charts
+    actually draw, from the recorded CurveSamples (v4.1, Eric's
+    live feedback 2026-11-12).
+
+    Why not tag history: the v4 chart bound its bean and RoR
+    series to a tag history query with a mostRecent 30 MIN
+    window. A roast that finished more than 30 minutes before
+    the screenshot fell entirely outside the window, so both
+    lines vanished while the tag dataset overlays (target,
+    markers) still drew, and the wall clock date axis compressed
+    the roast into a sliver labelled with the date. The samples
+    are the stored truth instead: one row per temperature change
+    with its elapsed seconds, kept for the whole roast however
+    long the page stays open.
+
+    X values are elapsed dates (epoch + elapsed seconds) and the
+    axis formats them mm:ss. RoR is recomputed from the stored
+    temps with compute_ror_series and the current parameters
+    (live variant), the same math as RateOfRiseF and the saved
+    batches, so the drawn curve can never disagree with them.
+    Fan and heat ride along for the levels strip, same axis."""
+    from java.util import Date
+    points = curve_points()
+    pts = [(float(p['t']), p['bt']) for p in points]
+    rors = compute_ror_series(pts, ror_params(), offline=False)
+    rows = []
+    for p, (_t, r) in zip(points, rors):
+        rows.append([Date(long(p['t'] * 1000)), p['bt'], r,
+                     float(p['fan']) if p['fan'] is not None else None,
+                     float(p['heat']) if p['heat'] is not None
+                     else None])
+    system.tag.writeBlocking(
+        [LIVE_DS], [system.dataset.toDataSet(LIVE_COLS, rows)])
 
 
 def clear_curve_samples():
     system.tag.writeBlocking([CURVE_SAMPLES], [empty_curve_dataset()])
+    system.tag.writeBlocking([LIVE_DS], [empty_live_dataset()])
 
 
 def curve_points():
@@ -1018,18 +1073,20 @@ def build_overlays():
            (float(vals['TargetDryEndSec']), vals['TargetDryEndTempF']),
            (float(vals['TargetFCSec']), vals['TargetFCTempF']),
            (float(vals['TargetDropSec']), vals['TargetDropTempF'])]
-    start_ms = start.getTime()
+    # X values are elapsed dates (epoch + offset seconds), the
+    # v4.1 axis shared by every chart dataset; StartTime only
+    # gates whether a roast timeline exists at all.
     rows = []
     s = 0.0
     while s < pts[-1][0]:
-        rows.append([Date(long(start_ms + s * 1000)), _plan_at(pts, s)])
+        rows.append([Date(long(s * 1000)), _plan_at(pts, s)])
         s += 15.0
-    rows.append([Date(long(start_ms + pts[-1][0] * 1000)), pts[-1][1]])
+    rows.append([Date(long(pts[-1][0] * 1000)), pts[-1][1]])
     bg_rows = []
     bg_json = system.tag.readBlocking([BACKGROUND_JSON])[0].value
     if bg_json:
         for pair in system.util.jsonDecode(bg_json):
-            bg_rows.append([Date(long(start_ms + float(pair[0]) * 1000)),
+            bg_rows.append([Date(long(float(pair[0]) * 1000)),
                             float(pair[1])])
     system.tag.writeBlocking(
         [TARGET_DS, BACKGROUND_DS],
@@ -1045,8 +1102,7 @@ def build_overlays():
         for t, r in compute_ror_series(pairs, ror_params(),
                                        offline=True):
             if r is not None:
-                bg_ror_rows.append(
-                    [Date(long(start_ms + t * 1000)), r])
+                bg_ror_rows.append([Date(long(t * 1000)), r])
     system.tag.writeBlocking(
         [BGROR_DS],
         [system.dataset.toDataSet(['t_stamp', 'bgRor'], bg_ror_rows)])
@@ -1788,30 +1844,31 @@ def stage_detail(batch_number):
                            float(bt)))
     rors = core.compute_ror_series(points, core.ror_params(),
                                    offline=True)
-    start = batch['roastStart']
+    # X values are elapsed dates (epoch + t_offset seconds), the
+    # v4.1 axis: the detail chart reads exactly like the live
+    # chart, and no longer depends on the batch having a stored
+    # roast_start wall clock (the generated fixture batches have
+    # none, and their detail curves used to stage empty).
     rows = []
-    mrows = []
-    if start is not None:
-        start_ms = start.getTime()
-        for (t, bt), (_t2, ror) in zip(points, rors):
-            rows.append([Date(long(start_ms + t * 1000)), bt, ror])
-        evs = []
-        events = doc.get('events') or {}
-        for key, lbl in (('charge', 'CHARGE'), ('dryEnd', 'DRY END'),
-                         ('fcStart', 'FC START'), ('fcEnd', 'FC END'),
-                         ('scStart', 'SC START'), ('scEnd', 'SC END'),
-                         ('drop', 'DROP')):
-            e = events.get(key)
-            if e and e.get('t') is not None:
-                evs.append((float(e['t']), lbl))
-        for c in events.get('custom') or []:
-            if c.get('t') is not None:
-                evs.append((float(c['t']),
-                            (c.get('name') or 'CUSTOM').upper()))
+    for (t, bt), (_t2, ror) in zip(points, rors):
+        rows.append([Date(long(t * 1000)), bt, ror])
+    evs = []
+    events = doc.get('events') or {}
+    for key, lbl in (('charge', 'CHARGE'), ('dryEnd', 'DRY END'),
+                     ('fcStart', 'FC START'), ('fcEnd', 'FC END'),
+                     ('scStart', 'SC START'), ('scEnd', 'SC END'),
+                     ('drop', 'DROP')):
+        e = events.get(key)
+        if e and e.get('t') is not None:
+            evs.append((float(e['t']), lbl))
+    for c in events.get('custom') or []:
+        if c.get('t') is not None:
+            evs.append((float(c['t']),
+                        (c.get('name') or 'CUSTOM').upper()))
     system.tag.writeBlocking(
         [DETAIL_DS, DETAIL_MARKS],
         [system.dataset.toDataSet(['t_stamp', 'bt', 'ror'], rows),
-         core.marks_dataset(start_ms, evs)])
+         core.marks_dataset(evs)])
     return True
 
 
@@ -2139,7 +2196,8 @@ STYLE_CLASSES = {
                       'border': '1px solid var(--border)',
                       'borderRadius': '16px',
                       'boxShadow': 'var(--boxShadow2)',
-                      'padding': '12px 16px'},
+                      'padding': '12px 16px', 'minWidth': '0px',
+                      'overflow': 'hidden'},
     'roast-cell': {'backgroundColor': 'var(--containerNested)',
                    'border': '1px solid var(--border)',
                    'borderRadius': '12px', 'padding': '9px 6px',
@@ -2163,7 +2221,9 @@ STYLE_CLASSES = {
     'roast-clock': {'fontSize': '27px', 'fontWeight': '700',
                     'color': 'var(--label)', 'fontFamily': 'monospace'},
     'roast-chip': {'fontSize': '13px', 'fontWeight': '600',
-                   'color': 'var(--label)'},
+                   'color': 'var(--label)', 'maxWidth': '100%',
+                   'whiteSpace': 'nowrap', 'overflow': 'hidden',
+                   'textOverflow': 'ellipsis'},
     'roast-pill': {'fontSize': '12px', 'fontWeight': '700',
                    'color': '#ffffff', 'padding': '4px 14px',
                    'borderRadius': '999px', 'textAlign': 'center'},
@@ -2331,6 +2391,24 @@ STYLESHEET_CSS = """/* Roastery advanced stylesheet.
 .psc-roast-btn { min-height: 44px; }
 .psc-roast-tab-btn { min-height: 48px; }
 .psc-roast-tab-btn:hover { background: var(--containerNested); }
+
+/* ---- v4.1 declutter (Eric's phone, 360px) ---------------------
+   Flex children may shrink below their content width inside a
+   roast-flexmin row (the tiles row bled past the right edge of
+   a 360px phone because tiles refused to shrink). */
+.psc-roast-flexmin > * { min-width: 0; }
+
+/* Tab bar compaction under 560px: at 360px the theme button's
+   fixed 88px plus three growing tabs left about 46px per tab,
+   clipping 'Settings' to 'Setting'. Smaller type, tighter
+   padding, a narrower theme button and less nub clearance. */
+@media (max-width: 560px) {
+  .psc-roast-tabbar { padding: 6px 62px 6px 6px; gap: 6px; }
+  .psc-roast-tabbar > * { min-width: 0; }
+  .psc-roast-tabbar > *:first-child { flex: 0 0 56px !important; }
+  .psc-roast-tab-btn { font-size: 13px; padding: 8px 2px;
+    white-space: nowrap; overflow: hidden; }
+}
 """
 
 def write_styles():
@@ -2934,19 +3012,25 @@ def _xy_templates():
             copy.deepcopy(ex['xAxes']['example'][0]),
             copy.deepcopy(ex['yAxes']['example'][0]))
 
-def _history_binding(minutes=15):
-    return {'type': 'tag-history', 'config': {
-        'dateRange': {'type': 'mostRecent', 'mostRecent': minutes,
-                      'mostRecentUnits': 'MIN'},
-        'tags': [{'path': T('BeanTempF'), 'alias': 'bean',
-                  'aggregate': 'Average'},
-                 {'path': T('RateOfRiseF'), 'alias': 'ror',
-                  'aggregate': 'Average'}],
-        'queryOptions': {'returnFormat': 'wide',
-                         'returnSize': {'type': 'interval',
-                                        'interval': '5 sec'}},
-        'polling': {'enabled': True, 'rate': 5},
-        'valueFormat': 'dataset', 'ignoreBadQuality': True}}
+def _elapsed_axis(xaxis_tpl):
+    """The v4.1 elapsed axis: a date axis fed epoch based values
+    (Date(0) + elapsed seconds), formatted mm:ss. Every chart
+    dataset in the project is anchored to the roast's own zero
+    (roastery.core.build_live_curve, marks_dataset, build_overlays,
+    batches.stage_detail), never to wall clock, so a roast reads
+    the same an hour later as it did live, Artisan style. The v4
+    axis was wall clock tag history: its mostRecent 30 MIN window
+    dropped the bean and RoR lines entirely once a roast was
+    older than the window, and the axis labelled itself with the
+    date (the date.format default 'M/d')."""
+    xaxis = copy.deepcopy(xaxis_tpl)
+    xaxis['name'] = 'time'
+    xaxis['render'] = 'date'
+    xaxis['label'] = {'enabled': True, 'text': 'Elapsed (mm:ss)',
+                      'color': ''}
+    xaxis['date']['format'] = 'mm:ss'
+    return xaxis
+
 
 def marks_series_list(source='marks'):
     """Event marker lines for an XY chart: one line series per
@@ -3005,10 +3089,7 @@ def main_chart(legend_on=True):
         s[key]['appearance']['bullets'][0]['enabled'] = False
         return s
 
-    xaxis = copy.deepcopy(xaxis_tpl)
-    xaxis['name'] = 'time'
-    xaxis['render'] = 'date'
-    xaxis['label'] = {'enabled': True, 'text': 'Time', 'color': ''}
+    xaxis = _elapsed_axis(xaxis_tpl)
 
     temp_axis = copy.deepcopy(yaxis_tpl)
     temp_axis['name'] = 'temp'
@@ -3047,7 +3128,8 @@ def main_chart(legend_on=True):
             # style class concern (documented exception).
             'style': {'backgroundColor': 'transparent'}},
         'propConfig': {
-            'props.dataSources.trend': {'binding': _history_binding(30)},
+            'props.dataSources.trend': {'binding': tag_binding(
+                '[default]Roastery/LiveCurveDS')},
             'props.dataSources.plan': {'binding': tag_binding(
                 '[default]Roastery/TargetProfileDS')},
             'props.dataSources.bg': {'binding': tag_binding(
@@ -3066,7 +3148,7 @@ def trace_chart():
         s = copy.deepcopy(series_tpl)
         s['name'] = name
         s['label'] = {'text': name}
-        s['data'] = {'source': 'events', 'x': 't_stamp', 'y': y}
+        s['data'] = {'source': 'live', 'x': 't_stamp', 'y': y}
         s['xAxis'] = 'time'
         s['yAxis'] = 'level'
         s['render'] = 'step line'
@@ -3076,9 +3158,14 @@ def trace_chart():
         s['stepLine']['appearance']['bullets'][0]['enabled'] = False
         return s
 
-    xaxis = copy.deepcopy(xaxis_tpl)
-    xaxis['name'] = 'time'
-    xaxis['render'] = 'date'
+    # Same elapsed axis as the main chart (v4.1): the strip used
+    # to read the wall clock EventsLog, so its axis showed dates
+    # and its steps bunched at the left of a day scale axis. The
+    # samples in LiveCurveDS carry fan and heat per temperature
+    # change on the elapsed timeline. Legend sits at the bottom:
+    # at phone widths a right side legend clipped ('H...' for
+    # Heat in Eric's screenshot).
+    xaxis = _elapsed_axis(xaxis_tpl)
     xaxis['label'] = {'enabled': False, 'text': '', 'color': ''}
     lvl = copy.deepcopy(yaxis_tpl)
     lvl['name'] = 'level'
@@ -3088,14 +3175,14 @@ def trace_chart():
     return {
         'type': 'ia.chart.xy', 'meta': {'name': 'TraceChart'},
         'props': {
-            'dataSources': {'events': []},
+            'dataSources': {'live': []},
             'xAxes': [xaxis], 'yAxes': [lvl],
             'series': [series('Fan', 'fan', AMBER),
                        series('Heat', 'heat', RED)],
-            'legend': {'enabled': True, 'position': 'right'},
+            'legend': {'enabled': True, 'position': 'bottom'},
             'style': {'backgroundColor': 'transparent'}},
-        'propConfig': {'props.dataSources.events': {'binding':
-                       tag_binding(LOG)}},
+        'propConfig': {'props.dataSources.live': {'binding':
+                       tag_binding('[default]Roastery/LiveCurveDS')}},
         'position': {'grow': 1, 'shrink': 1, 'basis': '0px'}}
 
 # ================================================================ Config (popup)
@@ -3631,8 +3718,8 @@ def controldock_view():
 
 # ---------------------------------------------------------------- Roast page
 
-def _chart_card(basis, legend_on=True, trace_basis='104px',
-                head_stack=False):
+def _chart_card(basis, legend_on=True, trace_basis='150px',
+                head_stack=False, include_trace=True):
     chart_title = label('ChartTitle', 'Roast Curve', 'roast-value-strong')
     bg_chip = label('BgChip', '', 'roast-note',
                     prop_config={'props.text': {'binding': expr_binding(
@@ -3648,19 +3735,55 @@ def _chart_card(basis, legend_on=True, trace_basis='104px',
                           justify='space-between', align='center',
                           position={'grow': 0, 'shrink': 0,
                                     'basis': '24px'})
-    trace_cap = label('TraceCaption', 'Fan / Heat Levels', 'roast-caption',
-                      position={'grow': 0, 'shrink': 0, 'basis': '16px'})
-    return flex('ChartCard', 'column', [
-        chart_head, main_chart(legend_on=legend_on), trace_cap,
-        flex('TraceWrap', 'row', [trace_chart()],
-             position={'grow': 0, 'shrink': 0, 'basis': trace_basis})],
+    children = [chart_head, main_chart(legend_on=legend_on)]
+    if include_trace:
+        trace_cap = label('TraceCaption', 'Fan / Heat Levels',
+                          'roast-caption',
+                          position={'grow': 0, 'shrink': 0,
+                                    'basis': '16px'})
+        children += [trace_cap,
+                     flex('TraceWrap', 'row', [trace_chart()],
+                          position={'grow': 0, 'shrink': 0,
+                                    'basis': trace_basis})]
+    return flex('ChartCard', 'column', children,
+                classes='roast-card roast-gap-8',
+                position={'grow': 0, 'shrink': 0, 'basis': basis})
+
+
+def _trace_card(basis='205px'):
+    """The Fan / Heat levels strip as its own card (mobile layout,
+    v4.1 declutter): inside the chart card it squeezed the main
+    chart and its right side legend clipped at phone widths. On
+    its own it gets a bottom legend and room to read.
+
+    Height is load bearing, here and in the desktop card's
+    trace_basis: below roughly 120px of chart height the XY
+    chart collapses its value axis entirely (series clamp to
+    the top edge, only the maximum tick label survives). Proven
+    live with an isolated probe at 108px (broken) vs 198px
+    (correct) on identical config and data."""
+    cap = label('TraceCardCap', 'Fan / Heat Levels', 'roast-caption',
+                position={'grow': 0, 'shrink': 0, 'basis': '16px'})
+    return flex('TraceCard', 'column', [
+        cap, flex('TraceWrapM', 'row', [trace_chart()],
+                  position={'grow': 1, 'shrink': 1, 'basis': '0px'})],
         classes='roast-card roast-gap-8',
         position={'grow': 0, 'shrink': 0, 'basis': basis})
 
 
-def _tiles_row():
-    tile_pos = {'grow': 1, 'shrink': 1, 'basis': '148px'}
-    return flex('TilesRow', 'row', [
+def _tiles_row(mobile=False):
+    # Mobile (v4.1 declutter): four tiles in a clean 2x2 (Bean,
+    # RoR, Fan, Heat, the readouts the remote control pattern
+    # needs); Deviation, Phase and Target Drop already live in
+    # the HUD, the phase bar and the summary. Seven tiles at a
+    # 148px basis overflowed a 360px phone: flex items would not
+    # shrink below their content width, so the row bled past the
+    # right edge (gray slivers in Eric's screenshot). The row
+    # carries roast-flexmin so children may shrink, and the
+    # mobile basis is a percentage so two always fit per row.
+    tile_pos = {'grow': 1, 'shrink': 1,
+                'basis': '38%' if mobile else '148px'}
+    tiles = [
         embed('BeanTile', 'Views/Tile',
               {'title': 'Bean Temp', 'valueText': '0.0', 'unit': 'deg F',
                'accent': AMBER}, dict(tile_pos),
@@ -3696,9 +3819,12 @@ def _tiles_row():
               {'title': 'Target Drop', 'valueText': '415',
                'unit': 'deg F', 'accent': '#64748b'}, dict(tile_pos),
               {'props.params.valueText': {'binding': fmt_tag(
-                  T('TargetDropTempF'), '0')}})],
-        wrap='wrap', classes='roast-gap-12',
-        position={'grow': 0, 'shrink': 0, 'basis': 'auto'})
+                  T('TargetDropTempF'), '0')}})]
+    if mobile:
+        tiles = [tiles[0], tiles[1], tiles[3], tiles[4]]
+    return flex('TilesRow', 'row', tiles,
+                wrap='wrap', classes='roast-gap-12 roast-flexmin',
+                position={'grow': 0, 'shrink': 0, 'basis': 'auto'})
 
 
 def _strip_embed():
@@ -3745,7 +3871,7 @@ def roast_page_view():
                   position={'grow': 0, 'shrink': 0, 'basis': 'auto'},
                   classes='roast-header')
     main_col = flex('MainCol', 'column',
-                    [_chart_card('520px'), _strip_embed(),
+                    [_chart_card('560px'), _strip_embed(),
                      _phases_embed(), _tiles_row()],
                     classes='roast-gap-14',
                     position={'grow': 1, 'shrink': 1, 'basis': '0px'})
@@ -3773,9 +3899,10 @@ def roast_page_view():
                        prop_config={'props.text': {'binding': expr_binding(
                            f"'Batch ' + {ref(T('BatchNumber'))} + ' - ' + {ref(T('BeanName'))}")}})
     scroll_col = flex('ScrollCol', 'column', [
-        batch_line, _chart_card('400px', legend_on=False,
-                                trace_basis='84px', head_stack=True),
-        _tiles_row(),
+        batch_line, _chart_card('430px', legend_on=False,
+                                head_stack=True, include_trace=False),
+        _tiles_row(mobile=True),
+        _trace_card(),
         _strip_embed(),
         _phases_embed(),
         embed('ControlsEmbedM', 'Views/Controls', {},
@@ -4082,10 +4209,7 @@ def detail_chart():
         s['line']['appearance']['bullets'][0]['enabled'] = False
         return s
 
-    xaxis = copy.deepcopy(xaxis_tpl)
-    xaxis['name'] = 'time'
-    xaxis['render'] = 'date'
-    xaxis['label'] = {'enabled': True, 'text': 'Time', 'color': ''}
+    xaxis = _elapsed_axis(xaxis_tpl)
     temp_axis = copy.deepcopy(yaxis_tpl)
     temp_axis['name'] = 'temp'
     temp_axis['render'] = 'value'

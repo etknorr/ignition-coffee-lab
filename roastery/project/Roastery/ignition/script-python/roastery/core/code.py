@@ -18,6 +18,11 @@ BACKGROUND_DS = '[default]Roastery/BackgroundDS'
 BACKGROUND_JSON = '[default]Roastery/BackgroundCurveJson'
 MARKS_DS = '[default]Roastery/EventMarksDS'
 BGROR_DS = '[default]Roastery/BackgroundRorDS'
+LIVE_DS = '[default]Roastery/LiveCurveDS'
+# fan and heat are Double in the chart dataset, matching the
+# EventsLog doubles the v4 strip chart read; the stored
+# CurveSamples keep Integer levels.
+LIVE_COLS = ['t_stamp', 'bean', 'ror', 'fan', 'heat']
 SELECTED_TAG = '[default]Roastery/SelectedBatchNumber'
 NQ_EVENTS_INSERT = 'Roastery/Events/InsertPress'
 
@@ -82,6 +87,10 @@ def typed_empty_dataset(cols, seed):
 
 def empty_curve_dataset():
     return typed_empty_dataset(CURVE_COLS, CURVE_SEED)
+
+
+def empty_live_dataset():
+    return typed_empty_dataset(LIVE_COLS, [None, 0.0, 0.0, 0.0, 0.0])
 
 
 def empty_log_dataset():
@@ -522,6 +531,14 @@ def record_press(action):
         except Exception:
             # Capture must never break the control it rides on.
             pass
+    try:
+        # A press can move fan or heat between temperature
+        # changes; refresh the chart dataset so the levels strip
+        # shows the step at once (build_live_curve is also called
+        # on every appended curve sample).
+        build_live_curve()
+    except Exception:
+        pass
     return counter
 
 
@@ -544,7 +561,7 @@ _MARK_COL_FOR = {'CHARGE': 'charge', 'DRY END': 'dryEnd',
                  'DROP': 'drop'}
 
 
-def marks_dataset(start_ms, evs):
+def marks_dataset(evs):
     """Build the marker dataset shared by the live chart and the
     Log detail chart. One column per event: an event's line lives
     in its own column, so the chart can give it its own series,
@@ -554,13 +571,17 @@ def marks_dataset(start_ms, evs):
     invisible bullets, inside or below the plot area), so series
     naming is the labeling route. Each event contributes a top
     point (455 F), a bottom point (152 F) and an all null gap row
-    in its column so consecutive events never connect."""
+    in its column so consecutive events never connect.
+
+    X values are ELAPSED dates (epoch + elapsed seconds), the
+    v4.1 axis: every chart dataset is anchored to the roast's own
+    zero, never to wall clock, and the axis formats them mm:ss."""
     from java.util import Date
     idx = dict((c, i + 1) for i, c in enumerate(MARK_COLS[1:]))
     rows = []
     for e, lbl in sorted(evs):
         col = _MARK_COL_FOR.get(lbl, 'notes')
-        ts = Date(long(start_ms + e * 1000))
+        ts = Date(long(e * 1000))
         top = [ts] + [None] * (len(MARK_COLS) - 1)
         top[idx[col]] = MARK_TOP
         bot = [ts] + [None] * (len(MARK_COLS) - 1)
@@ -586,9 +607,7 @@ def build_marks():
     rows = []
     start = vals['StartTime']
     evs = []
-    start_ms = 0
     if start is not None and vals['State'] != 'Idle':
-        start_ms = start.getTime()
         evs = [(0, 'CHARGE')]
         for stem, lbl in MARK_EVENTS[1:]:
             e = vals[stem + 'ElapsedSec']
@@ -599,7 +618,7 @@ def build_marks():
             if e is not None and e >= 0:
                 nm = vals['CustomEvent%dName' % i] or 'CUSTOM'
                 evs.append((int(e), nm.upper()))
-    ds = marks_dataset(start_ms, evs)
+    ds = marks_dataset(evs)
     system.tag.writeBlocking([MARKS_DS], [ds])
 
 
@@ -622,12 +641,48 @@ def append_curve_sample(elapsed, t_stamp, temp, ror, fan, heat):
     ds = system.dataset.addRow(ds, [float(elapsed), t_stamp, float(temp),
                                     float(ror), int(fan), int(heat)])
     system.tag.writeBlocking([CURVE_SAMPLES], [ds])
+    build_live_curve()
 
 
+def build_live_curve():
+    """Rebuild LiveCurveDS, the dataset the Roast page charts
+    actually draw, from the recorded CurveSamples (v4.1, Eric's
+    live feedback 2026-11-12).
+
+    Why not tag history: the v4 chart bound its bean and RoR
+    series to a tag history query with a mostRecent 30 MIN
+    window. A roast that finished more than 30 minutes before
+    the screenshot fell entirely outside the window, so both
+    lines vanished while the tag dataset overlays (target,
+    markers) still drew, and the wall clock date axis compressed
+    the roast into a sliver labelled with the date. The samples
+    are the stored truth instead: one row per temperature change
+    with its elapsed seconds, kept for the whole roast however
+    long the page stays open.
+
+    X values are elapsed dates (epoch + elapsed seconds) and the
+    axis formats them mm:ss. RoR is recomputed from the stored
+    temps with compute_ror_series and the current parameters
+    (live variant), the same math as RateOfRiseF and the saved
+    batches, so the drawn curve can never disagree with them.
+    Fan and heat ride along for the levels strip, same axis."""
+    from java.util import Date
+    points = curve_points()
+    pts = [(float(p['t']), p['bt']) for p in points]
+    rors = compute_ror_series(pts, ror_params(), offline=False)
+    rows = []
+    for p, (_t, r) in zip(points, rors):
+        rows.append([Date(long(p['t'] * 1000)), p['bt'], r,
+                     float(p['fan']) if p['fan'] is not None else None,
+                     float(p['heat']) if p['heat'] is not None
+                     else None])
+    system.tag.writeBlocking(
+        [LIVE_DS], [system.dataset.toDataSet(LIVE_COLS, rows)])
 
 
 def clear_curve_samples():
     system.tag.writeBlocking([CURVE_SAMPLES], [empty_curve_dataset()])
+    system.tag.writeBlocking([LIVE_DS], [empty_live_dataset()])
 
 
 def curve_points():
@@ -807,18 +862,20 @@ def build_overlays():
            (float(vals['TargetDryEndSec']), vals['TargetDryEndTempF']),
            (float(vals['TargetFCSec']), vals['TargetFCTempF']),
            (float(vals['TargetDropSec']), vals['TargetDropTempF'])]
-    start_ms = start.getTime()
+    # X values are elapsed dates (epoch + offset seconds), the
+    # v4.1 axis shared by every chart dataset; StartTime only
+    # gates whether a roast timeline exists at all.
     rows = []
     s = 0.0
     while s < pts[-1][0]:
-        rows.append([Date(long(start_ms + s * 1000)), _plan_at(pts, s)])
+        rows.append([Date(long(s * 1000)), _plan_at(pts, s)])
         s += 15.0
-    rows.append([Date(long(start_ms + pts[-1][0] * 1000)), pts[-1][1]])
+    rows.append([Date(long(pts[-1][0] * 1000)), pts[-1][1]])
     bg_rows = []
     bg_json = system.tag.readBlocking([BACKGROUND_JSON])[0].value
     if bg_json:
         for pair in system.util.jsonDecode(bg_json):
-            bg_rows.append([Date(long(start_ms + float(pair[0]) * 1000)),
+            bg_rows.append([Date(long(float(pair[0]) * 1000)),
                             float(pair[1])])
     system.tag.writeBlocking(
         [TARGET_DS, BACKGROUND_DS],
@@ -834,8 +891,7 @@ def build_overlays():
         for t, r in compute_ror_series(pairs, ror_params(),
                                        offline=True):
             if r is not None:
-                bg_ror_rows.append(
-                    [Date(long(start_ms + t * 1000)), r])
+                bg_ror_rows.append([Date(long(t * 1000)), r])
     system.tag.writeBlocking(
         [BGROR_DS],
         [system.dataset.toDataSet(['t_stamp', 'bgRor'], bg_ror_rows)])

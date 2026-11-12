@@ -155,7 +155,8 @@ def main():
         browser = pw.chromium.launch()
         desk = browser.new_page(viewport={'width': 1600, 'height': 900})
         mob = browser.new_page(viewport={'width': 390, 'height': 844})
-        for p in (desk, mob):
+        mob360 = browser.new_page(viewport={'width': 360, 'height': 740})
+        for p in (desk, mob, mob360):
             p.goto(BASE + '/', wait_until='networkidle', timeout=60000)
             p.wait_for_timeout(8000)
             dismiss(p)
@@ -181,14 +182,15 @@ def main():
         check('desktop session shows Roasting from the phone action',
               'Roasting' in desk.locator('body').inner_text())
         mob.wait_for_timeout(4500)
+        fan0, heat0 = read_tags([B + '/FanLevel', B + '/HeatLevel'])
         dock.get_by_role('button', name='Dry End').click()
         mob.wait_for_timeout(800)
         dock.get_by_role('button', name='+').nth(0).click()   # Fan +1
         dock.get_by_role('button', name='+').nth(1).click()   # Heat +1
         mob.wait_for_timeout(500)
         fan, heat = read_tags([B + '/FanLevel', B + '/HeatLevel'])
-        check('steppers moved fan and heat', (fan, heat) == (6, 6),
-              (fan, heat))
+        check('steppers moved fan and heat',
+              (fan, heat) == (fan0 + 1, heat0 + 1), (fan, heat))
         mob.wait_for_timeout(4500)
         dock.get_by_role('button', name='FC Start').click()
         mob.wait_for_timeout(45000)
@@ -201,10 +203,50 @@ def main():
               len(tops) == 3 and marks[tops[1]][2] == 455.0
               and marks[tops[2]][3] == 455.0,
               [marks[t][1:] for t in tops])
+
+        # ---- v4.1: elapsed axis + live curve dataset -------------
+        # The chart draws LiveCurveDS, built by the library from
+        # the recorded samples: elapsed (epoch based) x values,
+        # bean temps as stored, RoR from compute_ror_series.
+        check('marker x values are elapsed (epoch based)',
+              0 <= marks[0][0] < 3600000, marks[0][0])
+        live = ds_rows(tag('[default]Roastery/LiveCurveDS'))
+        check('live curve dataset has the roast samples',
+              len(live) >= 20, len(live))
+        check('live curve x values are elapsed (epoch based)',
+              0 <= live[0][0] and live[-1][0] < 3600000,
+              (live[0][0], live[-1][0]))
+        check('live curve carries bean temps and calculated RoR',
+              any(r[1] is not None for r in live)
+              and sum(1 for r in live if r[2] is not None) >= 5
+              and any(r[3] is not None and r[4] is not None
+                      for r in live),
+              live[-1])
+        check('chart axis is labelled Elapsed (mm:ss)',
+              desk.get_by_text('Elapsed (mm:ss)').count() >= 1)
+        # Visible bleed only: an element counts when it starts
+        # inside the viewport and extends past the right edge
+        # (the defect Eric screenshotted). The Maker project
+        # update modal parks fully off canvas at left == width
+        # after a scan; it is session chrome, not app content.
+        worst = mob360.evaluate("""() => {
+          let w = 0;
+          document.querySelectorAll('body *').forEach(el => {
+            if (el.closest('.modal-body')) return;
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.left < window.innerWidth - 1)
+              w = Math.max(w, r.right);
+          });
+          return Math.round(w);
+        }""")
+        check('no app element overflows a 360px phone',
+              worst <= 361, worst)
         desk.screenshot(path=os.path.join(
             SHOTS, 'roastery-v4-roast-desktop.png'))
         mob.screenshot(path=os.path.join(
             SHOTS, 'roastery-v4-roast-mobile.png'))
+        mob360.screenshot(path=os.path.join(
+            SHOTS, 'roastery-v41-roast-360.png'))
         check('no overlays mid roast',
               overlays(desk) == 0 and overlays(mob) == 0)
 

@@ -292,6 +292,8 @@ INSTANCE_FOLDER = {'name': 'Roastery', 'tagType': 'Folder', 'tags': [
     # ---- v4 additions ----
     ds_tag('EventMarksDS'),
     ds_tag('BackgroundRorDS'),
+    # ---- v4.1: the chart's live curve dataset (elapsed axis) ----
+    ds_tag('LiveCurveDS'),
     ds_tag('DetailDS'), ds_tag('DetailMarksDS'),
     mem('SelectedBatchNumber', 'Int4', 0,
         doc='Batch selected in the Log UI: detail view, slide over '
@@ -333,6 +335,9 @@ MARKS_COLS = [('t_stamp', 'java.util.Date'),
               ('drop', 'java.lang.Double'),
               ('notes', 'java.lang.Double')]
 BGROR_COLS = [('t_stamp', 'java.util.Date'), ('bgRor', 'java.lang.Double')]
+LIVE_COLS = [('t_stamp', 'java.util.Date'), ('bean', 'java.lang.Double'),
+             ('ror', 'java.lang.Double'), ('fan', 'java.lang.Double'),
+             ('heat', 'java.lang.Double')]
 DETAIL_COLS = [('t_stamp', 'java.util.Date'), ('bt', 'java.lang.Double'),
                ('ror', 'java.lang.Double')]
 
@@ -397,6 +402,7 @@ def main():
              '[default]Roastery/CurveSamples': ds_json(CURVE_COLS, []),
              '[default]Roastery/EventMarksDS': ds_json(MARKS_COLS, []),
              '[default]Roastery/BackgroundRorDS': ds_json(BGROR_COLS, []),
+             '[default]Roastery/LiveCurveDS': ds_json(LIVE_COLS, []),
              '[default]Roastery/DetailDS': ds_json(DETAIL_COLS, []),
              '[default]Roastery/DetailMarksDS': ds_json(MARKS_COLS, [])}
     st, out = api('POST', '/tags/write',
