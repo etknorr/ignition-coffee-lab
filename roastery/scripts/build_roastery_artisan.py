@@ -36,25 +36,30 @@ RES = {'scope': 'G', 'version': 1, 'restricted': False, 'overridable': True,
        'files': ['view.json'], 'attributes': {'lastModificationSignature': ''}}
 
 # ---------------------------------------------------------------- palette
-PAGE_BG = '#150e08'
-CARD_BG = 'rgba(38, 25, 15, 0.88)'
-CARD_BG_SOLID = '#26190f'
-CARD_BORDER = '#4a3220'
-INK = '#f3e7d3'
-MUTED = '#b89b7d'
-FAINT = '#8a7360'
-COPPER = '#e08a3c'
-AMBER = '#ffb454'
-SKY = '#7dd3fc'
+# Neutral theme aware palette: style colors ride the built in session
+# themes through CSS variables (the neutral scale flips per theme, so
+# these read correctly in both dark and light sessions). Chart series
+# colors cannot use CSS variables (amCharts parses them), so those stay
+# hex values chosen to read on both a dark and a light plot area.
+PAGE_BG = 'var(--containerRoot)'
+CARD_BG = 'var(--container)'
+CARD_BG_SOLID = 'var(--container)'
+CARD_BORDER = 'var(--border)'
+INK = 'var(--label)'
+MUTED = 'var(--neutral-70)'
+FAINT = 'var(--neutral-60)'
+COPPER = 'var(--callToAction)'
+AMBER = '#3b82f6'
+SKY = '#14b8a6'
 RED = '#ef4444'
-GREEN = '#4ade80'
-CREAM = '#f7ead9'
+GREEN = 'var(--success)'
+CREAM = 'var(--label)'
 
 CARD_STYLE = {
     'backgroundColor': CARD_BG,
     'border': f'1px solid {CARD_BORDER}',
     'borderRadius': '16px',
-    'boxShadow': '0 2px 6px rgba(0, 0, 0, 0.45), 0 14px 34px rgba(0, 0, 0, 0.35)',
+    'boxShadow': 'var(--boxShadow2)',
     'padding': '16px 18px',
 }
 CAPTION = {'fontSize': '11px', 'fontWeight': '700', 'color': FAINT,
@@ -64,9 +69,9 @@ SECTION = {'fontSize': '13px', 'fontWeight': '700', 'color': COPPER,
 BTN_BASE = {'fontSize': '14px', 'fontWeight': '700', 'color': '#ffffff',
             'borderRadius': '10px', 'padding': '10px 18px',
             'cursor': 'pointer', 'border': 'none'}
-INPUT_STYLE = {'border': '1px solid #5a4028', 'borderRadius': '8px',
+INPUT_STYLE = {'border': '1px solid var(--border)', 'borderRadius': '8px',
                'padding': '8px 10px', 'fontSize': '14px', 'color': INK,
-               'backgroundColor': 'rgba(21, 14, 8, 0.6)'}
+               'backgroundColor': 'var(--input)'}
 
 B = '[default]Roastery/CurrentBatch'
 LOG = '[default]Roastery/EventsLog'
@@ -419,12 +424,14 @@ def tile_view():
 
 def event_cell_view():
     """One roast event: name, elapsed time, captured temp. The done
-    param flips the styling from waiting (muted) to recorded (copper
-    border glow) via a map transform on the style props."""
-    done_map = {'type': 'map', 'inputType': 'scalar',
-                'outputType': 'color', 'fallback': FAINT,
-                'mappings': [{'input': True, 'output': COPPER},
-                             {'input': False, 'output': FAINT}]}
+    param flips the name color from waiting (muted) to recorded
+    (accent). NOTE: this must stay an expression binding returning
+    the CSS variable strings. A map transform with outputType color
+    cannot be constructed when its outputs are var() strings (the
+    client rejects it with Error_Configuration, "Unable to create
+    new Color Mapping Element", and badges the label); that was the
+    v2 EventCell defect. Expression results are applied to the
+    style as CSS, where var() resolves against the session theme."""
     name = label('NameLabel', 'Event',
                  {'fontSize': '11px', 'fontWeight': '700', 'color': FAINT,
                   'textTransform': 'uppercase', 'letterSpacing': '0.08em',
@@ -432,10 +439,9 @@ def event_cell_view():
                  prop_config={
                      'props.text': {'binding': prop_binding(
                          'view.params.name')},
-                     'props.style.color': {'binding': {
-                         'type': 'property',
-                         'config': {'path': 'view.params.done'},
-                         'transforms': [dict(done_map)]}}})
+                     'props.style.color': {'binding': expr_binding(
+                         "if({view.params.done}, 'var(--callToAction)', "
+                         "'var(--neutral-60)')")}})
     time_l = label('TimeLabel', '--:--',
                    {'fontSize': '17px', 'fontWeight': '700', 'color': INK,
                     'textAlign': 'center'},
@@ -448,8 +454,8 @@ def event_cell_view():
                        'view.params.tempText')}})
     root = flex('root', 'column', [name, time_l, temp_l],
                 align='center',
-                style={'backgroundColor': 'rgba(21, 14, 8, 0.55)',
-                       'border': '1px solid #3d2716',
+                style={'backgroundColor': 'var(--containerNested)',
+                       'border': '1px solid var(--border)',
                        'borderRadius': '12px', 'padding': '9px 6px',
                        'gap': '2px'},
                 prop_config=None)
@@ -568,9 +574,9 @@ def phases_bar_view():
              f"numberFormat({dev_w}, '0') + '%', 'target ' + "
              f"{mmss_int(f'({tt} - {tf})')})")
     bar = flex('Bar', 'row', [
-        seg('DrySeg', 'DRYING', '#b45309', dry_w, dry_t),
-        seg('MaiSeg', 'MAILLARD', '#92400e', mai_w, mai_t),
-        seg('DevSeg', 'DEVELOPMENT', '#7c2d12', dev_w, dev_t)],
+        seg('DrySeg', 'DRYING', '#0284c7', dry_w, dry_t),
+        seg('MaiSeg', 'MAILLARD', '#2563eb', mai_w, mai_t),
+        seg('DevSeg', 'DEVELOPMENT', '#1e40af', dev_w, dev_t)],
         style={'gap': '4px', 'width': '100%'})
     heading = label('Heading', 'Phases', dict(SECTION))
     dtr = label('DtrLabel', 'DTR',
@@ -605,7 +611,7 @@ def controls_view():
     heading = label('Heading', 'Roaster Controls', dict(SECTION))
     mode = label('ModePill', 'Off',
                  {'fontSize': '11px', 'fontWeight': '700', 'color': '#ffffff',
-                  'backgroundColor': '#57534e', 'padding': '3px 12px',
+                  'backgroundColor': '#6b7280', 'padding': '3px 12px',
                   'borderRadius': '999px'},
                  prop_config={
                      'props.text': {'binding': expr_binding(
@@ -616,10 +622,10 @@ def controls_view():
                                     'bidirectional': False},
                          'transforms': [{'type': 'map',
                              'inputType': 'scalar', 'outputType': 'color',
-                             'fallback': '#57534e',
+                             'fallback': '#6b7280',
                              'mappings': [
-                                 {'input': 'Off', 'output': '#57534e'},
-                                 {'input': 'Roast', 'output': '#b91c1c'},
+                                 {'input': 'Off', 'output': '#6b7280'},
+                                 {'input': 'Roast', 'output': '#dc2626'},
                                  {'input': 'Cool', 'output': '#0284c7'}]}]}}})
     head = flex('HeadRow', 'row', [heading, mode],
                 justify='space-between', align='center')
@@ -628,37 +634,37 @@ def controls_view():
         return ref(T(stem + 'ElapsedSec'))
     roasting = f"{st} = 'Roasting'"
     row1 = flex('EventRow1', 'row', [
-        ev_button('ChargeButton', 'Charge', '#b91c1c',
+        ev_button('ChargeButton', 'Charge', '#dc2626',
                   f"{st} = 'Idle' || {st} = 'Complete'", CHARGE_SCRIPT),
-        ev_button('DryEndButton', 'Dry End', '#d97706',
+        ev_button('DryEndButton', 'Dry End', '#0c7bb3',
                   f"{roasting} && {ev('DryEnd')} < 0",
                   event_script('DryEnd', 'Dry End')),
-        ev_button('FCStartButton', 'FC Start', '#ea580c',
+        ev_button('FCStartButton', 'FC Start', '#0c7bb3',
                   f"{roasting} && {ev('DryEnd')} >= 0 && {ev('FirstCrackStart')} < 0",
                   event_script('FirstCrackStart', 'First Crack Start')),
-        ev_button('FCEndButton', 'FC End', '#ea580c',
+        ev_button('FCEndButton', 'FC End', '#0c7bb3',
                   f"{roasting} && {ev('FirstCrackStart')} >= 0 && {ev('FirstCrackEnd')} < 0",
                   event_script('FirstCrackEnd', 'First Crack End'))],
         wrap='wrap', style={'gap': '8px'})
     row2 = flex('EventRow2', 'row', [
-        ev_button('SCStartButton', 'SC Start', '#9a3412',
+        ev_button('SCStartButton', 'SC Start', '#2563eb',
                   f"{roasting} && {ev('FirstCrackStart')} >= 0 && {ev('SecondCrackStart')} < 0",
                   event_script('SecondCrackStart', 'Second Crack Start')),
-        ev_button('SCEndButton', 'SC End', '#9a3412',
+        ev_button('SCEndButton', 'SC End', '#2563eb',
                   f"{roasting} && {ev('SecondCrackStart')} >= 0 && {ev('SecondCrackEnd')} < 0",
                   event_script('SecondCrackEnd', 'Second Crack End')),
-        ev_button('DropButton', 'Drop', '#7c2d12',
+        ev_button('DropButton', 'Drop', '#334155',
                   f"{roasting} && {ev('Drop')} < 0", DROP_SCRIPT),
-        ev_button('CoolButton', 'Cool', '#0369a1',
+        ev_button('CoolButton', 'Cool', '#0284c7',
                   f"{st} = 'Dropped'", COOL_SCRIPT)],
         wrap='wrap', style={'gap': '8px'})
     row3 = flex('EventRow3', 'row', [
-        ev_button('FinishButton', 'Finish', '#15803d',
+        ev_button('FinishButton', 'Finish', '#16a34a',
                   f"{st} = 'Cooling'", FINISH_SCRIPT),
-        ev_button('ResetButton', 'Reset', '#57534e',
+        ev_button('ResetButton', 'Reset', '#6b7280',
                   f"{st} != 'Idle'", RESET_SCRIPT)] +
         [ev_button(f'CustomButton{i}',
-                   f'Custom {i}', '#6d28d9',
+                   f'Custom {i}', '#7c3aed',
                    roasting, custom_event_script(i),
                    ) for i in (1, 2, 3, 4)],
         wrap='wrap', style={'gap': '8px'})
@@ -674,7 +680,7 @@ def controls_view():
                     prop_config={'props.text': {'binding': fmt_tag(
                         T(member), '0')}})
         minus = button(name + 'Minus', '−',
-                       dict(BTN_BASE, backgroundColor='#57534e',
+                       dict(BTN_BASE, backgroundColor='#6b7280',
                             padding='6px 14px', fontSize='17px'),
                        events=script_event(stepper_script(member, -1,
                                                           caption)))
@@ -693,11 +699,11 @@ def controls_view():
                     position={'grow': 1, 'shrink': 1, 'basis': '150px'})
 
     steppers = flex('Steppers', 'row', [
-        stepper('FanStepper', 'Fan', 'FanLevel', '#b45309'),
-        stepper('HeatStepper', 'Heat', 'HeatLevel', '#b91c1c')],
+        stepper('FanStepper', 'Fan', 'FanLevel', '#0c7bb3'),
+        stepper('HeatStepper', 'Heat', 'HeatLevel', '#dc2626')],
         wrap='wrap', style={'gap': '14px'})
     setup_btn = button('RoastSetupButton', 'Roast Setup',
-                       dict(BTN_BASE, backgroundColor=ESPRESSO_HEX),
+                       dict(BTN_BASE, backgroundColor=CTA_HEX),
                        events=POPUP_OPEN)
     footer = flex('FooterRow', 'row', [setup_btn], justify='flex-end')
     root = flex('root', 'column',
@@ -707,7 +713,7 @@ def controls_view():
             'props': {'defaultSize': {'width': 560, 'height': 430}},
             'root': root}
 
-ESPRESSO_HEX = '#3e2723'
+CTA_HEX = '#0c7bb3'
 
 # ---------------------------------------------------------------- MetaCard
 
@@ -715,7 +721,7 @@ def meta_card_view():
     heading = label('Heading', 'Batch Metadata', dict(SECTION))
     edit_btn = button('EditButton', 'Edit',
                       {'fontSize': '12px', 'fontWeight': '700',
-                       'color': '#ffffff', 'backgroundColor': ESPRESSO_HEX,
+                       'color': '#ffffff', 'backgroundColor': CTA_HEX,
                        'borderRadius': '8px', 'padding': '6px 16px',
                        'cursor': 'pointer', 'border': 'none'},
                       events=POPUP_OPEN)
@@ -815,7 +821,7 @@ def summary_view():
              f"if({ref(T('WeightOutG'))} > 0 && {ref(T('ChargeWeightG'))} > 0, numberFormat(({ref(T('ChargeWeightG'))} - {ref(T('WeightOutG'))}) * 100.0 / {ref(T('ChargeWeightG'))}, '0.0') + '%', '--')"),
     ]
     save_btn = button('SaveButton', 'Save to Roast Log',
-                      dict(BTN_BASE, backgroundColor='#15803d',
+                      dict(BTN_BASE, backgroundColor='#16a34a',
                            padding='9px 18px', fontSize='13px'),
                       prop_config={'props.enabled': {'binding': expr_binding(
                           f"{drop_e} >= 0")}},
@@ -868,8 +874,194 @@ def cfg_row(name, fields):
 def cfg_section(name, title, children):
     head = label(name + 'Head', title, dict(SECTION))
     return flex(name, 'column', [head] + children,
-                style={'gap': '9px', 'borderTop': '1px solid #3d2716',
+                style={'gap': '9px', 'borderTop': '1px solid var(--border)',
                        'paddingTop': '13px'})
+
+# ---------------------------------------------------------------- Form
+# Batch metadata editing lives in ONE ia.input.form instance. Widget
+# JSON is built by deepcopying the schema example widget (the component
+# expects the full per type config blocks). Widget ids equal the UDT
+# member names, so the submit payload maps straight onto tag paths.
+# Prefill: the view onStartup script reads the tags once and assigns
+# props.data. Submit: onSubmitActionPerformed (fireComponentEvent) gets
+# the payload dict (widget id to value; number widgets arrive as
+# strings, so the script coerces) and writes the tags.
+
+FORM_SCHEMA = json.load(open(os.path.join(SCHEMAS, 'ia.input.form.json')))
+_FORM_EX = FORM_SCHEMA['schema']['example']
+WIDGET_TPL = _FORM_EX['columns']['items'][0]['rows']['items'][1]['widgets'][0]
+HEADER_TPL = _FORM_EX['columns']['items'][0]['rows']['items'][0]['widgets'][0]
+
+FORM_MEMBERS = ['BeanName', 'Origin', 'Region', 'Farm', 'Altitude',
+                'Variety', 'Process', 'HarvestYear', 'MoisturePct',
+                'DensityGL', 'ChargeWeightG', 'TargetDropTempF',
+                'RoastLevel', 'OperatorName', 'Notes', 'WeightOutG']
+FORM_INTS = ('HarvestYear',)
+FORM_FLOATS = ('MoisturePct', 'DensityGL', 'ChargeWeightG',
+               'TargetDropTempF', 'WeightOutG')
+
+CONFIG_STARTUP_SCRIPT = (
+    "\tmembers = ['BeanName', 'Origin', 'Region', 'Farm', 'Altitude', 'Variety', 'Process', 'HarvestYear', 'MoisturePct', 'DensityGL', 'ChargeWeightG', 'TargetDropTempF', 'RoastLevel', 'OperatorName', 'Notes', 'WeightOutG']\n"
+    "\tbase = '[default]Roastery/CurrentBatch'\n"
+    "\ttry:\n"
+    "\t\tq = system.tag.readBlocking([base + '/' + m for m in members])\n"
+    "\t\tints = ('HarvestYear',)\n"
+    "\t\tfloats = ('MoisturePct', 'DensityGL', 'ChargeWeightG', 'TargetDropTempF', 'WeightOutG')\n"
+    "\t\tdata = {}\n"
+    "\t\tfor i in range(len(members)):\n"
+    "\t\t\tv = q[i].value\n"
+    "\t\t\tif members[i] in ints:\n"
+    "\t\t\t\tdata[members[i]] = int(v) if v is not None else 0\n"
+    "\t\t\telif members[i] in floats:\n"
+    "\t\t\t\tdata[members[i]] = float(v) if v is not None else 0.0\n"
+    "\t\t\telse:\n"
+    "\t\t\t\tdata[members[i]] = v if v is not None else ''\n"
+    "\t\tself.getChild('root').getChild('MetaForm').props.data = data\n"
+    "\texcept Exception:\n"
+    "\t\tpass\n")
+
+FORM_SUBMIT_SCRIPT = (
+    "\tmembers = ('BeanName', 'Origin', 'Region', 'Farm', 'Altitude', 'Variety', 'Process', 'HarvestYear', 'MoisturePct', 'DensityGL', 'ChargeWeightG', 'TargetDropTempF', 'RoastLevel', 'OperatorName', 'Notes', 'WeightOutG')\n"
+    "\tints = ('HarvestYear',)\n"
+    "\tfloats = ('MoisturePct', 'DensityGL', 'ChargeWeightG', 'TargetDropTempF', 'WeightOutG')\n"
+    "\tbase = '[default]Roastery/CurrentBatch'\n"
+    "\tpaths = []\n"
+    "\tvalues = []\n"
+    "\tfor k in members:\n"
+    "\t\tif k not in event:\n"
+    "\t\t\tcontinue\n"
+    "\t\tv = event[k]\n"
+    "\t\tif v is None:\n"
+    "\t\t\tcontinue\n"
+    "\t\ttry:\n"
+    "\t\t\tif k in ints:\n"
+    "\t\t\t\tv = int(float(v))\n"
+    "\t\t\telif k in floats:\n"
+    "\t\t\t\tv = float(v)\n"
+    "\t\t\telse:\n"
+    "\t\t\t\tv = str(v)\n"
+    "\t\texcept Exception:\n"
+    "\t\t\tcontinue\n"
+    "\t\tpaths.append(base + '/' + k)\n"
+    "\t\tvalues.append(v)\n"
+    "\tif paths:\n"
+    "\t\tsystem.tag.writeBlocking(paths, values)\n"
+    "\t\tself.view.custom.formSaved = 'Batch details saved.'\n")
+
+FORM_CANCEL_SCRIPT = "\tsystem.perspective.closePopup('roastery-config')\n"
+
+
+def f_widget(wid, wtype, label_text, tpl=None):
+    w = copy.deepcopy(tpl or WIDGET_TPL)
+    w['id'] = wid
+    w['type'] = wtype
+    w['label'] = {'text': label_text, 'style': {'classes': ''}}
+    w['info'] = {'text': '', 'type': 'caption',
+                 'tooltip': {'icon': {'path': '', 'color': ''},
+                             'location': 'above',
+                             'pixelOffset': {'x': 0, 'y': 0},
+                             'maxWidth': 360, 'tail': True,
+                             'style': {'classes': ''}},
+                 'style': {'classes': ''}}
+    return w
+
+
+def f_text(wid, label_text, required=False):
+    w = f_widget(wid, 'text', label_text)
+    if required:
+        w['text']['validation']['constraints']['required'] = {
+            'enabled': True}
+    return w
+
+
+def f_number(wid, label_text, vmin=None, vmax=None):
+    w = f_widget(wid, 'number', label_text)
+    c = w['number']['validation']['constraints']
+    if vmin is not None:
+        c['min'] = {'enabled': True, 'value': vmin}
+    if vmax is not None:
+        c['max'] = {'enabled': True, 'value': vmax}
+    # Step must be enabled or the widget only accepts integers.
+    c['step'] = {'enabled': True, 'value': 'any'}
+    return w
+
+
+def f_row(widgets):
+    return {'align': 'start', 'justify': 'start', 'visible': True,
+            'enabled': True, 'widgets': widgets, 'style': {}}
+
+
+def meta_form():
+    header = f_widget('MetaHeader', 'none', 'Batch Metadata',
+                      tpl=HEADER_TPL)
+    rows = [
+        f_row([header]),
+        f_row([f_text('BeanName', 'Bean name', required=True),
+               f_text('Origin', 'Origin')]),
+        f_row([f_text('Region', 'Region'),
+               f_text('Farm', 'Farm / station')]),
+        f_row([f_text('Altitude', 'Altitude'),
+               f_text('Variety', 'Variety')]),
+        f_row([f_text('Process', 'Process'),
+               f_number('HarvestYear', 'Harvest year', 1900, 2100)]),
+        f_row([f_number('MoisturePct', 'Moisture (%)', 0, 100),
+               f_number('DensityGL', 'Density (g/L)', 0, 2000)]),
+        f_row([f_number('ChargeWeightG', 'Charge weight (g)', 1, 2000),
+               f_number('TargetDropTempF', 'Target drop temp (F)',
+                        200, 600)]),
+        f_row([f_text('RoastLevel', 'Roast level'),
+               f_text('OperatorName', 'Operator')]),
+        f_row([f_widget('Notes', 'text-area', 'Notes')]),
+        f_row([f_number('WeightOutG', 'Weight out (g)', 0, 2000)]),
+    ]
+    return {
+        'type': 'ia.input.form', 'meta': {'name': 'MetaForm'},
+        'props': {
+            'name': 'batchMetadata',
+            'disabled': False,
+            'readOnly': False,
+            'columns': {'align': 'stretch', 'justify': 'start',
+                        'items': [{'visible': True,
+                                   'rows': {'align': 'start',
+                                            'justify': 'start',
+                                            'items': rows,
+                                            'style': {}},
+                                   'style': {}}],
+                        'style': {}},
+            'actions': {
+                'disabled': False, 'fixed': False, 'layout': 'row',
+                'align': 'center', 'justify': 'start',
+                'submit': {'disabled': False,
+                           'text': 'Save Batch Details',
+                           'icon': {},
+                           'fireComponentEvent': True,
+                           'fireSubmissionEvent': False,
+                           'submissionHandler': '',
+                           'includeDisabledFieldValues': True,
+                           'includeHiddenFieldValues': True,
+                           'autoDisable': True, 'resetOn': 'success',
+                           'awaitResponse': False,
+                           'responseDisplay': {'layout': 'column',
+                                               'titleStyle': {},
+                                               'messageStyle': {},
+                                               'style': {}},
+                           'style': {}},
+                'cancel': {'disabled': False, 'text': 'Cancel',
+                           'icon': {}, 'fireComponentEvent': True,
+                           'reset': False, 'style': {}},
+                'style': {}},
+            'context': {},
+            'data': {},
+            'validation': {},
+            'style': {}},
+        'events': {'component': {
+            'onSubmitActionPerformed': {
+                'scope': 'G', 'type': 'script',
+                'config': {'script': FORM_SUBMIT_SCRIPT}},
+            'onCancelActionPerformed': {
+                'scope': 'G', 'type': 'script',
+                'config': {'script': FORM_CANCEL_SCRIPT}}}}}
+
 
 def config_view():
     title = label('Title', 'Roast Setup',
@@ -918,36 +1110,17 @@ def config_view():
                       num_in('TDropTempNum', 'TargetDropTempF', '0'))]),
     ])
 
-    meta = cfg_section('MetaSection', 'Batch Metadata', [
-        cfg_row('MetaRow1', [
-            cfg_field('BeanField', 'Bean name', text_in('BeanFieldIn', 'BeanName')),
-            cfg_field('OriginField', 'Origin', text_in('OriginIn', 'Origin'))]),
-        cfg_row('MetaRow2', [
-            cfg_field('RegionField', 'Region', text_in('RegionIn', 'Region')),
-            cfg_field('FarmField', 'Farm / station', text_in('FarmIn', 'Farm'))]),
-        cfg_row('MetaRow3', [
-            cfg_field('AltField', 'Altitude', text_in('AltIn', 'Altitude')),
-            cfg_field('VarField', 'Variety', text_in('VarIn', 'Variety'))]),
-        cfg_row('MetaRow4', [
-            cfg_field('ProcField', 'Process', text_in('ProcIn', 'Process')),
-            cfg_field('HarvField', 'Harvest year', num_in('HarvIn', 'HarvestYear'))]),
-        cfg_row('MetaRow5', [
-            cfg_field('MoisField', 'Moisture (%)', num_in('MoisIn', 'MoisturePct', '0.0')),
-            cfg_field('DensField', 'Density (g/L)', num_in('DensIn', 'DensityGL'))]),
-        cfg_row('MetaRow6', [
-            cfg_field('ChargeGField', 'Charge weight (g)', num_in('ChargeGIn', 'ChargeWeightG')),
-            cfg_field('LevelField', 'Roast level', text_in('LevelIn', 'RoastLevel'))]),
-        cfg_row('MetaRow7', [
-            cfg_field('OperField', 'Operator', text_in('OperIn', 'OperatorName')),
-            cfg_field('NotesField', 'Notes',
-                      {'type': 'ia.input.text-area',
-                       'meta': {'name': 'NotesIn'},
-                       'props': {'text': '',
-                                 'style': dict(INPUT_STYLE, minHeight='54px')},
-                       'propConfig': {'props.text': {'binding': tag_binding(
-                           T('Notes'), bidirectional=True)}}},
-                      basis='300px')]),
-    ])
+    # Batch metadata (incl. WeightOutG) is edited through the Form
+    # component; see meta_form() above. The old MetaSection and
+    # ResultsSection hand built fields are gone. The form cannot gate
+    # WeightOutG on roast state the way the old field did (form rows
+    # gate on other widget values, not tags); the value is harmless
+    # before Drop because Charge and Reset zero it.
+    saved_lbl = label('FormSavedLabel', '',
+                      {'fontSize': '13px', 'fontWeight': '700',
+                       'color': GREEN, 'minHeight': '18px'},
+                      prop_config={'props.text': {'binding': prop_binding(
+                          'view.custom.formSaved')}})
 
     custom_rows = []
     for i in (1, 2, 3, 4):
@@ -975,29 +1148,14 @@ def config_view():
             num_in('AlarmFCNum', 'AlarmFCWindowSec')]),
     ])
 
-    results = cfg_section('ResultsSection', 'Results', [
-        cfg_row('ResultsRow', [
-            cfg_field('WOutField', 'Weight out (g)',
-                      {'type': 'ia.input.numeric-entry-field',
-                       'meta': {'name': 'WOutIn'},
-                       'props': {'value': 0, 'format': '0',
-                                 'style': dict(INPUT_STYLE)},
-                       'propConfig': {
-                           'props.value': {'binding': tag_binding(
-                               T('WeightOutG'), bidirectional=True)},
-                           'props.enabled': {'binding': expr_binding(
-                               f"{ref(T('DropElapsedSec'))} >= 0")}}},
-                      basis='180px')]),
-    ])
-
     close_btn = button('CloseButton', 'Close',
-                       dict(BTN_BASE, backgroundColor=ESPRESSO_HEX),
+                       dict(BTN_BASE, backgroundColor=CTA_HEX),
                        events=POPUP_CLOSE)
     footer = flex('Footer', 'row', [close_btn], justify='flex-end')
     root = flex('root', 'column',
-                [head, roaster, target, meta, customs, alarms, results,
-                 footer],
-                style={'backgroundColor': '#2a1c10', 'padding': '20px 22px',
+                [head, roaster, target, meta_form(), saved_lbl, customs,
+                 alarms, footer],
+                style={'backgroundColor': 'var(--containerRoot)', 'padding': '20px 22px',
                        'gap': '15px', 'height': '100%',
                        'overflowY': 'auto'})
 
@@ -1011,8 +1169,11 @@ def config_view():
                 pos['shrink'] = 0
                 _no_shrink(child)
     _no_shrink(root)
-    return {'custom': {}, 'params': {}, 'propConfig': {},
+    return {'custom': {'formSaved': ''}, 'params': {}, 'propConfig': {},
             'props': {'defaultSize': {'width': 700, 'height': 880}},
+            'events': {'system': {'onStartup': {
+                'scope': 'G', 'type': 'script',
+                'config': {'script': CONFIG_STARTUP_SCRIPT}}}},
             'root': root}
 
 # ---------------------------------------------------------------- Log (page /log)
@@ -1031,7 +1192,7 @@ ROWCLICK_SCRIPT = (
     "\t\tbatch = row.get('batch')\n"
     "\t\tbean = row.get('bean')\n"
     "\tself.view.custom.selCurve = curve\n"
-    "\tself.view.custom.selLabel = 'Batch ' + str(batch) + ' · ' + str(bean)\n"
+    "\tself.view.custom.selLabel = 'Batch ' + str(batch) + ' - ' + str(bean)\n"
     "\tself.view.custom.selNote = 'Selected batch ' + str(batch) + ' (' + str(bean) + '). Choose View as Background to overlay it on the console.'\n")
 
 BG_SET_SCRIPT = (
@@ -1055,7 +1216,7 @@ def log_view():
     title = label('Title', 'Roast Log',
                   {'fontSize': '20px', 'fontWeight': '700', 'color': INK})
     console_btn = button('ConsoleButton', 'Back to Console',
-                         dict(BTN_BASE, backgroundColor=ESPRESSO_HEX,
+                         dict(BTN_BASE, backgroundColor=CTA_HEX,
                               padding='8px 18px', fontSize='13px'),
                          events=script_event(NAV_CONSOLE_SCRIPT))
     head = flex('HeadRow', 'row', [title, console_btn],
@@ -1084,10 +1245,10 @@ def log_view():
                        'pager': {'enabled': False},
                        'rows': {'height': 34},
                        'header': {'height': 36, 'style': {
-                           'backgroundColor': '#3a2413', 'color': CREAM,
+                           'backgroundColor': 'var(--containerNested)', 'color': INK,
                            'fontWeight': '700', 'fontSize': '12px'}},
                        'style': {'fontSize': '13px', 'color': INK,
-                                 'backgroundColor': 'rgba(21, 14, 8, 0.4)'}},
+                                 'backgroundColor': 'var(--container)'}},
              'propConfig': {'props.data': {'binding': tag_binding(RLOG)}},
              'events': {'component': {'onRowClick': {
                  'scope': 'G', 'type': 'script',
@@ -1098,7 +1259,7 @@ def log_view():
                  prop_config={'props.text': {'binding': prop_binding(
                      'view.custom.selNote')}})
     bg_btn = button('BgButton', 'View as Background',
-                    dict(BTN_BASE, backgroundColor='#6d28d9',
+                    dict(BTN_BASE, backgroundColor='#7c3aed',
                          padding='9px 20px', fontSize='13px'),
                     events=script_event(BG_SET_SCRIPT))
     foot = flex('FootRow', 'row', [note, bg_btn],
@@ -1189,9 +1350,9 @@ def main_chart():
             'dataSources': {'trend': [], 'plan': [], 'bg': []},
             'xAxes': [xaxis], 'yAxes': [temp_axis, ror_axis],
             'series': [
-                series('Background', 'bg', 'bg', 'temp', '#a1887f', 2,
+                series('Background', 'bg', 'bg', 'temp', '#64748b', 2,
                        opacity=0.5),
-                series('Target', 'plan', 'plan', 'temp', '#e7dccb', 2,
+                series('Target', 'plan', 'plan', 'temp', '#94a3b8', 2,
                        dash='7 5', opacity=0.85),
                 series('Bean Temp', 'trend', 'bean', 'temp', AMBER, 3,
                        fill_opacity=0.13),
@@ -1287,6 +1448,16 @@ PHASE_EXPR = (
     f"if({ref(T('FirstCrackStartElapsedSec'))} >= 0, 'Development', "
     f"if({ref(T('DryEndElapsedSec'))} >= 0, 'Maillard', 'Drying')))))))")
 
+THEME_TOGGLE_SCRIPT = (
+    "\tcur = self.session.props.theme\n"
+    "\tnew = 'light' if cur == 'dark' else 'dark'\n"
+    "\tself.session.props.theme = new\n"
+    "\tself.view.custom.themeText = 'Theme: ' + new\n")
+
+MAIN_STARTUP_SCRIPT = (
+    "\tself.view.custom.themeText = 'Theme: ' + str(self.session.props.theme)\n")
+
+
 def main_view():
     title = label('TitleLabel', 'Ember & Oak Roastery',
                   {'fontSize': '21px', 'fontWeight': '700', 'color': CREAM})
@@ -1325,14 +1496,14 @@ def main_view():
                                'transforms': [{'type': 'map',
                                    'inputType': 'scalar',
                                    'outputType': 'color',
-                                   'fallback': '#78716c',
+                                   'fallback': '#6b7280',
                                    'mappings': [
                                        {'input': 'Idle',
-                                        'output': '#78716c'},
+                                        'output': '#6b7280'},
                                        {'input': 'Roasting',
                                         'output': '#dc2626'},
                                        {'input': 'Dropped',
-                                        'output': '#d97706'},
+                                        'output': '#475569'},
                                        {'input': 'Cooling',
                                         'output': '#0284c7'},
                                        {'input': 'Complete',
@@ -1349,21 +1520,31 @@ def main_view():
                       'borderRadius': '8px', 'padding': '6px 14px',
                       'cursor': 'pointer'},
                      events=script_event(NAV_LOG_SCRIPT))
+    theme_btn = button('ThemeButton', '',
+                       {'fontSize': '12px', 'fontWeight': '700',
+                        'color': CREAM, 'backgroundColor': 'transparent',
+                        'border': f'1px solid {CARD_BORDER}',
+                        'borderRadius': '8px', 'padding': '6px 14px',
+                        'cursor': 'pointer'},
+                       prop_config={'props.text': {'binding': prop_binding(
+                           'view.custom.themeText')}},
+                       events=script_event(THEME_TOGGLE_SCRIPT))
     right = flex('HeaderRight', 'row',
-                 [batch_chip, ws_pill, state_pill, clock, log_btn],
+                 [batch_chip, ws_pill, state_pill, clock, theme_btn,
+                  log_btn],
                  align='center', wrap='wrap', style={'gap': '12px'})
     header = flex('HeaderBar', 'row', [title_block, right],
                   justify='space-between', align='center', wrap='wrap',
                   position={'grow': 0, 'shrink': 0, 'basis': 'auto'},
-                  style={'backgroundColor': '#2a1a10',
+                  style={'backgroundColor': 'var(--container)',
                          'backgroundImage':
-                             'linear-gradient(90deg, #241509, #3e2723)',
+                             'linear-gradient(90deg, var(--container), var(--containerNested))',
                          'padding': '10px 22px', 'gap': '10px',
-                         'boxShadow': '0 2px 14px rgba(0, 0, 0, 0.5)'})
+                         'boxShadow': 'var(--boxShadow1)'})
 
     alarm = flex('AlarmBanner', 'row', [
         label('AlarmText', '',
-              {'fontSize': '14px', 'fontWeight': '700', 'color': '#fff7ed'},
+              {'fontSize': '14px', 'fontWeight': '700', 'color': '#ffffff'},
               prop_config={'props.text': {'binding': prop_binding(
                   'view.custom.alarmText')}})],
         align='center',
@@ -1418,7 +1599,7 @@ def main_view():
                   'view.custom.deviationText')}}),
         embed('FanTile', 'Views/Tile',
               {'title': 'Fan', 'valueText': '5', 'unit': '/ 9',
-               'accent': COPPER}, dict(tile_pos),
+               'accent': AMBER}, dict(tile_pos),
               {'props.params.valueText': {'binding': fmt_tag(
                   T('FanLevel'), '0')}}),
         embed('HeatTile', 'Views/Tile',
@@ -1457,7 +1638,8 @@ def main_view():
                 style={'backgroundColor': PAGE_BG})
     return {
         'custom': {'clockText': '00:00', 'deviationText': '--',
-                   'phaseText': 'Pre-charge', 'alarmText': ''},
+                   'phaseText': 'Pre-charge', 'alarmText': '',
+                   'themeText': 'Theme: light'},
         'params': {},
         'propConfig': {
             'custom.clockText': {'binding': expr_binding(CLOCK_EXPR)},
@@ -1466,6 +1648,9 @@ def main_view():
             'custom.phaseText': {'binding': expr_binding(PHASE_EXPR)},
             'custom.alarmText': {'binding': expr_binding(ALARM_TEXT)}},
         'props': {'defaultSize': {'width': 1440, 'height': 1240}},
+        'events': {'system': {'onStartup': {
+            'scope': 'G', 'type': 'script',
+            'config': {'script': MAIN_STARTUP_SCRIPT}}}},
         'root': root}
 
 # ---------------------------------------------------------------- write out

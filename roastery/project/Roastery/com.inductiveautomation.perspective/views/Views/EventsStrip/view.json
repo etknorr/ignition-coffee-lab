@@ -16,10 +16,10 @@
     "props": {
       "direction": "column",
       "style": {
-        "backgroundColor": "rgba(38, 25, 15, 0.88)",
-        "border": "1px solid #4a3220",
+        "backgroundColor": "var(--container)",
+        "border": "1px solid var(--border)",
         "borderRadius": "16px",
-        "boxShadow": "0 2px 6px rgba(0, 0, 0, 0.45), 0 14px 34px rgba(0, 0, 0, 0.35)",
+        "boxShadow": "var(--boxShadow2)",
         "padding": "16px 18px",
         "gap": "10px"
       }
@@ -35,7 +35,7 @@
           "style": {
             "fontSize": "13px",
             "fontWeight": "700",
-            "color": "#e08a3c",
+            "color": "var(--callToAction)",
             "textTransform": "uppercase",
             "letterSpacing": "0.08em"
           }

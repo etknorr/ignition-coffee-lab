@@ -4,7 +4,7 @@
     "title": "Stat",
     "valueText": "0.0",
     "unit": "",
-    "accent": "#e08a3c"
+    "accent": "var(--callToAction)"
   },
   "propConfig": {
     "params.title": {
@@ -34,10 +34,10 @@
     "props": {
       "direction": "column",
       "style": {
-        "backgroundColor": "rgba(38, 25, 15, 0.88)",
-        "border": "1px solid #4a3220",
+        "backgroundColor": "var(--container)",
+        "border": "1px solid var(--border)",
         "borderRadius": "16px",
-        "boxShadow": "0 2px 6px rgba(0, 0, 0, 0.45), 0 14px 34px rgba(0, 0, 0, 0.35)",
+        "boxShadow": "var(--boxShadow2)",
         "padding": "12px 16px",
         "gap": "5px"
       }
@@ -53,7 +53,7 @@
           "style": {
             "height": "3px",
             "borderRadius": "2px",
-            "backgroundColor": "#e08a3c"
+            "backgroundColor": "var(--callToAction)"
           }
         },
         "children": [],
@@ -83,7 +83,7 @@
           "style": {
             "fontSize": "11px",
             "fontWeight": "700",
-            "color": "#8a7360",
+            "color": "var(--neutral-60)",
             "textTransform": "uppercase",
             "letterSpacing": "0.1em"
           }
@@ -122,7 +122,7 @@
               "style": {
                 "fontSize": "30px",
                 "fontWeight": "700",
-                "color": "#f3e7d3",
+                "color": "var(--label)",
                 "lineHeight": "1.05"
               }
             },
@@ -147,7 +147,7 @@
               "style": {
                 "fontSize": "12px",
                 "fontWeight": "600",
-                "color": "#b89b7d"
+                "color": "var(--neutral-70)"
               }
             },
             "propConfig": {

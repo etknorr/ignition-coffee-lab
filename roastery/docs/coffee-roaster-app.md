@@ -346,3 +346,141 @@ roastery-artisan-roasting.png, roastery-artisan-summary.png,
 roastery-artisan-config.png, roastery-artisan-alarm.png,
 roastery-artisan-log.png, roastery-artisan-background.png,
 roastery-artisan-mobile.png, roastery-artisan-config-mobile.png.
+
+## Roastery v2: Form component, neutral themes, defect fixes
+
+### The Form component (ia.input.form)
+
+Batch Metadata in the Roast Setup popup is ONE ia.input.form
+instance (MetaForm): 16 fields in 10 rows, and the widget ids are
+the RoastBatch member names, so the submit payload maps straight
+onto tag paths.
+
+Props shape: `props.name` ('batchMetadata'), `props.columns`
+holding items whose rows hold `widgets`, `props.actions` with
+submit and cancel blocks, `props.data` (a flat object keyed by
+widget id), and `props.validation`. Each widget carries an id, a
+type, a label block, an info block (tooltip scaffolding), and a
+full per-type config block under its type key, for example
+`widget.number.validation.constraints`. The builder deepcopies
+the schema example widget and edits it; a hand written minimal
+widget object does not produce a working form. Widget types
+used: text, number, text-area, and 'none' for the section header
+row.
+
+Validation lives per widget under `<type>.validation.constraints`:
+required on BeanName, min and max on the numbers. Quirk: a number
+widget's step constraint must be enabled (value 'any') or the
+field only accepts integers.
+
+Prefill: props.data carries no binding in this build. The Config
+view's onStartup script reads the 16 member tags once with
+system.tag.readBlocking, coerces the int and float members, and
+assigns MetaForm.props.data as a flat dict.
+
+Submit: actions.submit sets fireComponentEvent true and
+fireSubmissionEvent false (no submission handler), so submitting
+raises the component event onSubmitActionPerformed, and the event
+object IS the payload, a dict of widget id to value. Quirk:
+number widget values arrive as strings, so the handler coerces
+per member (one int, five floats, the rest strings), skips
+nulls, writes with system.tag.writeBlocking to
+[default]Roastery/CurrentBatch/<member>, and sets
+view.custom.formSaved, which a label shows as "Batch details
+saved." Submit resetOn is 'success'. Cancel runs
+onCancelActionPerformed, whose script closes the popup.
+
+What is NOT in the form, and why: the Roaster section (WsUrl,
+RoR smoothing, the live probe readout), the Target Profile
+points, and the alarm rows stay regular controls with
+bidirectional tag bindings, because they take effect immediately
+and include live read-only values. The form's edit-then-submit
+model fits batch metadata, a record you fill in and save. The
+round trip is proven by clicks in both themes: prefill shows the
+tag values, editing Farm and WeightOutG and pressing Save Batch
+Details wrote both tags (confirmed by API read), and the
+MetaCard updated on Main.
+
+### Neutral dark and light themes
+
+The v1 espresso palette is gone. Every style color in the views
+is a CSS variable from the built-in session theme set:
+var(--containerRoot), var(--container), var(--containerNested),
+var(--border), var(--label), var(--neutral-60) and
+var(--neutral-70), var(--input), var(--callToAction),
+var(--success), and var(--boxShadow2). The same view files
+therefore render under the built-in dark theme and the built-in
+light theme. The only literal hexes left are chart series colors
+(amCharts parses those itself and cannot read CSS variables) and
+functional state colors on buttons and pills (record red, cool
+blue, go green), chosen to read on both themes.
+
+The console header carries a theme toggle that flips the session
+theme. The v2 verification toggles the live session both ways
+and asserts the computed --containerRoot (#FAFAFA light, #161616
+dark), with screenshots in both themes at desktop and phone
+widths. A grep over the generated view JSON for every v1 palette
+value returns zero hits.
+
+### Defects found in the first v2 pass, and their fixes
+
+1. Chart ERROR bar. Symptom: a red ERROR bar under the Roast
+   Curve and an error badge on the chart itself. Root cause was
+   data, not the view: the tag [default]Roastery/BackgroundDS
+   held a corrupt value, a
+   com.inductiveautomation.ignition.common.document.Document
+   object instead of a Dataset, so the chart's
+   props.dataSources.bg binding carried quality error
+   -1073741052, "Invalid DataType for Dataset", in the live
+   session (captured from the session property feed). The
+   corrupt value came from a test script writing a dataset
+   through the REST /tags/write endpoint with a raw JSON object
+   as the value; on this beta the API stores that as a Document
+   and poisons the dataset tag. In-app writes never do this: the
+   setup seeds datasets as JSON strings, and every runtime write
+   uses gateway Jython system.dataset.toDataSet. Fix: the value
+   was rewritten by the app's own Charge and Reset scripts
+   (proper Datasets), and the verify script no longer writes
+   datasets through the API; it clears the background by running
+   Charge then Reset after emptying BackgroundCurveJson. Lab
+   rule: never write a dataset value through /tags/write as a
+   JSON object.
+2. EventCell error badges. Symptom: a micro error badge in the
+   middle of every event name label. Clicking a badge showed the
+   diagnostic: Property root/NameLabel.style.color,
+   Error_Configuration, "Unable to create map transform: Unable
+   to create new Color Mapping Element." Root cause: the
+   done-state color binding was a property binding with a map
+   transform whose color outputs were the v2 CSS variable
+   strings, var(--callToAction) and var(--neutral-60). The
+   client validates map outputs when constructing the transform
+   and cannot build a color mapping element from a var() string.
+   In v1 the outputs were literal hexes, so it worked. The other
+   two map transforms in the app (the State and Mode pills)
+   still use hex outputs and were unaffected. Fix, in
+   build_roastery_artisan.py: the binding is now an expression,
+   if({view.params.done}, 'var(--callToAction)',
+   'var(--neutral-60)'), whose result is applied to the style as
+   CSS, where var() resolves per theme. Proven by computed style
+   in live sessions: waiting rgb(161, 161, 161) in dark, done
+   rgb(34, 154, 214) in dark and rgb(12, 123, 179) in light,
+   with zero quality overlays anywhere.
+
+### Verification and end state (v2 finish pass)
+
+verify_roastery_v2.py reports ALL CHECKS PASS: both themes both
+ways, zero quality overlays at idle and while roasting in both
+themes and on mobile, the roast flow (Charge, Dry End, FC Start,
+fan stepper with a logged trace row, Drop), the form round trip
+in dark and prefill in light, the log page and background
+selection with the clean ASCII label, reset to clean idle, the
+background dataset empty and readable, and the mobile popup fit.
+validate_roastery_artisan.py PASS (ten views served deep equal,
+zero Roastery warnings, bogus view control warns) and ChartLab
+validation PASS on the same gateway. Screenshots:
+roastery-v2-dark-desktop.png, roastery-v2-light-desktop.png,
+roastery-v2-dark-config.png, roastery-v2-light-config.png,
+roastery-v2-dark-mobile.png, roastery-v2-light-mobile.png (lab
+showcase/shots only; the repo stays config only). Maker gateway
+RUNNING, batch at clean Idle (Farm Buku Abel, WeightOutG 0,
+Fan 5, Heat 5, background cleared).

@@ -41,8 +41,9 @@ Perspective project, the tag and UDT setup, and the view builder.
   as a step trace strip under the main curve, the way Artisan
   annotates control moves.
 - A Roast Setup config popup: roaster connection settings, the
-  full batch metadata form, the target designer points, alarm
-  thresholds, and a results section for weight out after Drop.
+  batch metadata form built on the Perspective Form component
+  (ia.input.form), including weight out after Drop, the target
+  designer points, and alarm thresholds.
 - A roast log page with saved batches (metadata, phase times,
   DTR, weight loss, roast degree, and the saved curve), where any
   past roast can be selected as the background profile.
@@ -50,6 +51,7 @@ Perspective project, the tag and UDT setup, and the view builder.
   target curve temperature at the current elapsed time.
 - Lite alarms surfaced as a banner on the main view.
 - Mobile responsive layout that stacks cleanly at phone width.
+- A neutral theme that follows the session dark or light mode.
 
 ## Design: one probe, derived rate of rise
 

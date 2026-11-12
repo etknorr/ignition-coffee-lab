@@ -3,7 +3,8 @@
     "clockText": "00:00",
     "deviationText": "--",
     "phaseText": "Pre-charge",
-    "alarmText": ""
+    "alarmText": "",
+    "themeText": "Theme: light"
   },
   "params": {},
   "propConfig": {
@@ -46,6 +47,17 @@
       "height": 1240
     }
   },
+  "events": {
+    "system": {
+      "onStartup": {
+        "scope": "G",
+        "type": "script",
+        "config": {
+          "script": "\tself.view.custom.themeText = 'Theme: ' + str(self.session.props.theme)\n"
+        }
+      }
+    }
+  },
   "root": {
     "type": "ia.container.flex",
     "meta": {
@@ -54,7 +66,7 @@
     "props": {
       "direction": "column",
       "style": {
-        "backgroundColor": "#150e08"
+        "backgroundColor": "var(--containerRoot)"
       }
     },
     "children": [
@@ -69,11 +81,11 @@
           "alignItems": "center",
           "wrap": "wrap",
           "style": {
-            "backgroundColor": "#2a1a10",
-            "backgroundImage": "linear-gradient(90deg, #241509, #3e2723)",
+            "backgroundColor": "var(--container)",
+            "backgroundImage": "linear-gradient(90deg, var(--container), var(--containerNested))",
             "padding": "10px 22px",
             "gap": "10px",
-            "boxShadow": "0 2px 14px rgba(0, 0, 0, 0.5)"
+            "boxShadow": "var(--boxShadow1)"
           }
         },
         "children": [
@@ -99,7 +111,7 @@
                   "style": {
                     "fontSize": "21px",
                     "fontWeight": "700",
-                    "color": "#f7ead9"
+                    "color": "var(--label)"
                   }
                 }
               },
@@ -112,7 +124,7 @@
                   "text": "Artisan Roast Console \u00b7 FreshRoast SR800",
                   "style": {
                     "fontSize": "12px",
-                    "color": "#b89b7d"
+                    "color": "var(--neutral-70)"
                   }
                 }
               }
@@ -142,7 +154,7 @@
                   "style": {
                     "fontSize": "13px",
                     "fontWeight": "600",
-                    "color": "#f7ead9"
+                    "color": "var(--label)"
                   }
                 },
                 "propConfig": {
@@ -232,11 +244,11 @@
                           "type": "map",
                           "inputType": "scalar",
                           "outputType": "color",
-                          "fallback": "#78716c",
+                          "fallback": "#6b7280",
                           "mappings": [
                             {
                               "input": "Idle",
-                              "output": "#78716c"
+                              "output": "#6b7280"
                             },
                             {
                               "input": "Roasting",
@@ -244,7 +256,7 @@
                             },
                             {
                               "input": "Dropped",
-                              "output": "#d97706"
+                              "output": "#475569"
                             },
                             {
                               "input": "Cooling",
@@ -271,7 +283,7 @@
                   "style": {
                     "fontSize": "27px",
                     "fontWeight": "700",
-                    "color": "#f7ead9",
+                    "color": "var(--label)",
                     "fontFamily": "monospace"
                   }
                 },
@@ -289,6 +301,46 @@
               {
                 "type": "ia.input.button",
                 "meta": {
+                  "name": "ThemeButton"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "fontSize": "12px",
+                    "fontWeight": "700",
+                    "color": "var(--label)",
+                    "backgroundColor": "transparent",
+                    "border": "1px solid var(--border)",
+                    "borderRadius": "8px",
+                    "padding": "6px 14px",
+                    "cursor": "pointer"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "view.custom.themeText"
+                      }
+                    }
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\tcur = self.session.props.theme\n\tnew = 'light' if cur == 'dark' else 'dark'\n\tself.session.props.theme = new\n\tself.view.custom.themeText = 'Theme: ' + new\n"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
                   "name": "LogButton"
                 },
                 "props": {
@@ -296,9 +348,9 @@
                   "style": {
                     "fontSize": "12px",
                     "fontWeight": "700",
-                    "color": "#f7ead9",
+                    "color": "var(--label)",
                     "backgroundColor": "transparent",
-                    "border": "1px solid #4a3220",
+                    "border": "1px solid var(--border)",
                     "borderRadius": "8px",
                     "padding": "6px 14px",
                     "cursor": "pointer"
@@ -350,7 +402,7 @@
               "style": {
                 "fontSize": "14px",
                 "fontWeight": "700",
-                "color": "#fff7ed"
+                "color": "#ffffff"
               }
             },
             "propConfig": {
@@ -402,10 +454,10 @@
             "props": {
               "direction": "column",
               "style": {
-                "backgroundColor": "rgba(38, 25, 15, 0.88)",
-                "border": "1px solid #4a3220",
+                "backgroundColor": "var(--container)",
+                "border": "1px solid var(--border)",
                 "borderRadius": "16px",
-                "boxShadow": "0 2px 6px rgba(0, 0, 0, 0.45), 0 14px 34px rgba(0, 0, 0, 0.35)",
+                "boxShadow": "var(--boxShadow2)",
                 "padding": "16px 18px",
                 "gap": "8px"
               }
@@ -432,7 +484,7 @@
                       "style": {
                         "fontSize": "14px",
                         "fontWeight": "700",
-                        "color": "#f3e7d3"
+                        "color": "var(--label)"
                       }
                     }
                   },
@@ -446,7 +498,7 @@
                       "style": {
                         "fontSize": "11px",
                         "fontWeight": "600",
-                        "color": "#b89b7d"
+                        "color": "var(--neutral-70)"
                       }
                     },
                     "propConfig": {
@@ -866,7 +918,7 @@
                           "stroke": {
                             "width": 2,
                             "opacity": 0.5,
-                            "color": "#a1887f",
+                            "color": "#64748b",
                             "dashArray": ""
                           },
                           "fill": {
@@ -1130,7 +1182,7 @@
                           "stroke": {
                             "width": 2,
                             "opacity": 0.85,
-                            "color": "#e7dccb",
+                            "color": "#94a3b8",
                             "dashArray": "7 5"
                           },
                           "fill": {
@@ -1394,12 +1446,12 @@
                           "stroke": {
                             "width": 3,
                             "opacity": 1.0,
-                            "color": "#ffb454",
+                            "color": "#3b82f6",
                             "dashArray": ""
                           },
                           "fill": {
                             "opacity": 0.13,
-                            "color": "#ffb454"
+                            "color": "#3b82f6"
                           },
                           "bullets": [
                             {
@@ -1658,7 +1710,7 @@
                           "stroke": {
                             "width": 2,
                             "opacity": 1.0,
-                            "color": "#7dd3fc",
+                            "color": "#14b8a6",
                             "dashArray": ""
                           },
                           "fill": {
@@ -1886,7 +1938,7 @@
                   "style": {
                     "fontSize": "11px",
                     "fontWeight": "700",
-                    "color": "#8a7360",
+                    "color": "var(--neutral-60)",
                     "textTransform": "uppercase",
                     "letterSpacing": "0.1em"
                   }
@@ -2293,7 +2345,7 @@
                               "stroke": {
                                 "width": 2,
                                 "opacity": 1,
-                                "color": "#ffb454",
+                                "color": "#3b82f6",
                                 "dashArray": ""
                               },
                               "fill": {
@@ -2718,7 +2770,7 @@
                     "title": "Bean Temp",
                     "valueText": "0.0",
                     "unit": "deg F",
-                    "accent": "#ffb454"
+                    "accent": "#3b82f6"
                   }
                 },
                 "position": {
@@ -2758,7 +2810,7 @@
                     "title": "Rate of Rise",
                     "valueText": "0.0",
                     "unit": "F/min",
-                    "accent": "#7dd3fc"
+                    "accent": "#14b8a6"
                   }
                 },
                 "position": {
@@ -2798,7 +2850,7 @@
                     "title": "Deviation",
                     "valueText": "--",
                     "unit": "",
-                    "accent": "#e08a3c"
+                    "accent": "var(--callToAction)"
                   }
                 },
                 "position": {
@@ -2828,7 +2880,7 @@
                     "title": "Fan",
                     "valueText": "5",
                     "unit": "/ 9",
-                    "accent": "#e08a3c"
+                    "accent": "#3b82f6"
                   }
                 },
                 "position": {
@@ -2908,7 +2960,7 @@
                     "title": "Phase",
                     "valueText": "Pre-charge",
                     "unit": "",
-                    "accent": "#4ade80"
+                    "accent": "var(--success)"
                   }
                 },
                 "position": {
@@ -2938,7 +2990,7 @@
                     "title": "Target Drop",
                     "valueText": "415",
                     "unit": "deg F",
-                    "accent": "#8a7360"
+                    "accent": "var(--neutral-60)"
                   }
                 },
                 "position": {

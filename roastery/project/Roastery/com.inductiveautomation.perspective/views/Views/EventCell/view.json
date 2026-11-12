@@ -35,8 +35,8 @@
       "direction": "column",
       "alignItems": "center",
       "style": {
-        "backgroundColor": "rgba(21, 14, 8, 0.55)",
-        "border": "1px solid #3d2716",
+        "backgroundColor": "var(--containerNested)",
+        "border": "1px solid var(--border)",
         "borderRadius": "12px",
         "padding": "9px 6px",
         "gap": "2px"
@@ -53,7 +53,7 @@
           "style": {
             "fontSize": "11px",
             "fontWeight": "700",
-            "color": "#8a7360",
+            "color": "var(--neutral-60)",
             "textTransform": "uppercase",
             "letterSpacing": "0.08em",
             "textAlign": "center"
@@ -70,28 +70,10 @@
           },
           "props.style.color": {
             "binding": {
-              "type": "property",
+              "type": "expr",
               "config": {
-                "path": "view.params.done"
-              },
-              "transforms": [
-                {
-                  "type": "map",
-                  "inputType": "scalar",
-                  "outputType": "color",
-                  "fallback": "#8a7360",
-                  "mappings": [
-                    {
-                      "input": true,
-                      "output": "#e08a3c"
-                    },
-                    {
-                      "input": false,
-                      "output": "#8a7360"
-                    }
-                  ]
-                }
-              ]
+                "expression": "if({view.params.done}, 'var(--callToAction)', 'var(--neutral-60)')"
+              }
             }
           }
         }
@@ -106,7 +88,7 @@
           "style": {
             "fontSize": "17px",
             "fontWeight": "700",
-            "color": "#f3e7d3",
+            "color": "var(--label)",
             "textAlign": "center"
           }
         },
@@ -131,7 +113,7 @@
           "style": {
             "fontSize": "12px",
             "fontWeight": "600",
-            "color": "#b89b7d",
+            "color": "var(--neutral-70)",
             "textAlign": "center"
           }
         },
