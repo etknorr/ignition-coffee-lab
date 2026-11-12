@@ -3,8 +3,8 @@
     "/": {
       "viewPath": "Views/Main"
     },
-    "/log": {
-      "viewPath": "Views/Log"
+    "/batches": {
+      "viewPath": "Views/Batches"
     }
   }
 }

@@ -1,0 +1,9 @@
+{
+  "base": {
+    "style": {
+      "fontSize": "13px",
+      "padding": "10px 6px",
+      "width": "100%"
+    }
+  }
+}

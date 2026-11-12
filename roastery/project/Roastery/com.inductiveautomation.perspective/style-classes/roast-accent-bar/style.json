@@ -1,0 +1,8 @@
+{
+  "base": {
+    "style": {
+      "height": "3px",
+      "borderRadius": "2px"
+    }
+  }
+}

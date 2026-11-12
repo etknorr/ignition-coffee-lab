@@ -1,0 +1,9 @@
+{
+  "base": {
+    "style": {
+      "borderRadius": "8px",
+      "padding": "7px 4px",
+      "minWidth": "86px"
+    }
+  }
+}
