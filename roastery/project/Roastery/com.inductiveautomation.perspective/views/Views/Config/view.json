@@ -16,7 +16,7 @@
         "scope": "G",
         "type": "script",
         "config": {
-          "script": "\tmembers = ['BeanName', 'Origin', 'Region', 'Farm', 'Altitude', 'Variety', 'Process', 'HarvestYear', 'MoisturePct', 'DensityGL', 'ChargeWeightG', 'TargetDropTempF', 'RoastLevel', 'OperatorName', 'Notes', 'WeightOutG']\n\tbase = '[default]Roastery/CurrentBatch'\n\ttry:\n\t\tq = system.tag.readBlocking([base + '/' + m for m in members])\n\t\tints = ('HarvestYear',)\n\t\tfloats = ('MoisturePct', 'DensityGL', 'ChargeWeightG', 'TargetDropTempF', 'WeightOutG')\n\t\tdata = {}\n\t\tfor i in range(len(members)):\n\t\t\tv = q[i].value\n\t\t\tif members[i] in ints:\n\t\t\t\tdata[members[i]] = int(v) if v is not None else 0\n\t\t\telif members[i] in floats:\n\t\t\t\tdata[members[i]] = float(v) if v is not None else 0.0\n\t\t\telse:\n\t\t\t\tdata[members[i]] = v if v is not None else ''\n\t\tself.getChild('root').getChild('MetaForm').props.data = data\n\texcept Exception:\n\t\tpass\n"
+          "script": "\timport roastery.core\n\tself.getChild('root').getChild('MetaForm').props.data = roastery.core.config_form_data()\n"
         }
       }
     }
@@ -29,11 +29,7 @@
     "props": {
       "direction": "column",
       "style": {
-        "backgroundColor": "var(--containerRoot)",
-        "padding": "20px 22px",
-        "gap": "15px",
-        "height": "100%",
-        "overflowY": "auto"
+        "classes": "roast-scroll"
       }
     },
     "children": [
@@ -56,9 +52,7 @@
             "props": {
               "text": "Roast Setup",
               "style": {
-                "fontSize": "19px",
-                "fontWeight": "700",
-                "color": "var(--label)"
+                "classes": "roast-title-sm"
               }
             },
             "position": {
@@ -73,8 +67,7 @@
             "props": {
               "text": "",
               "style": {
-                "fontSize": "12px",
-                "fontWeight": "700"
+                "classes": "roast-status"
               }
             },
             "propConfig": {
@@ -112,9 +105,7 @@
         "props": {
           "direction": "column",
           "style": {
-            "gap": "9px",
-            "borderTop": "1px solid var(--border)",
-            "paddingTop": "13px"
+            "classes": "roast-section-div"
           }
         },
         "children": [
@@ -126,13 +117,205 @@
             "props": {
               "text": "Roaster",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "var(--callToAction)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.08em"
+                "classes": "roast-section-title"
               }
             },
+            "position": {
+              "shrink": 0
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "SourceRow"
+            },
+            "props": {
+              "direction": "row",
+              "wrap": "wrap",
+              "style": {
+                "classes": "roast-gap-12"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "SourceField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "SourceFieldCap"
+                    },
+                    "props": {
+                      "text": "Active source",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    },
+                    "position": {
+                      "shrink": 0
+                    }
+                  },
+                  {
+                    "type": "ia.input.dropdown",
+                    "meta": {
+                      "name": "SourceDropdown"
+                    },
+                    "props": {
+                      "options": [
+                        {
+                          "value": "Simulated",
+                          "label": "Simulated (RoasterSim)"
+                        },
+                        {
+                          "value": "WebSocket",
+                          "label": "WebSocket (SR800 feed)"
+                        },
+                        {
+                          "value": "Mqtt",
+                          "label": "MQTT (broker feed)"
+                        }
+                      ],
+                      "value": "Simulated",
+                      "style": {
+                        "classes": "roast-input"
+                      }
+                    },
+                    "propConfig": {
+                      "props.value": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/ActiveSource",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    },
+                    "position": {
+                      "shrink": 0
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 0,
+                  "basis": "300px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "ProbeField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "ProbeFieldCap"
+                    },
+                    "props": {
+                      "text": "Live probe",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    },
+                    "position": {
+                      "shrink": 0
+                    }
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "ProbeReadout"
+                    },
+                    "props": {
+                      "text": "",
+                      "style": {
+                        "classes": "roast-value"
+                      }
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "expr",
+                          "config": {
+                            "expression": "'Probe now: ' + numberFormat({[default]Roastery/CurrentBatch/BeanTempF}, '0.0') + ' F \u00b7 RoR ' + numberFormat({[default]Roastery/CurrentBatch/RateOfRiseF}, '0.0') + ' F/min'"
+                          }
+                        }
+                      }
+                    },
+                    "position": {
+                      "shrink": 0
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 0,
+                  "basis": "240px"
+                }
+              }
+            ],
+            "position": {
+              "shrink": 0
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "SrcNoteRow"
+            },
+            "props": {
+              "direction": "row",
+              "wrap": "wrap",
+              "style": {
+                "classes": "roast-gap-12"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "SourceNote"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-note"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "'Active source: ' + {[default]Roastery/CurrentBatch/ActiveSource} + ' \u00b7 ' + if({[default]Roastery/CurrentBatch/ActiveSource} = 'WebSocket', {[default]Roastery/CurrentBatch/Sources/WebSocket/WsUrl}, if({[default]Roastery/CurrentBatch/ActiveSource} = 'Mqtt', {[default]Roastery/CurrentBatch/Sources/Mqtt/Address}, {[default]Roastery/CurrentBatch/Sources/Simulated/Address}))"
+                      }
+                    }
+                  }
+                },
+                "position": {
+                  "shrink": 0
+                }
+              }
+            ],
             "position": {
               "shrink": 0
             }
@@ -146,7 +329,7 @@
               "direction": "row",
               "wrap": "wrap",
               "style": {
-                "gap": "12px"
+                "classes": "roast-gap-12"
               }
             },
             "children": [
@@ -158,7 +341,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -170,11 +353,7 @@
                     "props": {
                       "text": "WebSocket URL",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -190,12 +369,7 @@
                       "text": "",
                       "placeholder": "ws://sr800.local:8080",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -236,7 +410,7 @@
               "direction": "row",
               "wrap": "wrap",
               "style": {
-                "gap": "12px"
+                "classes": "roast-gap-12"
               }
             },
             "children": [
@@ -248,7 +422,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -260,11 +434,7 @@
                     "props": {
                       "text": "RoR smoothing (sec)",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -280,12 +450,7 @@
                       "value": 0,
                       "format": "0",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -311,71 +476,6 @@
                   "shrink": 0,
                   "basis": "180px"
                 }
-              },
-              {
-                "type": "ia.container.flex",
-                "meta": {
-                  "name": "ProbeField"
-                },
-                "props": {
-                  "direction": "column",
-                  "style": {
-                    "gap": "4px"
-                  }
-                },
-                "children": [
-                  {
-                    "type": "ia.display.label",
-                    "meta": {
-                      "name": "ProbeFieldCap"
-                    },
-                    "props": {
-                      "text": "Live probe",
-                      "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
-                      }
-                    },
-                    "position": {
-                      "shrink": 0
-                    }
-                  },
-                  {
-                    "type": "ia.display.label",
-                    "meta": {
-                      "name": "ProbeReadout"
-                    },
-                    "props": {
-                      "text": "",
-                      "style": {
-                        "fontSize": "14px",
-                        "fontWeight": "600",
-                        "color": "var(--label)"
-                      }
-                    },
-                    "propConfig": {
-                      "props.text": {
-                        "binding": {
-                          "type": "expr",
-                          "config": {
-                            "expression": "'Probe now: ' + numberFormat({[default]Roastery/CurrentBatch/BeanTempF}, '0.0') + ' F \u00b7 RoR ' + numberFormat({[default]Roastery/CurrentBatch/RateOfRiseF}, '0.0') + ' F/min'"
-                          }
-                        }
-                      }
-                    },
-                    "position": {
-                      "shrink": 0
-                    }
-                  }
-                ],
-                "position": {
-                  "grow": 1,
-                  "shrink": 0,
-                  "basis": "240px"
-                }
               }
             ],
             "position": {
@@ -395,9 +495,7 @@
         "props": {
           "direction": "column",
           "style": {
-            "gap": "9px",
-            "borderTop": "1px solid var(--border)",
-            "paddingTop": "13px"
+            "classes": "roast-section-div"
           }
         },
         "children": [
@@ -409,11 +507,7 @@
             "props": {
               "text": "Target Profile",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "var(--callToAction)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.08em"
+                "classes": "roast-section-title"
               }
             },
             "position": {
@@ -429,7 +523,7 @@
               "direction": "row",
               "wrap": "wrap",
               "style": {
-                "gap": "12px"
+                "classes": "roast-gap-12"
               }
             },
             "children": [
@@ -441,7 +535,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -453,11 +547,7 @@
                     "props": {
                       "text": "Charge temp (F)",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -473,12 +563,7 @@
                       "value": 0,
                       "format": "0",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -513,7 +598,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -525,11 +610,7 @@
                     "props": {
                       "text": "Dry end time (sec)",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -545,12 +626,7 @@
                       "value": 0,
                       "format": "0",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -585,7 +661,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -597,11 +673,7 @@
                     "props": {
                       "text": "Dry end temp (F)",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -617,12 +689,7 @@
                       "value": 0,
                       "format": "0",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -663,7 +730,7 @@
               "direction": "row",
               "wrap": "wrap",
               "style": {
-                "gap": "12px"
+                "classes": "roast-gap-12"
               }
             },
             "children": [
@@ -675,7 +742,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -687,11 +754,7 @@
                     "props": {
                       "text": "First crack time (sec)",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -707,12 +770,7 @@
                       "value": 0,
                       "format": "0",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -747,7 +805,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -759,11 +817,7 @@
                     "props": {
                       "text": "First crack temp (F)",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -779,12 +833,7 @@
                       "value": 0,
                       "format": "0",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -819,7 +868,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -831,11 +880,7 @@
                     "props": {
                       "text": "Drop time (sec)",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -851,12 +896,7 @@
                       "value": 0,
                       "format": "0",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -891,7 +931,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -903,11 +943,7 @@
                     "props": {
                       "text": "Drop temp (F)",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -923,12 +959,7 @@
                       "value": 0,
                       "format": "0",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -11465,7 +11496,7 @@
               "scope": "G",
               "type": "script",
               "config": {
-                "script": "\tmembers = ('BeanName', 'Origin', 'Region', 'Farm', 'Altitude', 'Variety', 'Process', 'HarvestYear', 'MoisturePct', 'DensityGL', 'ChargeWeightG', 'TargetDropTempF', 'RoastLevel', 'OperatorName', 'Notes', 'WeightOutG')\n\tints = ('HarvestYear',)\n\tfloats = ('MoisturePct', 'DensityGL', 'ChargeWeightG', 'TargetDropTempF', 'WeightOutG')\n\tbase = '[default]Roastery/CurrentBatch'\n\tpaths = []\n\tvalues = []\n\tfor k in members:\n\t\tif k not in event:\n\t\t\tcontinue\n\t\tv = event[k]\n\t\tif v is None:\n\t\t\tcontinue\n\t\ttry:\n\t\t\tif k in ints:\n\t\t\t\tv = int(float(v))\n\t\t\telif k in floats:\n\t\t\t\tv = float(v)\n\t\t\telse:\n\t\t\t\tv = str(v)\n\t\texcept Exception:\n\t\t\tcontinue\n\t\tpaths.append(base + '/' + k)\n\t\tvalues.append(v)\n\tif paths:\n\t\tsystem.tag.writeBlocking(paths, values)\n\t\tself.view.custom.formSaved = 'Batch details saved.'\n"
+                "script": "\timport roastery.core\n\troastery.core.config_submit(self, event)\n"
               }
             },
             "onCancelActionPerformed": {
@@ -11489,10 +11520,7 @@
         "props": {
           "text": "",
           "style": {
-            "fontSize": "13px",
-            "fontWeight": "700",
-            "color": "var(--success)",
-            "minHeight": "18px"
+            "classes": "roast-note-success"
           }
         },
         "propConfig": {
@@ -11517,9 +11545,7 @@
         "props": {
           "direction": "column",
           "style": {
-            "gap": "9px",
-            "borderTop": "1px solid var(--border)",
-            "paddingTop": "13px"
+            "classes": "roast-section-div"
           }
         },
         "children": [
@@ -11531,11 +11557,7 @@
             "props": {
               "text": "Custom Events",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "var(--callToAction)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.08em"
+                "classes": "roast-section-title"
               }
             },
             "position": {
@@ -11551,7 +11573,7 @@
               "direction": "row",
               "wrap": "wrap",
               "style": {
-                "gap": "12px"
+                "classes": "roast-gap-12"
               }
             },
             "children": [
@@ -11563,7 +11585,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -11575,11 +11597,7 @@
                     "props": {
                       "text": "Custom 1 name",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -11595,12 +11613,7 @@
                       "text": "",
                       "placeholder": "",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -11635,7 +11648,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -11647,11 +11660,7 @@
                     "props": {
                       "text": "Custom 1 kind",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -11667,12 +11676,7 @@
                       "text": "",
                       "placeholder": "",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -11713,7 +11717,7 @@
               "direction": "row",
               "wrap": "wrap",
               "style": {
-                "gap": "12px"
+                "classes": "roast-gap-12"
               }
             },
             "children": [
@@ -11725,7 +11729,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -11737,11 +11741,7 @@
                     "props": {
                       "text": "Custom 2 name",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -11757,12 +11757,7 @@
                       "text": "",
                       "placeholder": "",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -11797,7 +11792,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -11809,11 +11804,7 @@
                     "props": {
                       "text": "Custom 2 kind",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -11829,12 +11820,7 @@
                       "text": "",
                       "placeholder": "",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -11875,7 +11861,7 @@
               "direction": "row",
               "wrap": "wrap",
               "style": {
-                "gap": "12px"
+                "classes": "roast-gap-12"
               }
             },
             "children": [
@@ -11887,7 +11873,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -11899,11 +11885,7 @@
                     "props": {
                       "text": "Custom 3 name",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -11919,12 +11901,7 @@
                       "text": "",
                       "placeholder": "",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -11959,7 +11936,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -11971,11 +11948,7 @@
                     "props": {
                       "text": "Custom 3 kind",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -11991,12 +11964,7 @@
                       "text": "",
                       "placeholder": "",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -12037,7 +12005,7 @@
               "direction": "row",
               "wrap": "wrap",
               "style": {
-                "gap": "12px"
+                "classes": "roast-gap-12"
               }
             },
             "children": [
@@ -12049,7 +12017,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -12061,11 +12029,7 @@
                     "props": {
                       "text": "Custom 4 name",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -12081,12 +12045,7 @@
                       "text": "",
                       "placeholder": "",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -12121,7 +12080,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "gap": "4px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -12133,11 +12092,7 @@
                     "props": {
                       "text": "Custom 4 kind",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "700",
-                        "color": "var(--neutral-70)",
-                        "textTransform": "uppercase",
-                        "letterSpacing": "0.06em"
+                        "classes": "roast-form-caption"
                       }
                     },
                     "position": {
@@ -12153,12 +12108,7 @@
                       "text": "",
                       "placeholder": "",
                       "style": {
-                        "border": "1px solid var(--border)",
-                        "borderRadius": "8px",
-                        "padding": "8px 10px",
-                        "fontSize": "14px",
-                        "color": "var(--label)",
-                        "backgroundColor": "var(--input)"
+                        "classes": "roast-input"
                       }
                     },
                     "propConfig": {
@@ -12203,9 +12153,7 @@
         "props": {
           "direction": "column",
           "style": {
-            "gap": "9px",
-            "borderTop": "1px solid var(--border)",
-            "paddingTop": "13px"
+            "classes": "roast-section-div"
           }
         },
         "children": [
@@ -12217,11 +12165,7 @@
             "props": {
               "text": "Alarms",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "var(--callToAction)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.08em"
+                "classes": "roast-section-title"
               }
             },
             "position": {
@@ -12238,7 +12182,7 @@
               "alignItems": "center",
               "wrap": "wrap",
               "style": {
-                "gap": "10px"
+                "classes": "roast-gap-10"
               }
             },
             "children": [
@@ -12250,7 +12194,7 @@
                 "props": {
                   "selected": false,
                   "style": {
-                    "color": "var(--label)"
+                    "classes": "roast-checkbox"
                   }
                 },
                 "propConfig": {
@@ -12278,10 +12222,7 @@
                 "props": {
                   "text": "High bean temp",
                   "style": {
-                    "fontSize": "13px",
-                    "fontWeight": "700",
-                    "color": "var(--label)",
-                    "minWidth": "130px"
+                    "classes": "roast-alarm-cap"
                   }
                 },
                 "position": {
@@ -12297,12 +12238,7 @@
                   "value": 0,
                   "format": "0",
                   "style": {
-                    "border": "1px solid var(--border)",
-                    "borderRadius": "8px",
-                    "padding": "8px 10px",
-                    "fontSize": "14px",
-                    "color": "var(--label)",
-                    "backgroundColor": "var(--input)"
+                    "classes": "roast-input"
                   }
                 },
                 "propConfig": {
@@ -12331,12 +12267,7 @@
                   "text": "",
                   "placeholder": "",
                   "style": {
-                    "border": "1px solid var(--border)",
-                    "borderRadius": "8px",
-                    "padding": "8px 10px",
-                    "fontSize": "14px",
-                    "color": "var(--label)",
-                    "backgroundColor": "var(--input)"
+                    "classes": "roast-input"
                   }
                 },
                 "propConfig": {
@@ -12371,7 +12302,7 @@
               "alignItems": "center",
               "wrap": "wrap",
               "style": {
-                "gap": "10px"
+                "classes": "roast-gap-10"
               }
             },
             "children": [
@@ -12383,7 +12314,7 @@
                 "props": {
                   "selected": false,
                   "style": {
-                    "color": "var(--label)"
+                    "classes": "roast-checkbox"
                   }
                 },
                 "propConfig": {
@@ -12411,10 +12342,7 @@
                 "props": {
                   "text": "Drop approaching",
                   "style": {
-                    "fontSize": "13px",
-                    "fontWeight": "700",
-                    "color": "var(--label)",
-                    "minWidth": "130px"
+                    "classes": "roast-alarm-cap"
                   }
                 },
                 "position": {
@@ -12430,12 +12358,7 @@
                   "value": 0,
                   "format": "0",
                   "style": {
-                    "border": "1px solid var(--border)",
-                    "borderRadius": "8px",
-                    "padding": "8px 10px",
-                    "fontSize": "14px",
-                    "color": "var(--label)",
-                    "backgroundColor": "var(--input)"
+                    "classes": "roast-input"
                   }
                 },
                 "propConfig": {
@@ -12470,7 +12393,7 @@
               "alignItems": "center",
               "wrap": "wrap",
               "style": {
-                "gap": "10px"
+                "classes": "roast-gap-10"
               }
             },
             "children": [
@@ -12482,7 +12405,7 @@
                 "props": {
                   "selected": false,
                   "style": {
-                    "color": "var(--label)"
+                    "classes": "roast-checkbox"
                   }
                 },
                 "propConfig": {
@@ -12510,10 +12433,7 @@
                 "props": {
                   "text": "First crack watch",
                   "style": {
-                    "fontSize": "13px",
-                    "fontWeight": "700",
-                    "color": "var(--label)",
-                    "minWidth": "130px"
+                    "classes": "roast-alarm-cap"
                   }
                 },
                 "position": {
@@ -12529,12 +12449,7 @@
                   "value": 0,
                   "format": "0",
                   "style": {
-                    "border": "1px solid var(--border)",
-                    "borderRadius": "8px",
-                    "padding": "8px 10px",
-                    "fontSize": "14px",
-                    "color": "var(--label)",
-                    "backgroundColor": "var(--input)"
+                    "classes": "roast-input"
                   }
                 },
                 "propConfig": {
@@ -12582,14 +12497,7 @@
             "props": {
               "text": "Close",
               "style": {
-                "fontSize": "14px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 18px",
-                "cursor": "pointer",
-                "border": "none",
-                "backgroundColor": "#0c7bb3"
+                "classes": "roast-btn roast-btn-primary"
               }
             },
             "events": {
