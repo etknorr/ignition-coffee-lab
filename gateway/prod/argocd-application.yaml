@@ -1,0 +1,30 @@
+# ArgoCD Application for the Roastery gateway.
+#
+# This file does NOT deploy from the ignition-coffee-lab repo. It is a
+# stub written for the move: when the manifests in gateway/prod/ land
+# in the homelab repo as k8s/roastery/, this file belongs beside the
+# other apps in homelab k8s/apps/ (modeled directly on
+# k8s/apps/ignition.yaml there). Until that move happens, treat this
+# whole prod folder as a best effort starting point.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: roastery
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/etknorr/homelab.git
+    targetRevision: main
+    path: k8s/roastery
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: roastery
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

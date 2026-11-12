@@ -1,0 +1,110 @@
+---
+# Local deployment for the Roastery gateway: Ignition 2027 Maker plus
+# Postgres, structured after etknorr/project-template (anchors,
+# bootstrap service, bind mounted projects and config resources,
+# Traefik on an external proxy network).
+#
+# Deviations from project-template, all deliberate:
+#   * Image is the Ignition 2027 early access tag (verified on Docker
+#     Hub 2026-11-11) and the edition is Maker, not standard.
+#   * The admin user is commissioned from GATEWAY_ADMIN_* environment
+#     variables (the homelab pattern) instead of a committed user
+#     source, so no credential material lives in git.
+#   * The config mode is named "local"; the prod sibling mode lives in
+#     ../config/resources/prod.
+#   * Postgres gets a named volume (db-data). The template mounts only
+#     its init scripts, which loses the database with the container.
+#
+# Paths are relative to this file (gateway/local/ in the repo):
+#   ../../roastery/project   the Perspective project (contains Roastery/)
+#   ../config/resources      the gateway configuration in gateway/config/
+x-ignition-common: &ignition-common
+  # 2027.2.0-beta1 is a real early access tag on Docker Hub (pushed
+  # 2026-11-04, amd64 and arm64). When a 2027 GA tag ships, pin to it
+  # the same way: an exact version, never latest.
+  image: &ignition-image inductiveautomation/ignition:2027.2.0-beta1
+  depends_on:
+    db:
+      condition: service_healthy
+    bootstrap:
+      condition: service_completed_successfully
+  networks:
+    proxy: {}
+
+x-ignition-environment: &ignition-environment
+  ACCEPT_IGNITION_EULA: "Y"
+  IGNITION_EDITION: maker
+  GATEWAY_ADMIN_USERNAME: ${GATEWAY_ADMIN_USERNAME}
+  GATEWAY_ADMIN_PASSWORD: ${GATEWAY_ADMIN_PASSWORD}
+  TZ: ${TZ}
+
+services:
+  bootstrap:
+    image: *ignition-image
+    user: root
+    entrypoint: ["/bin/bash", "/docker-bootstrap.sh"]
+    environment:
+      GATEWAY_NAME: ${GATEWAY_NAME}
+    volumes:
+      - ignition-data:/data
+      - ./scripts/docker-bootstrap.sh:/docker-bootstrap.sh
+
+  gateway:
+    <<: [*ignition-common]
+    container_name: ${GATEWAY_NAME}
+    hostname: ${GATEWAY_NAME}
+    volumes:
+      - ignition-data:/usr/local/bin/ignition/data
+      - ../../roastery/project:/usr/local/bin/ignition/data/projects
+      - ../config/resources/core:/usr/local/bin/ignition/data/config/resources/core
+      - ../config/resources/local:/usr/local/bin/ignition/data/config/resources/local
+    environment:
+      <<: *ignition-environment
+    labels:
+      - traefik.hostname=${GATEWAY_NAME}
+      - traefik.enable=true
+    # Direct access without Traefik: uncomment to publish the gateway
+    # on http://localhost:8088 instead of ${GATEWAY_NAME}.localtest.me.
+    # ports:
+    #   - "8088:8088"
+    command: >
+      -n ${GATEWAY_NAME}
+      -m 4096
+      -h 80
+      -s 443
+      -a ${GATEWAY_NAME}.localtest.me
+      --
+      gateway.useProxyForwardedHeader=true
+      -Dignition.config.mode=${DEPLOYMENT_MODE:-local}
+
+  db:
+    image: postgres:18.4
+    hostname: db-${GATEWAY_NAME}
+    container_name: db-${GATEWAY_NAME}
+    volumes:
+      - ./services/db/init:/docker-entrypoint-initdb.d
+      - db-data:/var/lib/postgresql/data
+    environment:
+      TZ: ${TZ}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-U", "ignition"]
+      interval: 10s
+      timeout: 20s
+      retries: 10
+    networks:
+      proxy:
+        aliases:
+          - db-${GATEWAY_NAME}
+
+volumes:
+  ignition-data:
+  db-data:
+
+networks:
+  # Created by the Traefik stack (see the ignition-guides setup
+  # project-template assumes). If Traefik is not in play, create it
+  # once with: docker network create proxy
+  proxy:
+    external: true

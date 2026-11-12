@@ -171,6 +171,13 @@ builder.
 7. Optionally run `validate_roastery_artisan.py` and the
    screenshot verify scripts to reproduce the lab proof.
 
+## Gateway configuration
+
+The gateway configuration this app depends on (historian,
+database connection, devices) and its two deployment modes,
+local Docker and production Kubernetes, live in the `gateway/`
+folder at the root of this repository.
+
 ## Honest lab notes
 
 - In the lab there is no physical SR800 attached. A

@@ -1,0 +1,7 @@
+TimeInterval,BrowsePath,ValueSource,DataType
+0,BeanTemp,"ramp(200,300,240,true)",Double
+240,BeanTemp,"ramp(300,352,150,true)",Double
+390,BeanTemp,"ramp(352,385,120,true)",Double
+510,BeanTemp,"ramp(385,397,90,true)",Double
+600,BeanTemp,"ramp(397,412,90,true)",Double
+690,BeanTemp,"ramp(397,412,90,true)",Double

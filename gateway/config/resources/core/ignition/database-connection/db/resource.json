@@ -1,0 +1,19 @@
+{
+  "scope": "A",
+  "description": "Postgres database connection for the Roastery gateway: historian and application data backend in both deployment modes.",
+  "version": 1,
+  "restricted": false,
+  "overridable": true,
+  "files": [
+    "config.json"
+  ],
+  "attributes": {
+    "lastModification": {
+      "actor": "admin",
+      "timestamp": "2026-11-11T00:00:00Z"
+    },
+    "uuid": "9f035c22-a38c-4e95-81b7-aeae9648bb80",
+    "lastModificationSignature": "c3f4df077cbd04a10634fd69ae7f2e48a6fa2701739f2b3e0d4ab470caeb7175",
+    "enabled": true
+  }
+}

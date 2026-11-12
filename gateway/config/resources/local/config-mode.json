@@ -1,0 +1,1 @@
+{"description":"Overrides for the local Docker deployment (gateway/local). Inherits core.","enabled":true,"inheritable":true,"parent":"core","title":"Local"}

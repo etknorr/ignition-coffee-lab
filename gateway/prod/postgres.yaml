@@ -1,0 +1,81 @@
+# Postgres for the Roastery gateway: the database backend and the
+# SQL historian store. The Service is deliberately named "db" in this
+# namespace so the gateway's db connection
+# (jdbc:postgresql://db:5432/db, defined in gateway/config/) resolves
+# unchanged in both deployment modes.
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  labels:
+    app: roastery-db
+spec:
+  type: ClusterIP
+  selector:
+    app: roastery-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  labels:
+    app: roastery-db
+spec:
+  serviceName: db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: roastery-db
+  template:
+    metadata:
+      labels:
+        app: roastery-db
+    spec:
+      containers:
+        - name: postgres
+          # Same Postgres major line the Docker mode pins
+          # (postgres:18.4 in gateway/local/docker-compose.yml,
+          # following etknorr/project-template).
+          image: postgres:18.4
+          env:
+            - name: POSTGRES_USER
+              value: ignition
+            - name: POSTGRES_DB
+              value: db
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: roastery-db
+                  key: password
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-h", "localhost", "-U", "ignition", "-d", "db"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: longhorn
+        resources:
+          requests:
+            storage: 10Gi

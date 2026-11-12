@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: roastery
+  labels:
+    app: roastery
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # single gateway with an RWO volume; no rolling tricks
+  selector:
+    matchLabels:
+      app: roastery
+  template:
+    metadata:
+      labels:
+        app: roastery
+    spec:
+      containers:
+        - name: ignition
+          # Pinned to the 2027 early access tag, verified on Docker
+          # Hub. The homelab platform gateway still runs
+          # inductiveautomation/ignition:latest with a note to pin;
+          # this deployment follows that note instead of the example.
+          # Move to the 2027 GA tag when it ships.
+          image: inductiveautomation/ignition:2027.2.0-beta1
+          args:
+            - -n
+            - roastery-gateway
+            # Config mode "prod" (../config/resources/prod, parent
+            # core), mirroring the compose command in
+            # gateway/local/docker-compose.yml. Config resources are
+            # not bind mounted in Kubernetes; the mode matters once
+            # the resources are synced onto the gateway, and the arg
+            # form after "--" should be verified on first deploy,
+            # since the homelab deployment passes only -n today.
+            - --
+            - -Dignition.config.mode=prod
+          env:
+            - name: ACCEPT_IGNITION_EULA
+              value: "Y"
+            # The Roastery is a Maker Edition app. The homelab
+            # platform gateway sets no edition (standard, licensed);
+            # a Maker gateway is a separate gateway by design.
+            - name: IGNITION_EDITION
+              value: maker
+            - name: GATEWAY_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: roastery-admin
+                  key: username
+            - name: GATEWAY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: roastery-admin
+                  key: password
+          ports:
+            - name: http
+              containerPort: 8088
+          volumeMounts:
+            - name: data
+              mountPath: /usr/local/bin/ignition/data
+          readinessProbe:
+            # 2027 serves /StatusPing (verified against the lab Maker
+            # gateway). The homelab 8.3 deployment probes
+            # /main/StatusPing.jsp; use that path instead if a 2027
+            # build ever answers it more reliably.
+            httpGet:
+              path: /StatusPing
+              port: 8088
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: roastery-data

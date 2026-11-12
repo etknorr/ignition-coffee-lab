@@ -1,0 +1,1 @@
+{"description":"Overrides for the Kubernetes deployment (gateway/prod). Inherits core.","enabled":true,"inheritable":true,"parent":"core","title":"Production"}
