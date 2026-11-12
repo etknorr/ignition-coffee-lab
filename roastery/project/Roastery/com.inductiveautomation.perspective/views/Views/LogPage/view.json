@@ -1,0 +1,165 @@
+{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 1440,
+      "height": 760
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "root"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-app"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Content"
+        },
+        "props": {
+          "direction": "column",
+          "style": {
+            "classes": "roast-content roast-gap-14"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "HeadRow"
+            },
+            "props": {
+              "direction": "row",
+              "justify": "flex-end",
+              "alignItems": "center",
+              "wrap": "wrap",
+              "style": {
+                "classes": "roast-gap-12"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "HeadCol"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "Title"
+                    },
+                    "props": {
+                      "text": "Roast Log",
+                      "style": {
+                        "classes": "roast-title"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "Sub"
+                    },
+                    "props": {
+                      "text": "Previous batches in the database. Select one for its detail, the editor, or a ghost overlay.",
+                      "style": {
+                        "classes": "roast-subtitle"
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "0px"
+                }
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "NewRoastButton"
+                },
+                "props": {
+                  "text": "New Roast",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-green"
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core, roastery.batches\n\troastery.batches.new_roast(self)\n"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "NewBatchButton"
+                },
+                "props": {
+                  "text": "New Batch",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-primary"
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core, roastery.batches\n\troastery.batches.open_editor(self, create=True)\n"
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "72px"
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "BatchesPanelEmbed"
+            },
+            "props": {
+              "path": "Views/BatchesPanel",
+              "params": {}
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

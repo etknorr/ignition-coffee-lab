@@ -1,0 +1,167 @@
+{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 1100,
+      "height": 1400
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "root"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-app"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Content"
+        },
+        "props": {
+          "direction": "column",
+          "style": {
+            "classes": "roast-content roast-gap-14"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "HeadCol"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "Title"
+                },
+                "props": {
+                  "text": "Settings",
+                  "style": {
+                    "classes": "roast-title"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "Sub"
+                },
+                "props": {
+                  "text": "Standing configuration for the roaster. Changes write live tags and apply immediately.",
+                  "style": {
+                    "classes": "roast-subtitle"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "SettingsRoasterEmbed"
+            },
+            "props": {
+              "path": "Views/SettingsRoaster",
+              "params": {}
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "SettingsTargetsEmbed"
+            },
+            "props": {
+              "path": "Views/SettingsTargets",
+              "params": {}
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "SettingsRorEmbed"
+            },
+            "props": {
+              "path": "Views/SettingsRor",
+              "params": {}
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "SettingsAlarmsEmbed"
+            },
+            "props": {
+              "path": "Views/SettingsAlarms",
+              "params": {}
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "SettingsMetadataEmbed"
+            },
+            "props": {
+              "path": "Views/SettingsMetadata",
+              "params": {}
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "SettingsCustomsEmbed"
+            },
+            "props": {
+              "path": "Views/SettingsCustoms",
+              "params": {}
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

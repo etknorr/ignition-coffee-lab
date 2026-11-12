@@ -1,0 +1,457 @@
+{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 390,
+      "height": 150
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "root"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-controldock"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "PrimaryRow"
+        },
+        "props": {
+          "direction": "row",
+          "style": {
+            "classes": "roast-gap-8"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "MChargeButton"
+            },
+            "props": {
+              "text": "Charge",
+              "style": {
+                "classes": "roast-btn roast-btn-lg roast-btn-charge"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/State} = 'Idle' || {[default]Roastery/CurrentBatch/State} = 'Complete'"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.charge()\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "MDryEndButton"
+            },
+            "props": {
+              "text": "Dry End",
+              "style": {
+                "classes": "roast-btn roast-btn-lg roast-btn-blue"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/State} = 'Roasting' && {[default]Roastery/CurrentBatch/DryEndElapsedSec} < 0"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.stamp_event('DryEnd', 'Dry End')\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "MFCStartButton"
+            },
+            "props": {
+              "text": "FC Start",
+              "style": {
+                "classes": "roast-btn roast-btn-lg roast-btn-blue"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/State} = 'Roasting' && {[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} < 0"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.stamp_event('FirstCrackStart', 'First Crack Start')\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "MDropButton"
+            },
+            "props": {
+              "text": "Drop",
+              "style": {
+                "classes": "roast-btn roast-btn-lg roast-btn-drop"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/State} = 'Roasting' && {[default]Roastery/CurrentBatch/DropElapsedSec} < 0"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.drop()\n"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Steppers"
+        },
+        "props": {
+          "direction": "row",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "FanStepper"
+            },
+            "props": {
+              "direction": "column",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "FanStepperCaption"
+                },
+                "props": {
+                  "text": "FAN",
+                  "style": {
+                    "classes": "roast-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "FanStepperRow"
+                },
+                "props": {
+                  "direction": "row",
+                  "justify": "center",
+                  "alignItems": "center",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.input.button",
+                    "meta": {
+                      "name": "FanStepperMinus"
+                    },
+                    "props": {
+                      "text": "-",
+                      "style": {
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-reset"
+                      }
+                    },
+                    "events": {
+                      "dom": {
+                        "onClick": {
+                          "scope": "G",
+                          "type": "script",
+                          "config": {
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('FanLevel', -1, 'Fan')\n"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "FanStepperValue"
+                    },
+                    "props": {
+                      "text": "5",
+                      "style": {
+                        "classes": "roast-stepper-value"
+                      }
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/FanLevel",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false,
+                          "transforms": [
+                            {
+                              "type": "format",
+                              "formatType": "numeric",
+                              "formatValue": "0"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.button",
+                    "meta": {
+                      "name": "FanStepperPlus"
+                    },
+                    "props": {
+                      "text": "+",
+                      "style": {
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-blue"
+                      }
+                    },
+                    "events": {
+                      "dom": {
+                        "onClick": {
+                          "scope": "G",
+                          "type": "script",
+                          "config": {
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('FanLevel', 1, 'Fan')\n"
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "150px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "HeatStepper"
+            },
+            "props": {
+              "direction": "column",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "HeatStepperCaption"
+                },
+                "props": {
+                  "text": "HEAT",
+                  "style": {
+                    "classes": "roast-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "HeatStepperRow"
+                },
+                "props": {
+                  "direction": "row",
+                  "justify": "center",
+                  "alignItems": "center",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.input.button",
+                    "meta": {
+                      "name": "HeatStepperMinus"
+                    },
+                    "props": {
+                      "text": "-",
+                      "style": {
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-reset"
+                      }
+                    },
+                    "events": {
+                      "dom": {
+                        "onClick": {
+                          "scope": "G",
+                          "type": "script",
+                          "config": {
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('HeatLevel', -1, 'Heat')\n"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "HeatStepperValue"
+                    },
+                    "props": {
+                      "text": "5",
+                      "style": {
+                        "classes": "roast-stepper-value"
+                      }
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/HeatLevel",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false,
+                          "transforms": [
+                            {
+                              "type": "format",
+                              "formatType": "numeric",
+                              "formatValue": "0"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.button",
+                    "meta": {
+                      "name": "HeatStepperPlus"
+                    },
+                    "props": {
+                      "text": "+",
+                      "style": {
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-charge"
+                      }
+                    },
+                    "events": {
+                      "dom": {
+                        "onClick": {
+                          "scope": "G",
+                          "type": "script",
+                          "config": {
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('HeatLevel', 1, 'Heat')\n"
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "150px"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

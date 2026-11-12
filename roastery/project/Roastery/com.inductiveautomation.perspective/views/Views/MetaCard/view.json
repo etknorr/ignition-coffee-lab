@@ -57,22 +57,10 @@
             "events": {
               "dom": {
                 "onClick": {
-                  "scope": "C",
-                  "type": "popup",
+                  "scope": "G",
+                  "type": "script",
                   "config": {
-                    "type": "open",
-                    "id": "roastery-config",
-                    "viewPath": "Views/Config",
-                    "title": "Roast Setup",
-                    "modal": true,
-                    "showCloseIcon": true,
-                    "draggable": true,
-                    "resizable": true,
-                    "overlayDismiss": true,
-                    "position": {
-                      "width": "min(700px, 94vw)",
-                      "height": "min(880px, 94vh)"
-                    }
+                    "script": "\tsystem.perspective.navigate(page='/settings')\n"
                   }
                 }
               }

@@ -1,0 +1,380 @@
+{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 900,
+      "height": 240
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "AlarmSection"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-card roast-gap-10"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "AlarmSectionHead"
+        },
+        "props": {
+          "text": "Alarms",
+          "style": {
+            "classes": "roast-section-title"
+          }
+        }
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "AlarmSectionDesc"
+        },
+        "props": {
+          "text": "Lite alarms shown as the banner on the Roast page.",
+          "style": {
+            "classes": "roast-section-desc"
+          }
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "AlarmHigh"
+        },
+        "props": {
+          "direction": "row",
+          "alignItems": "center",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.input.checkbox",
+            "meta": {
+              "name": "AlarmHighCheck"
+            },
+            "props": {
+              "selected": false,
+              "text": "",
+              "style": {
+                "classes": "roast-checkbox"
+              }
+            },
+            "propConfig": {
+              "props.selected": {
+                "binding": {
+                  "type": "tag",
+                  "config": {
+                    "tagPath": "[default]Roastery/CurrentBatch/AlarmHighTempEnabled",
+                    "mode": "direct",
+                    "bidirectional": true
+                  },
+                  "bidirectional": true
+                }
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "30px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "AlarmHighCap"
+            },
+            "props": {
+              "text": "High bean temp",
+              "style": {
+                "classes": "roast-alarm-cap"
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "168px"
+            }
+          },
+          {
+            "type": "ia.input.numeric-entry-field",
+            "meta": {
+              "name": "AlarmHighNum"
+            },
+            "props": {
+              "value": 0,
+              "format": "0",
+              "style": {
+                "classes": "roast-input"
+              }
+            },
+            "propConfig": {
+              "props.value": {
+                "binding": {
+                  "type": "tag",
+                  "config": {
+                    "tagPath": "[default]Roastery/CurrentBatch/AlarmHighTempF",
+                    "mode": "direct",
+                    "bidirectional": true
+                  },
+                  "bidirectional": true
+                }
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "110px"
+            }
+          },
+          {
+            "type": "ia.input.text-field",
+            "meta": {
+              "name": "AlarmHighMsgIn"
+            },
+            "props": {
+              "text": "",
+              "placeholder": "",
+              "style": {
+                "classes": "roast-input"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "tag",
+                  "config": {
+                    "tagPath": "[default]Roastery/CurrentBatch/AlarmHighTempMsg",
+                    "mode": "direct",
+                    "bidirectional": true
+                  },
+                  "bidirectional": true
+                }
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "220px"
+            }
+          }
+        ],
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "48px"
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "AlarmDrop"
+        },
+        "props": {
+          "direction": "row",
+          "alignItems": "center",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.input.checkbox",
+            "meta": {
+              "name": "AlarmDropCheck"
+            },
+            "props": {
+              "selected": false,
+              "text": "",
+              "style": {
+                "classes": "roast-checkbox"
+              }
+            },
+            "propConfig": {
+              "props.selected": {
+                "binding": {
+                  "type": "tag",
+                  "config": {
+                    "tagPath": "[default]Roastery/CurrentBatch/AlarmDropEnabled",
+                    "mode": "direct",
+                    "bidirectional": true
+                  },
+                  "bidirectional": true
+                }
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "30px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "AlarmDropCap"
+            },
+            "props": {
+              "text": "Drop approaching",
+              "style": {
+                "classes": "roast-alarm-cap"
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "168px"
+            }
+          },
+          {
+            "type": "ia.input.numeric-entry-field",
+            "meta": {
+              "name": "AlarmDropNum"
+            },
+            "props": {
+              "value": 0,
+              "format": "0",
+              "style": {
+                "classes": "roast-input"
+              }
+            },
+            "propConfig": {
+              "props.value": {
+                "binding": {
+                  "type": "tag",
+                  "config": {
+                    "tagPath": "[default]Roastery/CurrentBatch/AlarmDropDeltaF",
+                    "mode": "direct",
+                    "bidirectional": true
+                  },
+                  "bidirectional": true
+                }
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "110px"
+            }
+          }
+        ],
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "48px"
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "AlarmFC"
+        },
+        "props": {
+          "direction": "row",
+          "alignItems": "center",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.input.checkbox",
+            "meta": {
+              "name": "AlarmFCCheck"
+            },
+            "props": {
+              "selected": false,
+              "text": "",
+              "style": {
+                "classes": "roast-checkbox"
+              }
+            },
+            "propConfig": {
+              "props.selected": {
+                "binding": {
+                  "type": "tag",
+                  "config": {
+                    "tagPath": "[default]Roastery/CurrentBatch/AlarmFCWatchEnabled",
+                    "mode": "direct",
+                    "bidirectional": true
+                  },
+                  "bidirectional": true
+                }
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "30px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "AlarmFCCap"
+            },
+            "props": {
+              "text": "First crack watch",
+              "style": {
+                "classes": "roast-alarm-cap"
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "168px"
+            }
+          },
+          {
+            "type": "ia.input.numeric-entry-field",
+            "meta": {
+              "name": "AlarmFCNum"
+            },
+            "props": {
+              "value": 0,
+              "format": "0",
+              "style": {
+                "classes": "roast-input"
+              }
+            },
+            "propConfig": {
+              "props.value": {
+                "binding": {
+                  "type": "tag",
+                  "config": {
+                    "tagPath": "[default]Roastery/CurrentBatch/AlarmFCWindowSec",
+                    "mode": "direct",
+                    "bidirectional": true
+                  },
+                  "bidirectional": true
+                }
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "110px"
+            }
+          }
+        ],
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "48px"
+        }
+      }
+    ]
+  }
+}

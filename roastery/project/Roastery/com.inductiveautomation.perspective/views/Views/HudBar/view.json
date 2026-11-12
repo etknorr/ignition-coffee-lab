@@ -1,0 +1,351 @@
+{
+  "custom": {
+    "clockText": "00:00",
+    "clockCaption": "ROAST TIME",
+    "phaseText": "Pre-charge"
+  },
+  "params": {},
+  "propConfig": {
+    "custom.clockText": {
+      "binding": {
+        "type": "expr",
+        "config": {
+          "expression": "if(({[default]Roastery/CurrentBatch/DropTime} != null && ({[default]Roastery/CurrentBatch/State} = 'Dropped' || {[default]Roastery/CurrentBatch/State} = 'Cooling' || {[default]Roastery/CurrentBatch/State} = 'Complete')), numberFormat(floor((now() - {[default]Roastery/CurrentBatch/DropTime}) / 60000), '00') + ':' + numberFormat(floor(((now() - {[default]Roastery/CurrentBatch/DropTime}) / 1000) % 60), '00'), if({[default]Roastery/CurrentBatch/State} = 'Roasting', numberFormat(floor((now() - {[default]Roastery/CurrentBatch/StartTime}) / 60000), '00') + ':' + numberFormat(floor(((now() - {[default]Roastery/CurrentBatch/StartTime}) / 1000) % 60), '00'), '00:00'))"
+        }
+      }
+    },
+    "custom.clockCaption": {
+      "binding": {
+        "type": "expr",
+        "config": {
+          "expression": "if(({[default]Roastery/CurrentBatch/DropTime} != null && ({[default]Roastery/CurrentBatch/State} = 'Dropped' || {[default]Roastery/CurrentBatch/State} = 'Cooling' || {[default]Roastery/CurrentBatch/State} = 'Complete')), 'SINCE DROP', 'ROAST TIME')"
+        }
+      }
+    },
+    "custom.phaseText": {
+      "binding": {
+        "type": "expr",
+        "config": {
+          "expression": "if({[default]Roastery/CurrentBatch/State} = 'Idle', 'Pre-charge', if({[default]Roastery/CurrentBatch/State} = 'Dropped', 'Dropped', if({[default]Roastery/CurrentBatch/State} = 'Cooling', 'Cooling', if({[default]Roastery/CurrentBatch/State} = 'Complete', 'Complete', if({[default]Roastery/CurrentBatch/SecondCrackStartElapsedSec} >= 0, 'Second Crack', if({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, 'Development', if({[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, 'Maillard', 'Drying')))))))"
+        }
+      }
+    }
+  },
+  "props": {
+    "defaultSize": {
+      "width": 900,
+      "height": 54
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "root"
+    },
+    "props": {
+      "direction": "row",
+      "justify": "space-between",
+      "alignItems": "center",
+      "style": {
+        "classes": "roast-hud"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "HudState"
+        },
+        "props": {
+          "text": "Idle",
+          "style": {
+            "classes": "roast-pill"
+          }
+        },
+        "propConfig": {
+          "props.text": {
+            "binding": {
+              "type": "tag",
+              "config": {
+                "tagPath": "[default]Roastery/CurrentBatch/State",
+                "mode": "direct",
+                "bidirectional": false
+              },
+              "bidirectional": false
+            }
+          },
+          "props.style.backgroundColor": {
+            "binding": {
+              "type": "tag",
+              "config": {
+                "tagPath": "[default]Roastery/CurrentBatch/State",
+                "mode": "direct",
+                "bidirectional": false
+              },
+              "transforms": [
+                {
+                  "type": "map",
+                  "inputType": "scalar",
+                  "outputType": "color",
+                  "fallback": "#6b7280",
+                  "mappings": [
+                    {
+                      "input": "Idle",
+                      "output": "#6b7280"
+                    },
+                    {
+                      "input": "Roasting",
+                      "output": "#dc2626"
+                    },
+                    {
+                      "input": "Dropped",
+                      "output": "#475569"
+                    },
+                    {
+                      "input": "Cooling",
+                      "output": "#0284c7"
+                    },
+                    {
+                      "input": "Complete",
+                      "output": "#16a34a"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Bean"
+        },
+        "props": {
+          "direction": "column"
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "BeanCap"
+            },
+            "props": {
+              "text": "BEAN F",
+              "style": {
+                "classes": "roast-hud-cap"
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "BeanVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-hud-value"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "tag",
+                  "config": {
+                    "tagPath": "[default]Roastery/CurrentBatch/BeanTempF",
+                    "mode": "direct",
+                    "bidirectional": false
+                  },
+                  "bidirectional": false,
+                  "transforms": [
+                    {
+                      "type": "format",
+                      "formatType": "numeric",
+                      "formatValue": "0.0"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ],
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "auto"
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Ror"
+        },
+        "props": {
+          "direction": "column"
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "RorCap"
+            },
+            "props": {
+              "text": "ROR",
+              "style": {
+                "classes": "roast-hud-cap"
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "RorVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-hud-value"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "tag",
+                  "config": {
+                    "tagPath": "[default]Roastery/CurrentBatch/RateOfRiseF",
+                    "mode": "direct",
+                    "bidirectional": false
+                  },
+                  "bidirectional": false,
+                  "transforms": [
+                    {
+                      "type": "format",
+                      "formatType": "numeric",
+                      "formatValue": "0.0"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ],
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "auto"
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Clock"
+        },
+        "props": {
+          "direction": "column"
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "ClockCap"
+            },
+            "props": {
+              "text": "ROAST TIME",
+              "style": {
+                "classes": "roast-hud-cap"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.clockCaption"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "ClockVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-hud-value"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.clockText"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "auto"
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Phase"
+        },
+        "props": {
+          "direction": "column"
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "PhaseCap"
+            },
+            "props": {
+              "text": "PHASE",
+              "style": {
+                "classes": "roast-hud-cap"
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "PhaseVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-hud-value"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.phaseText"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "auto"
+        }
+      }
+    ]
+  }
+}

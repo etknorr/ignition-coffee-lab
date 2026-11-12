@@ -5,7 +5,7 @@
   "props": {
     "defaultSize": {
       "width": 560,
-      "height": 430
+      "height": 470
     }
   },
   "root": {
@@ -100,9 +100,21 @@
         ]
       },
       {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "PrimaryCap"
+        },
+        "props": {
+          "text": "Primary flow",
+          "style": {
+            "classes": "roast-caption"
+          }
+        }
+      },
+      {
         "type": "ia.container.flex",
         "meta": {
-          "name": "EventRow1"
+          "name": "PrimaryRow"
         },
         "props": {
           "direction": "row",
@@ -126,7 +138,7 @@
             "position": {
               "grow": 1,
               "shrink": 1,
-              "basis": "104px"
+              "basis": "46%"
             },
             "propConfig": {
               "props.enabled": {
@@ -164,7 +176,7 @@
             "position": {
               "grow": 1,
               "shrink": 1,
-              "basis": "104px"
+              "basis": "46%"
             },
             "propConfig": {
               "props.enabled": {
@@ -202,7 +214,7 @@
             "position": {
               "grow": 1,
               "shrink": 1,
-              "basis": "104px"
+              "basis": "46%"
             },
             "propConfig": {
               "props.enabled": {
@@ -226,6 +238,71 @@
               }
             }
           },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "DropButton"
+            },
+            "props": {
+              "text": "Drop",
+              "style": {
+                "classes": "roast-btn roast-btn-event roast-btn-drop"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "46%"
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/State} = 'Roasting' && {[default]Roastery/CurrentBatch/DropElapsedSec} < 0"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.drop()\n"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "SecondaryCap"
+        },
+        "props": {
+          "text": "More events",
+          "style": {
+            "classes": "roast-caption"
+          }
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "SecondaryRow"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-8"
+          }
+        },
+        "children": [
           {
             "type": "ia.input.button",
             "meta": {
@@ -263,22 +340,7 @@
                 }
               }
             }
-          }
-        ]
-      },
-      {
-        "type": "ia.container.flex",
-        "meta": {
-          "name": "EventRow2"
-        },
-        "props": {
-          "direction": "row",
-          "wrap": "wrap",
-          "style": {
-            "classes": "roast-gap-8"
-          }
-        },
-        "children": [
+          },
           {
             "type": "ia.input.button",
             "meta": {
@@ -354,89 +416,13 @@
                 }
               }
             }
-          },
-          {
-            "type": "ia.input.button",
-            "meta": {
-              "name": "DropButton"
-            },
-            "props": {
-              "text": "Drop",
-              "style": {
-                "classes": "roast-btn roast-btn-event roast-btn-drop"
-              }
-            },
-            "position": {
-              "grow": 1,
-              "shrink": 1,
-              "basis": "104px"
-            },
-            "propConfig": {
-              "props.enabled": {
-                "binding": {
-                  "type": "expr",
-                  "config": {
-                    "expression": "{[default]Roastery/CurrentBatch/State} = 'Roasting' && {[default]Roastery/CurrentBatch/DropElapsedSec} < 0"
-                  }
-                }
-              }
-            },
-            "events": {
-              "dom": {
-                "onClick": {
-                  "scope": "G",
-                  "type": "script",
-                  "config": {
-                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.drop()\n"
-                  }
-                }
-              }
-            }
-          },
-          {
-            "type": "ia.input.button",
-            "meta": {
-              "name": "CoolButton"
-            },
-            "props": {
-              "text": "Cool",
-              "style": {
-                "classes": "roast-btn roast-btn-event roast-btn-cool"
-              }
-            },
-            "position": {
-              "grow": 1,
-              "shrink": 1,
-              "basis": "104px"
-            },
-            "propConfig": {
-              "props.enabled": {
-                "binding": {
-                  "type": "expr",
-                  "config": {
-                    "expression": "{[default]Roastery/CurrentBatch/State} = 'Dropped'"
-                  }
-                }
-              }
-            },
-            "events": {
-              "dom": {
-                "onClick": {
-                  "scope": "G",
-                  "type": "script",
-                  "config": {
-                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.cool()\n"
-                  }
-                }
-              }
-            }
           }
         ]
       },
       {
         "type": "ia.container.flex",
         "meta": {
-          "name": "EventRow3"
+          "name": "CustomRow"
         },
         "props": {
           "direction": "row",
@@ -446,82 +432,6 @@
           }
         },
         "children": [
-          {
-            "type": "ia.input.button",
-            "meta": {
-              "name": "FinishButton"
-            },
-            "props": {
-              "text": "Finish",
-              "style": {
-                "classes": "roast-btn roast-btn-event roast-btn-green"
-              }
-            },
-            "position": {
-              "grow": 1,
-              "shrink": 1,
-              "basis": "104px"
-            },
-            "propConfig": {
-              "props.enabled": {
-                "binding": {
-                  "type": "expr",
-                  "config": {
-                    "expression": "{[default]Roastery/CurrentBatch/State} = 'Cooling'"
-                  }
-                }
-              }
-            },
-            "events": {
-              "dom": {
-                "onClick": {
-                  "scope": "G",
-                  "type": "script",
-                  "config": {
-                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.finish()\n"
-                  }
-                }
-              }
-            }
-          },
-          {
-            "type": "ia.input.button",
-            "meta": {
-              "name": "ResetButton"
-            },
-            "props": {
-              "text": "Reset",
-              "style": {
-                "classes": "roast-btn roast-btn-event roast-btn-reset"
-              }
-            },
-            "position": {
-              "grow": 1,
-              "shrink": 1,
-              "basis": "104px"
-            },
-            "propConfig": {
-              "props.enabled": {
-                "binding": {
-                  "type": "expr",
-                  "config": {
-                    "expression": "{[default]Roastery/CurrentBatch/State} != 'Idle'"
-                  }
-                }
-              }
-            },
-            "events": {
-              "dom": {
-                "onClick": {
-                  "scope": "G",
-                  "type": "script",
-                  "config": {
-                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.reset_batch()\n"
-                  }
-                }
-              }
-            }
-          },
           {
             "type": "ia.input.button",
             "meta": {
@@ -778,9 +688,9 @@
                       "name": "FanStepperMinus"
                     },
                     "props": {
-                      "text": "\u2212",
+                      "text": "-",
                       "style": {
-                        "classes": "roast-btn roast-btn-step roast-btn-reset"
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-reset"
                       }
                     },
                     "events": {
@@ -835,7 +745,7 @@
                     "props": {
                       "text": "+",
                       "style": {
-                        "classes": "roast-btn roast-btn-step roast-btn-blue"
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-blue"
                       }
                     },
                     "events": {
@@ -904,9 +814,9 @@
                       "name": "HeatStepperMinus"
                     },
                     "props": {
-                      "text": "\u2212",
+                      "text": "-",
                       "style": {
-                        "classes": "roast-btn roast-btn-step roast-btn-reset"
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-reset"
                       }
                     },
                     "events": {
@@ -961,7 +871,7 @@
                     "props": {
                       "text": "+",
                       "style": {
-                        "classes": "roast-btn roast-btn-step roast-btn-charge"
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-charge"
                       }
                     },
                     "events": {
@@ -990,43 +900,163 @@
       {
         "type": "ia.container.flex",
         "meta": {
-          "name": "FooterRow"
+          "name": "ActionRow"
         },
         "props": {
           "direction": "row",
-          "justify": "flex-end"
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-8"
+          }
         },
         "children": [
           {
             "type": "ia.input.button",
             "meta": {
-              "name": "RoastSetupButton"
+              "name": "CoolButton"
             },
             "props": {
-              "text": "Roast Setup",
+              "text": "Cool",
               "style": {
-                "classes": "roast-btn roast-btn-primary"
+                "classes": "roast-btn roast-btn-event roast-btn-cool"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "104px"
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/State} = 'Dropped'"
+                  }
+                }
               }
             },
             "events": {
               "dom": {
                 "onClick": {
-                  "scope": "C",
-                  "type": "popup",
+                  "scope": "G",
+                  "type": "script",
                   "config": {
-                    "type": "open",
-                    "id": "roastery-config",
-                    "viewPath": "Views/Config",
-                    "title": "Roast Setup",
-                    "modal": true,
-                    "showCloseIcon": true,
-                    "draggable": true,
-                    "resizable": true,
-                    "overlayDismiss": true,
-                    "position": {
-                      "width": "min(700px, 94vw)",
-                      "height": "min(880px, 94vh)"
-                    }
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.cool()\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "FinishButton"
+            },
+            "props": {
+              "text": "Finish",
+              "style": {
+                "classes": "roast-btn roast-btn-event roast-btn-green"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "104px"
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/State} = 'Cooling'"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.finish()\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "ResetButton"
+            },
+            "props": {
+              "text": "Reset",
+              "style": {
+                "classes": "roast-btn roast-btn-event roast-btn-reset"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "104px"
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/State} != 'Idle'"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.reset_batch()\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "NewRoastButton"
+            },
+            "props": {
+              "text": "New Roast",
+              "style": {
+                "classes": "roast-btn roast-btn-event roast-btn-primary"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "104px"
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/State} != 'Roasting'"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.new_roast(self)\n"
                   }
                 }
               }

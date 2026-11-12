@@ -2,7 +2,7 @@
   "custom": {
     "selBatchNumber": 0,
     "selLabel": "",
-    "selNote": "Select a batch to edit it, delete it, or view it as a background.",
+    "selNote": "Select a batch for its details, the editor, a ghost overlay, or delete.",
     "confirmDelete": false
   },
   "params": {},
@@ -57,20 +57,6 @@
               "width": 150
             },
             {
-              "field": "origin",
-              "header": {
-                "title": "Origin"
-              },
-              "width": 130
-            },
-            {
-              "field": "charge_g",
-              "header": {
-                "title": "Charge (g)"
-              },
-              "width": 90
-            },
-            {
               "field": "drop_temp_f",
               "header": {
                 "title": "Drop (F)"
@@ -92,18 +78,11 @@
               "width": 70
             },
             {
-              "field": "weight_out_g",
-              "header": {
-                "title": "Out (g)"
-              },
-              "width": 80
-            },
-            {
               "field": "roast_degree",
               "header": {
                 "title": "Degree"
               },
-              "width": 100
+              "width": 110
             },
             {
               "field": "id",
@@ -118,7 +97,7 @@
             "enabled": false
           },
           "rows": {
-            "height": 34
+            "height": 40
           },
           "header": {
             "height": 36,
@@ -162,7 +141,7 @@
         "position": {
           "grow": 0,
           "shrink": 0,
-          "basis": "420px"
+          "basis": "430px"
         }
       },
       {
@@ -266,8 +245,9 @@
         },
         "props": {
           "direction": "row",
-          "justify": "space-between",
+          "justify": "flex-end",
           "alignItems": "center",
+          "wrap": "wrap",
           "style": {
             "classes": "roast-gap-12"
           }
@@ -279,10 +259,15 @@
               "name": "SelNote"
             },
             "props": {
-              "text": "Select a batch to edit it, delete it, or view it as a background.",
+              "text": "Select a batch for its details, the editor, a ghost overlay, or delete.",
               "style": {
                 "classes": "roast-note"
               }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
             },
             "propConfig": {
               "props.text": {
@@ -298,10 +283,10 @@
           {
             "type": "ia.input.button",
             "meta": {
-              "name": "EditButton"
+              "name": "DetailsButton"
             },
             "props": {
-              "text": "Edit",
+              "text": "Details",
               "style": {
                 "classes": "roast-btn roast-btn-sm roast-btn-primary"
               }
@@ -322,7 +307,73 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.open_detail(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "EditButton"
+            },
+            "props": {
+              "text": "Edit",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+              }
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "({view.custom.selBatchNumber} > 0)"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
                     "script": "\timport roastery.core, roastery.batches\n\troastery.batches.open_editor(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "BgButton"
+            },
+            "props": {
+              "text": "Use as Ghost",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-purple"
+              }
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "({view.custom.selBatchNumber} > 0)"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.set_background(self)\n"
                   }
                 }
               }
@@ -356,39 +407,6 @@
                   "type": "script",
                   "config": {
                     "script": "\timport roastery.core, roastery.batches\n\troastery.batches.arm_delete(self)\n"
-                  }
-                }
-              }
-            }
-          },
-          {
-            "type": "ia.input.button",
-            "meta": {
-              "name": "BgButton"
-            },
-            "props": {
-              "text": "View as Background",
-              "style": {
-                "classes": "roast-btn roast-btn-sm roast-btn-purple"
-              }
-            },
-            "propConfig": {
-              "props.enabled": {
-                "binding": {
-                  "type": "expr",
-                  "config": {
-                    "expression": "({view.custom.selBatchNumber} > 0)"
-                  }
-                }
-              }
-            },
-            "events": {
-              "dom": {
-                "onClick": {
-                  "scope": "G",
-                  "type": "script",
-                  "config": {
-                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.set_background(self)\n"
                   }
                 }
               }
