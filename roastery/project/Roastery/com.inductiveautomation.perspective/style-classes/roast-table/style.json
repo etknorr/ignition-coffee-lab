@@ -1,0 +1,9 @@
+{
+  "base": {
+    "style": {
+      "fontSize": "13px",
+      "color": "var(--label)",
+      "backgroundColor": "var(--container)"
+    }
+  }
+}

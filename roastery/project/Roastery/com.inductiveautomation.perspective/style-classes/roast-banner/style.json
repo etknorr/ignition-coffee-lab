@@ -1,0 +1,9 @@
+{
+  "base": {
+    "style": {
+      "backgroundColor": "#991b1b",
+      "padding": "9px 22px",
+      "boxShadow": "0 0 18px rgba(239, 68, 68, 0.35)"
+    }
+  }
+}

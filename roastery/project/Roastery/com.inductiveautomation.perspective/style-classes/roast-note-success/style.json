@@ -1,0 +1,10 @@
+{
+  "base": {
+    "style": {
+      "fontSize": "13px",
+      "fontWeight": "700",
+      "color": "var(--success)",
+      "minHeight": "18px"
+    }
+  }
+}

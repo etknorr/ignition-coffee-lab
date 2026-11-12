@@ -1,0 +1,11 @@
+{
+  "base": {
+    "style": {
+      "fontSize": "11px",
+      "fontWeight": "700",
+      "color": "#ffffff",
+      "padding": "3px 12px",
+      "borderRadius": "999px"
+    }
+  }
+}
