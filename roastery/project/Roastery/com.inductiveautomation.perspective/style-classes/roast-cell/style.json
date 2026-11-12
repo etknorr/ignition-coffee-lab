@@ -1,0 +1,11 @@
+{
+  "base": {
+    "style": {
+      "backgroundColor": "var(--containerNested)",
+      "border": "1px solid var(--border)",
+      "borderRadius": "12px",
+      "padding": "9px 6px",
+      "gap": "2px"
+    }
+  }
+}

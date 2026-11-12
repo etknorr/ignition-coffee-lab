@@ -1,0 +1,17 @@
+/* Roastery advanced stylesheet.
+   Perspective prefixes every style class with psc- in the DOM, so
+   global rules target .psc-<classname>. Theme colors come from the
+   built in session theme CSS variables; nothing here hard codes a
+   surface color, so dark and light sessions both hold. */
+
+/* Button feedback that a static style class cannot express. */
+.psc-roast-btn:hover { filter: brightness(1.15); }
+.psc-roast-btn:active { filter: brightness(0.9); }
+
+/* Keyboard focus stays visible on form inputs. */
+.psc-roast-input:focus { outline: 2px solid var(--callToAction); }
+
+/* Slim scrollbar for the popup scroll areas. */
+.psc-roast-scroll::-webkit-scrollbar { width: 10px; }
+.psc-roast-scroll::-webkit-scrollbar-thumb {
+  background: var(--neutral-60); border-radius: 6px; }

@@ -1,0 +1,12 @@
+{
+  "base": {
+    "style": {
+      "fontSize": "12px",
+      "fontWeight": "700",
+      "color": "#ffffff",
+      "padding": "4px 14px",
+      "borderRadius": "999px",
+      "textAlign": "center"
+    }
+  }
+}

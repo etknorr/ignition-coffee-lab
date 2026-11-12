@@ -1,0 +1,11 @@
+{
+  "base": {
+    "style": {
+      "backgroundColor": "var(--container)",
+      "backgroundImage": "linear-gradient(90deg, var(--container), var(--containerNested))",
+      "padding": "10px 22px",
+      "boxShadow": "var(--boxShadow1)",
+      "gap": "10px"
+    }
+  }
+}

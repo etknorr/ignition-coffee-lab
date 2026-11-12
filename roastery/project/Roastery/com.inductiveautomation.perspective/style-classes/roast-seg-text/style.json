@@ -1,0 +1,12 @@
+{
+  "base": {
+    "style": {
+      "fontSize": "12px",
+      "fontWeight": "700",
+      "color": "#ffffff",
+      "textAlign": "center",
+      "whiteSpace": "nowrap",
+      "overflow": "hidden"
+    }
+  }
+}

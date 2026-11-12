@@ -1,0 +1,12 @@
+{
+  "base": {
+    "style": {
+      "border": "1px solid var(--border)",
+      "borderRadius": "8px",
+      "padding": "8px 10px",
+      "fontSize": "14px",
+      "color": "var(--label)",
+      "backgroundColor": "var(--input)"
+    }
+  }
+}

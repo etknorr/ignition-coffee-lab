@@ -1,0 +1,11 @@
+{
+  "base": {
+    "style": {
+      "fontSize": "13px",
+      "fontWeight": "700",
+      "color": "var(--callToAction)",
+      "textTransform": "uppercase",
+      "letterSpacing": "0.08em"
+    }
+  }
+}
