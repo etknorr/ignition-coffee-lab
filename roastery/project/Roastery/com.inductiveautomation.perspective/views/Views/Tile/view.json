@@ -4,7 +4,8 @@
     "title": "Stat",
     "valueText": "0.0",
     "unit": "",
-    "accent": "#0c7bb3"
+    "accent": "#0c7bb3",
+    "valueClass": "roast-value-lg"
   },
   "propConfig": {
     "params.title": {
@@ -17,6 +18,9 @@
       "paramDirection": "input"
     },
     "params.accent": {
+      "paramDirection": "input"
+    },
+    "params.valueClass": {
       "paramDirection": "input"
     }
   },
@@ -118,6 +122,14 @@
                   "type": "property",
                   "config": {
                     "path": "view.params.valueText"
+                  }
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.params.valueClass"
                   }
                 }
               }

@@ -1,0 +1,161 @@
+{
+  "custom": {
+    "themeText": "Light"
+  },
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 900,
+      "height": 62
+    }
+  },
+  "events": {
+    "system": {
+      "onStartup": {
+        "scope": "G",
+        "type": "script",
+        "config": {
+          "script": "\timport roastery.core\n\troastery.core.main_startup(self)\n"
+        }
+      }
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "root"
+    },
+    "props": {
+      "direction": "row",
+      "alignItems": "center",
+      "style": {
+        "classes": "roast-tabbar"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.input.button",
+        "meta": {
+          "name": "ThemeButton"
+        },
+        "props": {
+          "text": "",
+          "style": {
+            "classes": "roast-tab-btn"
+          }
+        },
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "88px"
+        },
+        "propConfig": {
+          "props.text": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "view.custom.themeText"
+              }
+            }
+          }
+        },
+        "events": {
+          "dom": {
+            "onClick": {
+              "scope": "G",
+              "type": "script",
+              "config": {
+                "script": "\timport roastery.core, roastery.batches\n\troastery.core.theme_toggle(self)\n"
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "ia.input.button",
+        "meta": {
+          "name": "RoastTab"
+        },
+        "props": {
+          "text": "Roast",
+          "style": {
+            "classes": "roast-tab-btn"
+          }
+        },
+        "position": {
+          "grow": 1,
+          "shrink": 1,
+          "basis": "0px"
+        },
+        "events": {
+          "dom": {
+            "onClick": {
+              "scope": "G",
+              "type": "script",
+              "config": {
+                "script": "\tsystem.perspective.navigate(page='/')\n"
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "ia.input.button",
+        "meta": {
+          "name": "SettingsTab"
+        },
+        "props": {
+          "text": "Settings",
+          "style": {
+            "classes": "roast-tab-btn"
+          }
+        },
+        "position": {
+          "grow": 1,
+          "shrink": 1,
+          "basis": "0px"
+        },
+        "events": {
+          "dom": {
+            "onClick": {
+              "scope": "G",
+              "type": "script",
+              "config": {
+                "script": "\tsystem.perspective.navigate(page='/settings')\n"
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "ia.input.button",
+        "meta": {
+          "name": "LogTab"
+        },
+        "props": {
+          "text": "Log",
+          "style": {
+            "classes": "roast-tab-btn"
+          }
+        },
+        "position": {
+          "grow": 1,
+          "shrink": 1,
+          "basis": "0px"
+        },
+        "events": {
+          "dom": {
+            "onClick": {
+              "scope": "G",
+              "type": "script",
+              "config": {
+                "script": "\tsystem.perspective.navigate(page='/log')\n"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

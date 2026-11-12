@@ -25,10 +25,15 @@ SINCE = int(sys.argv[2]) if len(sys.argv) > 2 else int((time.time() - 900) * 100
 PROJECT = 'Roastery'
 BASE = 'http://localhost:8088'
 PROJ_DIR = os.path.join(GW, 'data', 'projects', PROJECT)
-VIEWS = ('Views/Main', 'Views/Config', 'Views/Batches',
-         'Views/BatchesPanel', 'Views/BatchEdit', 'Views/Tile',
-         'Views/EventCell', 'Views/EventsStrip', 'Views/PhasesBar',
-         'Views/Controls', 'Views/MetaCard', 'Views/Summary')
+VIEWS = ('Views/RoastPage', 'Views/SettingsPage', 'Views/LogPage',
+         'Views/BatchDetail', 'Views/TabBar', 'Views/HudBar',
+         'Views/ControlDock', 'Views/SettingsRoaster',
+         'Views/SettingsTargets', 'Views/SettingsRor',
+         'Views/SettingsAlarms', 'Views/SettingsMetadata',
+         'Views/SettingsCustoms', 'Views/BatchesPanel',
+         'Views/BatchEdit', 'Views/Tile', 'Views/EventCell',
+         'Views/EventsStrip', 'Views/PhasesBar', 'Views/Controls',
+         'Views/MetaCard', 'Views/Summary')
 
 def load_file_view(rel):
     p = os.path.join(PROJ_DIR, 'com.inductiveautomation.perspective',
@@ -127,12 +132,12 @@ def main():
     by_name = {v: i for i, (v, _p) in enumerate(starts)}
     starts[by_name['Views/Tile']] = (
         'Views/Tile', {'title': 'Validator', 'valueText': '1.0',
-                       'unit': 'x', 'accent': '#ffb454'})
+                       'unit': 'x', 'accent': '#ffb454',
+                       'valueClass': 'roast-value-lg'})
     starts[by_name['Views/EventCell']] = (
         'Views/EventCell', {'name': 'Charge', 'timeText': '00:00',
                             'tempText': '200 F', 'done': True})
-    starts[by_name['Views/BatchEdit']] = (
-        'Views/BatchEdit', {'batchNumber': 0, 'createMode': True})
+    starts[by_name['Views/BatchEdit']] = ('Views/BatchEdit', {})
     starts.append(('BogusViewXYZ', {}))
     for v, params in starts:
         send('view-start', {'resourcePath': v, 'mountPath': 'C',
@@ -167,7 +172,7 @@ def main():
           and not hits and bogus >= 1
           and report['resources']['library_core']
           and report['resources']['library_batches']
-          and len(report['resources']['named_queries']) == 7
+          and len(report['resources']['named_queries']) == 10
           and report['resources']['roast_card_on_disk']
           and report['resources']['stylesheet_on_disk'])
     print('VALIDATION', 'PASS' if ok else 'CHECK REPORT')

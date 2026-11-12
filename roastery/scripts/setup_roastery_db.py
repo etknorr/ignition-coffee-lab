@@ -54,6 +54,26 @@ CREATE TABLE IF NOT EXISTS batch_series (
 
 CREATE INDEX IF NOT EXISTS batch_series_batch_idx
     ON batch_series (batch_number, t_offset_sec);
+
+-- v4: one row per control button press (Eric, 2026-11-12: the
+-- button presses are the trigger). Written by the press capture
+-- path (a SQLBridge transaction group when one is authored, else
+-- the roastery library through the Events/InsertPress named
+-- query); read back only through named queries.
+CREATE TABLE IF NOT EXISTS batch_events (
+    id            BIGSERIAL PRIMARY KEY,
+    batch_number  INTEGER NOT NULL,
+    action        TEXT NOT NULL,
+    t_offset_sec  INTEGER,
+    bean_temp_f   DOUBLE PRECISION,
+    rate_of_rise_f DOUBLE PRECISION,
+    fan_level     INTEGER,
+    heat_level    INTEGER,
+    pressed_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS batch_events_batch_idx
+    ON batch_events (batch_number, pressed_at);
 """
 
 

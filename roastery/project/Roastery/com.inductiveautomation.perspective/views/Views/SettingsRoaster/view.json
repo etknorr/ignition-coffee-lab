@@ -1,0 +1,410 @@
+{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 900,
+      "height": 260
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "RoasterSection"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-card roast-gap-10"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "RoasterSectionHead"
+        },
+        "props": {
+          "text": "Roaster",
+          "style": {
+            "classes": "roast-section-title"
+          }
+        }
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "RoasterSectionDesc"
+        },
+        "props": {
+          "text": "Where the bean temperature comes from. The app always reads the canonical probe tag; switching the active source switches the transport underneath it, live.",
+          "style": {
+            "classes": "roast-section-desc"
+          }
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "SourceRow"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "SourceField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "SourceFieldCap"
+                },
+                "props": {
+                  "text": "Active source",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.dropdown",
+                "meta": {
+                  "name": "SourceDropdown"
+                },
+                "props": {
+                  "options": [
+                    {
+                      "value": "Simulated",
+                      "label": "Simulated (RoasterSim)"
+                    },
+                    {
+                      "value": "WebSocket",
+                      "label": "WebSocket (SR800 feed)"
+                    },
+                    {
+                      "value": "Mqtt",
+                      "label": "MQTT (broker feed)"
+                    }
+                  ],
+                  "value": "Simulated",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/ActiveSource",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "300px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "ProbeField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "ProbeFieldCap"
+                },
+                "props": {
+                  "text": "Live probe",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "ProbeReadout"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-value"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "'Probe now: ' + numberFormat({[default]Roastery/CurrentBatch/BeanTempF}, '0.0') + ' F - RoR ' + numberFormat({[default]Roastery/CurrentBatch/RateOfRiseF}, '0.0') + ' F/min'"
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "260px"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "SrcNoteRow"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "SourceNote"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-note"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "'Active source: ' + {[default]Roastery/CurrentBatch/ActiveSource} + ' - ' + if({[default]Roastery/CurrentBatch/ActiveSource} = 'WebSocket', {[default]Roastery/CurrentBatch/Sources/WebSocket/WsUrl}, if({[default]Roastery/CurrentBatch/ActiveSource} = 'Mqtt', {[default]Roastery/CurrentBatch/Sources/Mqtt/Address}, {[default]Roastery/CurrentBatch/Sources/Simulated/Address}))"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "WsRow"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "WsField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "WsFieldCap"
+                },
+                "props": {
+                  "text": "WebSocket URL (SR800 feed)",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.text-field",
+                "meta": {
+                  "name": "WsUrlSrcField"
+                },
+                "props": {
+                  "text": "",
+                  "placeholder": "ws://sr800.local:8080",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/Sources/WebSocket/WsUrl",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "300px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "MqttBrokerField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "MqttBrokerFieldCap"
+                },
+                "props": {
+                  "text": "MQTT broker URL",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.text-field",
+                "meta": {
+                  "name": "MqttBrokerField"
+                },
+                "props": {
+                  "text": "",
+                  "placeholder": "mqtt://localhost:1883",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/Sources/Mqtt/BrokerUrl",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "300px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "MqttTopicField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "MqttTopicFieldCap"
+                },
+                "props": {
+                  "text": "MQTT topic",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.text-field",
+                "meta": {
+                  "name": "MqttTopicField"
+                },
+                "props": {
+                  "text": "",
+                  "placeholder": "roastery/sr800/temp",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/Sources/Mqtt/Topic",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "300px"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
