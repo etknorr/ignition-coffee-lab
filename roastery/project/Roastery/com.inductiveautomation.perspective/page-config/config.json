@@ -1,10 +1,70 @@
 {
   "pages": {
     "/": {
-      "viewPath": "Views/Main"
+      "viewPath": "Views/RoastPage"
     },
-    "/batches": {
-      "viewPath": "Views/Batches"
+    "/settings": {
+      "viewPath": "Views/SettingsPage"
+    },
+    "/log": {
+      "viewPath": "Views/LogPage",
+      "docks": {
+        "right": [
+          {
+            "id": "batchEditor",
+            "viewPath": "Views/BatchEdit",
+            "size": 480,
+            "show": "onDemand",
+            "content": "cover",
+            "anchor": "fixed",
+            "handle": "hide",
+            "resizable": false
+          }
+        ]
+      }
+    },
+    "/log/detail": {
+      "viewPath": "Views/BatchDetail",
+      "docks": {
+        "right": [
+          {
+            "id": "batchEditor",
+            "viewPath": "Views/BatchEdit",
+            "size": 480,
+            "show": "onDemand",
+            "content": "cover",
+            "anchor": "fixed",
+            "handle": "hide",
+            "resizable": false
+          }
+        ]
+      }
     }
+  },
+  "sharedDocks": {
+    "bottom": [
+      {
+        "id": "tabbar",
+        "viewPath": "Views/TabBar",
+        "size": 62,
+        "show": "visible",
+        "content": "push",
+        "anchor": "fixed",
+        "handle": "hide",
+        "resizable": false
+      }
+    ],
+    "top": [
+      {
+        "id": "hud",
+        "viewPath": "Views/HudBar",
+        "size": 54,
+        "show": "visible",
+        "content": "cover",
+        "anchor": "fixed",
+        "handle": "hide",
+        "resizable": false
+      }
+    ]
   }
 }

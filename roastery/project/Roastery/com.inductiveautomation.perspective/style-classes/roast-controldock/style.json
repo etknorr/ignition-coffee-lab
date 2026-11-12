@@ -1,0 +1,11 @@
+{
+  "base": {
+    "style": {
+      "backgroundColor": "var(--container)",
+      "borderTop": "1px solid var(--border)",
+      "padding": "8px 10px",
+      "gap": "8px",
+      "boxShadow": "0 -6px 18px rgba(0,0,0,0.18)"
+    }
+  }
+}

@@ -813,3 +813,325 @@ beta; the popup itself is correct. Maker gateway RUNNING,
 batch at clean Idle, Postgres running with the batches table
 holding the seven seeded batches plus the click test batch
 2001 (8 rows).
+
+## V4: professional UX rebuild (2026-11-12)
+
+V4 reshapes the app around how it is actually used: the phone is
+the remote control (buttons are clicked from the phone while the
+roast is watched on the desktop's big screen). Both are live
+sessions on the same tags, so the work is genuinely different
+responsive arrangements of the same workspace, not sync.
+
+### Shell and docks
+
+Page config (written by the builder into the project's
+page-config):
+
+- sharedDocks.bottom = Views/TabBar on every page: Roast,
+  Settings, Log tabs plus the theme toggle. The theme toggle sits
+  at the left end so the Maker session status nub in the client's
+  bottom right corner can never cover it.
+- sharedDocks.top = Views/HudBar: state pill, bean temp, RoR,
+  clock, phase. It is a fixed cover dock; the advanced stylesheet
+  hides top docks at desktop widths (@media (min-width: 900px)
+  .docked-view-top { display: none }) and pads page roots below
+  it on mobile (@media (max-width: 899.98px) .psc-roast-app
+  { padding-top: 62px }), so the HUD exists on mobile only and
+  stays visible while the page scrolls under it.
+- The Roast page's mobile control dock is NOT a page dock:
+  Perspective stacks one dock per edge and the bottom edge
+  already carries the tab bar. It is Views/ControlDock pinned at
+  the bottom of the small breakpoint layout, directly above the
+  tab bar: the primary flow (Charge, Dry End, FC Start, Drop)
+  plus the Fan and Heat steppers, all 52px targets, reachable
+  without scrolling.
+- The Log pages carry a right dock (id 'batchEditor') holding
+  Views/BatchEdit, the slide over editor (below).
+
+Docked view config format (from the perspective-common model
+classes in the gateway jars, verified live): page-level
+docks: {"bottom": [{"id", "viewPath", "size", "show": "visible",
+"content": "push", "anchor": "fixed", "handle": "hide",
+"resizable": false}]}, and sharedDocks with the same entry
+shape. Multiple entries on one edge are switchable views in one
+dock, not stacked bars.
+
+### Responsive strategy
+
+The Roast page root is a Breakpoint Container (breakpoint 900).
+Child selection is by child position.size ("small" / "large"):
+that is what the client implements (getChildBySize reads
+position.size; children without it default to "small"). Verified
+live at 390px and 1600px.
+
+- Large (desktop): trend first. Header (batch chip, source pill,
+  state pill, clock), the chart card as hero, events strip,
+  phases bar, tiles down the main column; a 400px control rail
+  (Controls, Summary, MetaCard) on the right.
+- Small (phone): control first. Chart present but secondary
+  (compact card, legend off), tiles, events strip, phases, the
+  full Controls and Summary in the scroll column, and the
+  ControlDock pinned at the bottom.
+
+### Timer rule
+
+Eric's rule: "we only set the 0 timer when we drop." The header
+and HUD clock count elapsed since Charge while roasting (the
+working roast clock; never re-zeroed mid roast). At Drop the
+displayed clock's zero is set: from Drop on (Dropped, Cooling,
+Complete) it counts up from 00:00 as a post drop timer,
+captioned SINCE DROP. Event stamps, phases and the chart always
+use elapsed since Charge regardless of what the clock shows.
+
+### Chart and event marker lines
+
+The main chart stays on the classic XY chart (ia.chart.xy). The
+2027 canvas line chart was rejected on evidence: its prop schema
+has no markLine support, and ChartLab notes on this beta show
+the canvas line chart drawing dual-axis bean+RoR history
+incorrectly while the classic XY chart draws it correctly.
+
+Marker lines: roastery.core.build_marks rebuilds the
+EventMarksDS dataset on every stamp. The dataset has ONE COLUMN
+PER EVENT (t_stamp, charge, dryEnd, fcStart, fcEnd, scStart,
+scEnd, drop, notes). Each stamped event contributes a top point
+(455 F) and a bottom point (152 F) in its own column plus an all
+null gap row, so lines are vertical, span the temp axis, and
+never connect diagonally. The chart carries one dashed amber
+line series per event column (connect off), named CHARGE,
+DRY END, FC START, and so on, so the legend labels the lines.
+Custom events, Fan Boost and Drum Note share the NOTES column.
+
+Why not bullet labels on a single series: proven live in three
+rounds. With a {label} field template and with static text, with
+invisible bullets and with visible bullets, with the label
+positioned above and below the top point, no text ever rendered.
+Bullet labels on XY line series do not render text in this
+build; series naming is the labeling route that works. The Log
+detail chart uses the same construction over DetailMarksDS.
+
+### Log detail and the slide over editor
+
+The Log tab lists batches (table) with Details, Edit, Use as
+Ghost and Delete (behind a confirm). Details stages the batch
+(roastery.batches.stage_detail): the curve with RoR recomputed
+on read, the event marker dataset, the events timeline, summary
+(phases, DTR, drop temp), metadata, and the captured button
+presses (batch_events) when any exist.
+
+Edit opens the slide over: a right docked view, not a popup (the
+v3 popup had a beta chrome artifact and was, in Eric's words,
+"a mess"). It holds ONE ia.input.form: batch number, the 17
+metadata fields, and the seven event rows (time as mm:ss from
+charge, temp in F). Mode and target travel through the
+EditorCreateMode and SelectedBatchNumber tags; the editor view
+refreshes its form from roastery.batches.editor_refresh, called
+on view startup and on a 'roastery-editor-open' message that
+open_editor sends after staging the tags (a docked view loads
+once per page, so startup alone goes stale). The title is set by
+the library: an expression binding concatenating the batch
+number onto text evaluates to null with bad quality in this
+build.
+
+Saving runs Batches/Update via the library. Event times are
+validated: they must parse as mm:ss and be strictly ordered
+(charge, then dry end, then FC start, then FC end, then SC
+start, then SC end, then drop, each only checked when present).
+A violation saves nothing and shows the reason in the editor
+("Dry End must come before FC Start. Nothing was saved."). On a
+valid save the library recomputes the document from the edited
+times: phase durations, DTR, total time, roastEnd, and the drop
+temp and roast degree when the drop temp changed.
+
+New Roast (Log header, and the Roast page Controls) zeroes the
+workspace through core.reset_batch, takes the next batch number
+(max of the database and the current tag, plus one) and lands
+on the Roast page.
+
+Saving a roast whose batch number is already in the log is
+refused with a visible explanation in the Summary (start a New
+Roast for a fresh number, or edit the saved batch from the Log
+tab) instead of failing on the unique constraint.
+
+### Settings organization
+
+Settings is the Configure tab, renamed. One embedded view per
+section, each a roast-card with a title, a one line description
+and labeled field rows binding bidirectionally to the standing
+tags (writing live, effective during a roast):
+
+- Roaster (SettingsRoaster): ActiveSource, WsUrl, MQTT broker
+  URL and topic, live probe readout.
+- Targets (SettingsTargets): charge, dry end, FC and drop times
+  and temps, PLUS the phase bar targets: Drying, Maillard and
+  Development target seconds and the DTR target percent. The
+  phase bar takes its pre-drop segment widths and its "target
+  mm:ss" labels from these tags, so a change rebalances the bar
+  immediately.
+- Rate of Rise (SettingsRor): the Artisan RoR parameters, next
+  section.
+- Alarms (SettingsAlarms): the three lite alarms (enable,
+  threshold, message).
+- Metadata defaults (SettingsMetadata): the metadata form over
+  the current batch tags; these are the defaults a new batch
+  starts with (saved batches are edited in the slide over).
+- Custom Events (SettingsCustoms): the four custom event names
+  and kinds.
+
+To add a setting: add a cfg_field row in the section it belongs
+to (and the tag in setup_roastery_v4_tags.py when new). To add a
+section: write one more settings_<name>_view() and add one embed
+line to settings_page_view().
+
+### RoR math (Artisan 5.0.0, from the source)
+
+One implementation, roastery.core.compute_ror_series, is the
+only RoR math in the app: the live RateOfRiseF tag, the live
+chart curve (tag history of that tag), the saved batch RoR and
+the ghost/background RoR are all computed by it from stored
+temps. Temps are the stored truth; RoR is a calculated layer,
+recomputed for saved batches on read with the current
+parameters, the way Artisan recalculates a loaded profile.
+
+Implemented from ~/workspace/artisan-src (Artisan 5.0.0,
+src/artisanlib):
+
+- Core delta (canvas.py compute_ror / compute_ror_simple,
+  util.py arrayRoR): RoR = (T[i] - T[i-ds]) / (t[i] - t[i-ds])
+  * 60, deg/min, on smoothed temps, with the left endpoint
+  reduced by a 5 point (else 3 point) mean around the left
+  index.
+- Delta span: settings key DeltaSpan (ET: DeltaETspan),
+  deltaBTspan default 20 s, UI range 0 to 30 s. Artisan converts
+  to samples by its sampling interval; here the span is applied
+  in seconds against real timestamps, the same math on irregular
+  change driven samples. The Settings field allows 0 to 120 s
+  (deliberately past Artisan's UI cap; the math is identical).
+- Temp smoothing first: curvefilter, UI default 1, internal
+  2x+1 = 3, trailing decay weights [1, 2, 3].
+- RoR smoothing after the delta: deltafilter, UI default 3,
+  internal 7, trailing decay weights [1..round(7/2)] = [1,2,3,4].
+- polyfitRoRcalc: least squares slope over the span window
+  instead of the two point delta.
+- optimalSmoothing (needs polyfit): Hanning windows instead of
+  decay, and a Savitzky-Golay derivative (window = span, order
+  1); offline only, as in Artisan.
+- Smooth Spikes: filterDropOuts, default on, OFFLINE ONLY in
+  Artisan: median filter k=5 on temps, k=3 on RoR. (Artisan's
+  live input spike filter, dropSpikes, has a dead comparison in
+  5.0.0 and can never fire; not replicated.) Here it applies to
+  the offline paths (saved batches, detail, ghost); live RoR is
+  unclipped and unmedianed, like Artisan live.
+- Clipping: RoRlimitFlag with RoRlimit 81 and RoRlimitm -18
+  F/min: offline values outside become None; live values are
+  not clipped (Artisan nulls only the plotted live value).
+- Offline blanking: the first 10 samples after charge are
+  blanked (Artisan: RoR_start = charge index + 10 in smoothETBT).
+- A filter set to 0 yields no smoothing (an empty weight list
+  is the identity), never an error.
+
+The v3 EMA tag RoRSmoothingSec is superseded by these
+parameters and is no longer read; the tag stays for
+compatibility. Settings write the parameter tags live; a mid
+roast change changes the live math on the next temp change.
+
+Proof: verify_roastery_ror.py extracts the pure implementation
+from the builder and runs it in CPython. On an exact 25 F/min
+ramp it converges to 25 under the defaults, under a short span
+with no smoothing, at 5 s sampling, and under polyfit; a +30 F
+single sample spike produces a large excursion with Smooth
+Spikes off and a bounded one with it on. Live, the HUD watch on
+the simulator's clean ramp read exactly 25.0 F/min.
+
+### Capture design: presses, temp changes, transaction groups
+
+Two capture streams, both change triggered:
+
+- Button presses. Every control press is stamped by the library
+  through core.record_press: it bumps the ActionCounter tag and
+  writes LastAction, LastActionElapsedSec and LastActionAt on
+  the batch UDT (the trigger surface a transaction group can
+  bind to), and, in the default PressCaptureMode 'Library',
+  inserts one row into batch_events (batch number, action,
+  seconds since charge, bean temp, RoR, fan, heat, wall clock).
+  Covers all event buttons, Cool, Finish, Save Batch, Reset and
+  the Fan/Heat steppers (one row per deliberate press).
+- Bean temp changes. While State is Roasting or Cooling, every
+  BeanTempF change appends a curve sample (dedupe: same elapsed
+  second and under 0.05 F change), staged in the CurveSamples
+  dataset and written to batch_series at save by the library
+  (SeriesCaptureMode 'Library'), with the stored RoR recomputed
+  from the temps at that moment.
+
+Transaction groups (bounded attempt, Eric's requested design):
+the groups were to be triggered on the ActionCounter change
+(writing batch_events) and on the BeanTempF change while
+roasting (writing batch_series). Findings in this build
+(2027.2.0-beta1):
+
+- Group config is a project resource decoded by
+  com.inductiveautomation.factorysql.common.config.
+  GroupConfig$Serializer; the config body is a property set over
+  CommonGroupProperties keys (TABLE_NAME, TRIGGER_PATH,
+  TRIGGER_MODE, UPDATE_RATE, WHERE_CLAUSE, KEY_VALUE_BINDINGS,
+  AUTO_CREATE_TABLE, and friends), serialized through
+  GroupConfigGson with custom adapters for property sets,
+  qualified values, alarm configurations and tag event scripts.
+- No example or template group config ships in the SQL Bridge
+  module jars (common, gateway, designer, web-ui), and the
+  diagnostics route from the v3 notes (/services/
+  transaction-groups) returns 404 in this build.
+- V3's hand authored JSON attempts failed gateway side with
+  "Error deserializing group" from sqlbridge.ProjectRunner;
+  those broken resources are gone (they did not survive the VM
+  replacement), and no group resources exist in the project now.
+
+Verdict: the triggered-group design is fully prepared (trigger
+tags, target tables, capture mode switches in the library) but
+the config cannot be authored reliably without the Designer in
+this beta, so the proven library capture remains the runtime
+path. If the groups are ever created in the Designer, set
+PressCaptureMode (and SeriesCaptureMode) to 'Group' on the
+CurrentBatch tags: the library then stops double writing and
+the groups own the inserts. All app reads stay on named queries
+either way; the Log detail reads batch_events through
+Roastery/Events/SelectByBatch.
+
+### Verification
+
+verify_roastery_v4.py drives a full roast from the phone layout
+while a desktop session watches, and checks: marker dataset
+columns, press and series rows in the database, save, Log
+detail, editor rejection and recompute (phases and DTR change
+in the stored document), duplicate save refusal, ghost overlay
+with recomputed RoR, New Roast, the Settings phase target
+rebalancing the phase bar, dark theme, zero quality overlays,
+and zero Roastery warnings in the gateway log for the window.
+verify_roastery_ror.py proves the RoR math (above).
+validate_roastery_artisan.py covers all 22 views (served vs
+disk, live view starts, log scan).
+
+Environment notes from the build: the Maker trial expires every
+2 hours of client use and is reset from the gateway home page
+banner ("Log In to Reset", then Reset Trial); gateway restarts
+do not reset it in this build (proven: trialSecondsLeft stayed
+0 across a clean stop and start, and went to 7195 after the UI
+reset). Mid session, an expired trial shows clients a "Trial
+Expired" page while tag and API access keep working. On
+2026-11-12 the lab VM also rolled back its system disk once:
+Postgres came back as an empty cluster and was recovered by
+recreating the ignition role and db database with the password
+in .roastery-pgpass (the gateway's stored secret matched it),
+reapplying setup_roastery_db.py, and reseeding fixture batches
+1042, 1043, 1044 and 1046 with generated curves (the original
+RoastLog based seed data was lost with the cluster). The same
+rollback left the SQL historian sink faulted: its init is not
+idempotent, so on every later reconnect it failed with
+"Initialization of tag history datasource sink has failed"
+because the sqlth_ tables already existed, and the chart's tag
+history queries errored with no data stored (sqlth_te empty).
+Recovery: drop the sqlth_ tables (they held no data) and
+restart the gateway; the sink re-initialized, registrations
+reappeared, and the trend came back. A plain trial check during
+the same window also proved the UI trial reset survives
+restarts (5448 s left after one).

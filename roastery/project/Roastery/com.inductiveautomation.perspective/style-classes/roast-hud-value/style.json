@@ -1,0 +1,10 @@
+{
+  "base": {
+    "style": {
+      "fontSize": "17px",
+      "fontWeight": "700",
+      "color": "var(--label)",
+      "fontFamily": "monospace"
+    }
+  }
+}

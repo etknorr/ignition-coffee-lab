@@ -2,7 +2,9 @@
 
 A Perspective roast console for a FreshRoast SR800, modeled on
 Artisan (the open source roasting software) and built with Ignition
-2027 Maker Edition and the new canvas chart components.
+2027 Maker Edition. V4 (current) is a professional UX rebuild
+around the phone-as-remote-control pattern; see the v4 section of
+docs/coffee-roaster-app.md for the full design record.
 
 This is the Ignition side of the Ignition Coffee Lab. The SR800
 temperature feed arrives over WebSocket (in the real setup, from the
@@ -22,18 +24,28 @@ Perspective project, the tag and UDT setup, and the view builder.
    `scripts/`, run `setup_roastery_db.py` (connection details
    come from its environment variables).
 4. From `scripts/`, run `setup_maker_stack.py`, then
-   `setup_roastery_v3_tags.py` (v3 tag model; the v2
-   `setup_roastery_artisan_tags.py` is kept for history).
-   Set the gateway's Gateway Scripting Project to Roastery.
-5. Copy `project/Roastery` into the gateway at `data/projects/`,
-   scan projects, and open the Roastery client.
+   `setup_roastery_v4_tags.py` (v4 tag model; the v3 and v2 tag
+   scripts are kept for history). Set the gateway's Gateway
+   Scripting Project to Roastery.
+5. Either copy `project/Roastery` into the gateway at
+   `data/projects/` and scan projects, or regenerate it with
+   `build_roastery_v4.py`. Open the Roastery client.
 
 ## What it does
 
-- Live roast curve (canvas line chart) with bean temperature
-  history, a derived rate of rise series, a dashed target profile
-  generated from four editable target points, and an optional
-  background roast drawn behind the live curve.
+- App shell: a bottom tab bar (Roast, Settings, Log) as a shared
+  docked view on every page; on mobile only, a sticky top HUD
+  (bean temp, RoR, clock, state, phase) and a pinned control dock
+  with the primary event flow and the Fan and Heat steppers. The
+  Roast page uses a breakpoint container: trend first on desktop
+  (chart hero plus a control rail), control first on the phone.
+- Live roast curve (classic XY chart; the 2027 canvas line chart
+  has no markLine support and drew dual axis history incorrectly
+  on this beta) with bean temperature history, rate of rise, a
+  dashed target profile from four editable target points, an
+  optional background (ghost) roast, and labeled vertical marker
+  lines at every stamped event (one named series per event over
+  a column-per-event dataset built by the library).
 - The full Artisan event set: Charge, Dry End, First Crack Start
   and End, Second Crack Start and End, and Drop, each stamping
   elapsed time and bean temperature, plus four custom event
@@ -45,20 +57,28 @@ Perspective project, the tag and UDT setup, and the view builder.
   change is logged with elapsed time and temperature and drawn
   as a step trace strip under the main curve, the way Artisan
   annotates control moves.
-- A Roast Setup config popup: roaster connection settings, the
-  batch metadata form built on the Perspective Form component
-  (ia.input.form), including weight out after Drop, the target
-  designer points, and alarm thresholds.
-- A Batches page with full database CRUD for previous batches.
+- A Settings page (the old Configure tab) with every setting in
+  labeled, extensible sections: Roaster (source, WebSocket,
+  MQTT), Targets including the phase bar target durations and
+  the DTR target, the Artisan rate of rise parameters, Alarms,
+  Metadata defaults (the ia.input.form metadata form over the
+  current batch tags), and Custom Events. Settings write live
+  tags and take effect during a roast.
+- A Log tab with full database CRUD for previous batches.
   Batches live in Postgres and are reached only through named
   queries defined in the project (no embedded SQL anywhere):
   relational columns for listing and sorting, the complete
-  batch document in a JSONB column, and the roast curve in a
-  separate series table keyed by batch number. The page lists
-  batches newest first and supports edit (a Form popup over the
-  stored document) and delete with a confirm step, and any past
-  roast can be selected as the background profile, drawn from
-  its series rows.
+  batch document in a JSONB column, the roast curve in a
+  separate series table keyed by batch number, and one
+  batch_events row per control button press (the audit trail).
+  Tapping a batch opens its detail (curve, events timeline,
+  phases and DTR, metadata, captured presses); Edit opens a
+  slide over panel (a right docked view, not a popup) whose form
+  also edits event times and temps, with the library
+  recomputing phases, DTR, total time and roast degree from the
+  edited times and rejecting out-of-order times with a visible
+  message. Any past roast can be set as the ghost overlay, and
+  New Roast zeroes the workspace with the next batch number.
 - Transport flexible temperature feed: nested source UDTs
   (simulated OPC, WebSocket, MQTT) under the batch with an
   ActiveSource selector; the console, history, and batch save
@@ -67,21 +87,31 @@ Perspective project, the tag and UDT setup, and the view builder.
 - A deviation tile showing live bean temperature minus the
   target curve temperature at the current elapsed time.
 - Lite alarms surfaced as a banner on the main view.
-- Mobile responsive layout that stacks cleanly at phone width.
 - A neutral theme that follows the session dark or light mode.
+- The header clock follows the timer rule: it counts up from
+  Charge while roasting and its zero is set at Drop (a SINCE
+  DROP post drop clock from then on).
 
 ## Design: one probe, derived rate of rise
 
 The SR800 setup has a single bean temperature probe. There is no
 drum or environmental probe, and the UDT models exactly that: one
 `BeanTempF` member fed by the probe. Rate of rise is not a probe.
-It is derived on the gateway by a tag value changed event script
-on `BeanTempF` that keeps a rolling window and writes an
-exponentially smoothed delta per minute to `RateOfRiseF`, with
-the smoothing time constant set by the `RoRSmoothingSec` member.
-In the lab the derivation was verified against a simulator
-ramping at exactly 25 F per minute: the derived value converged
-on the true slope.
+It is calculated by one library implementation
+(`roastery.core.compute_ror_series`), an Artisan 5.0.0
+parameterization built from the Artisan source: delta span
+(default 20 s), curve filter, delta filter, optional polyfit
+least squares and optimal smoothing, median spike filtering on
+the offline path, and RoR clipping. The live `RateOfRiseF`, the
+saved batch RoR and the ghost RoR all come from that one
+function over stored temps, so they always agree; the parameters
+live in Settings and apply live. (The v2/v3 EMA over
+`RoRSmoothingSec` is superseded; the tag remains but is unread.)
+Verified against the simulator's exact 25 F/min ramp in
+`verify_roastery_ror.py`: the calculated RoR converges to 25
+under the defaults, under a short span with no smoothing, at
+5 s sampling, and under polyfit, and a +30 F spike is bounded
+with Smooth Spikes on.
 
 There is deliberately no PID anywhere in this design. The SR800
 is run on manual Fan and Heat levels, so the console exposes
@@ -90,12 +120,15 @@ those levels and nothing else.
 ## Repository layout
 
 - `project/Roastery/`: the Perspective project exactly as it
-  runs on the Maker gateway (project.json, page config, the
-  twelve views: Main, Config, Batches, BatchesPanel, BatchEdit,
-  Tile, EventCell, EventsStrip, PhasesBar, Controls, MetaCard,
-  Summary, the `roastery` scripting library, the named queries
-  under `ignition/named-query/Roastery/`, and the Perspective
-  style classes plus the advanced stylesheet). All application
+  runs on the Maker gateway (project.json, page config with the
+  shared docks, the 22 views: RoastPage, SettingsPage, LogPage,
+  BatchDetail, TabBar, HudBar, ControlDock, SettingsRoaster,
+  SettingsTargets, SettingsRor, SettingsAlarms, SettingsMetadata,
+  SettingsCustoms, BatchesPanel, BatchEdit, Tile, EventCell,
+  EventsStrip, PhasesBar, Controls, MetaCard, Summary, the
+  `roastery` scripting library, the ten named queries under
+  `ignition/named-query/Roastery/`, and the Perspective style
+  classes plus the advanced stylesheet). All application
   Python lives in the project library (packages `roastery.core`
   and `roastery.batches`); view and tag scripts are one line
   calls into it. Styling is organized as `roast-` style classes
@@ -113,19 +146,27 @@ those levels and nothing else.
     UDT (81 members) and the `Roastery/CurrentBatch` instance,
     including history on the probe tags and the RoR derivation
     event script.
-  - `build_roastery_v3.py`: generates the whole v3 project:
+  - `build_roastery_v4.py`: generates the whole v4 project:
     views, the `roastery` script library, the named queries,
-    the style classes, and the advanced stylesheet. On a fresh
-    gateway you can equally copy `project/Roastery` into the
-    gateway and scan it; see below. (`build_roastery_artisan.py`
-    is the v2 builder, kept for history.)
-  - `setup_roastery_v3_tags.py`: creates the v3 tag model: the
+    the style classes, the advanced stylesheet, and the page
+    config (shared tab bar and HUD docks, the editor dock). On a
+    fresh gateway you can equally copy `project/Roastery` into
+    the gateway and scan it; see below. (The v2 and v3 builders
+    are kept for history.)
+  - `setup_roastery_v4_tags.py`: creates the v4 tag model: the
     RoastBatch UDT with the source abstraction (ActiveSource
-    plus nested RoasterSource instances), history for the probe
-    tags on the SQL historian, and the thin BeanTempF event
-    script that calls the library.
+    plus nested RoasterSource instances), the capture and RoR
+    parameter members, history for the probe tags on the SQL
+    historian, and the thin BeanTempF event script that calls
+    the library.
   - `setup_roastery_db.py`: idempotent DDL for the Postgres
-    batches and batch_series tables.
+    batches, batch_series and batch_events tables.
+  - `verify_roastery_v4.py`: the live session click test for
+    the v4 flows (a full roast driven from the phone layout
+    while a desktop session watches, save, Log detail, slide
+    over edit with recompute proof, ghost, New Roast, Settings
+    phase target, dark theme, log scan).
+  - `verify_roastery_ror.py`: the RoR proof (see above).
   - `verify_roastery_v3.py`: the live session click test for
     the v3 flows (roast, save to the database, Batches page
     CRUD, background from a database batch).
