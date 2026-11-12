@@ -1,0 +1,412 @@
+{
+  "custom": {
+    "selBatchNumber": 0,
+    "selLabel": "",
+    "selNote": "Select a batch to edit it, delete it, or view it as a background.",
+    "confirmDelete": false
+  },
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 1200,
+      "height": 560
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "root"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-card roast-gap-12"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.display.table",
+        "meta": {
+          "name": "BatchTable"
+        },
+        "props": {
+          "data": [],
+          "columns": [
+            {
+              "field": "batch_number",
+              "header": {
+                "title": "Batch"
+              },
+              "width": 70
+            },
+            {
+              "field": "roast_start",
+              "header": {
+                "title": "Date"
+              },
+              "width": 150,
+              "render": "date",
+              "dateFormat": "YYYY-MM-DD h:mm a"
+            },
+            {
+              "field": "bean_name",
+              "header": {
+                "title": "Bean"
+              },
+              "width": 150
+            },
+            {
+              "field": "origin",
+              "header": {
+                "title": "Origin"
+              },
+              "width": 130
+            },
+            {
+              "field": "charge_g",
+              "header": {
+                "title": "Charge (g)"
+              },
+              "width": 90
+            },
+            {
+              "field": "drop_temp_f",
+              "header": {
+                "title": "Drop (F)"
+              },
+              "width": 80
+            },
+            {
+              "field": "total_sec",
+              "header": {
+                "title": "Total (s)"
+              },
+              "width": 80
+            },
+            {
+              "field": "dtr_pct",
+              "header": {
+                "title": "DTR %"
+              },
+              "width": 70
+            },
+            {
+              "field": "weight_out_g",
+              "header": {
+                "title": "Out (g)"
+              },
+              "width": 80
+            },
+            {
+              "field": "roast_degree",
+              "header": {
+                "title": "Degree"
+              },
+              "width": 100
+            },
+            {
+              "field": "id",
+              "header": {
+                "title": "ID"
+              },
+              "width": 50,
+              "visible": false
+            }
+          ],
+          "pager": {
+            "enabled": false
+          },
+          "rows": {
+            "height": 34
+          },
+          "header": {
+            "height": 36,
+            "style": {
+              "classes": "roast-table-header"
+            }
+          },
+          "style": {
+            "classes": "roast-table"
+          }
+        },
+        "propConfig": {
+          "props.data": {
+            "binding": {
+              "type": "query",
+              "config": {
+                "queryPath": "Roastery/Batches/SelectAll",
+                "returnFormat": "dataset",
+                "parameters": {},
+                "polling": {
+                  "enabled": false,
+                  "rate": 5
+                },
+                "designerUseLimit": true,
+                "bypassCache": false
+              }
+            }
+          }
+        },
+        "events": {
+          "component": {
+            "onRowClick": {
+              "scope": "G",
+              "type": "script",
+              "config": {
+                "script": "\timport roastery.batches\n\troastery.batches.select_row(self, event)\n"
+              }
+            }
+          }
+        },
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "420px"
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "ConfirmRow"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "center",
+          "style": {
+            "classes": "roast-banner roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "ConfirmLabel"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-banner-text"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "'Delete batch ' + {view.custom.selBatchNumber} + ' and its curve?'"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "ConfirmDeleteButton"
+            },
+            "props": {
+              "text": "Confirm Delete",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-charge"
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.confirm_delete(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "CancelDeleteButton"
+            },
+            "props": {
+              "text": "Cancel",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.cancel_delete(self)\n"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "propConfig": {
+          "props.style.display": {
+            "binding": {
+              "type": "expr",
+              "config": {
+                "expression": "if({view.custom.confirmDelete}, 'flex', 'none')"
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "FootRow"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "center",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "SelNote"
+            },
+            "props": {
+              "text": "Select a batch to edit it, delete it, or view it as a background.",
+              "style": {
+                "classes": "roast-note"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.selNote"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "EditButton"
+            },
+            "props": {
+              "text": "Edit",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-primary"
+              }
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "({view.custom.selBatchNumber} > 0)"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.open_editor(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "DeleteButton"
+            },
+            "props": {
+              "text": "Delete",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-charge"
+              }
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "({view.custom.selBatchNumber} > 0)"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.arm_delete(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "BgButton"
+            },
+            "props": {
+              "text": "View as Background",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-purple"
+              }
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "({view.custom.selBatchNumber} > 0)"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.set_background(self)\n"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "scripts": {
+      "messageHandlers": [
+        {
+          "messageType": "roastery-batches-refresh",
+          "script": "\timport roastery.batches\n\troastery.batches.refresh_table(self)\n",
+          "sessionScope": true,
+          "pageScope": true,
+          "viewScope": false
+        }
+      ]
+    }
+  }
+}

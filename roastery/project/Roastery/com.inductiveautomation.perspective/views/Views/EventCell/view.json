@@ -35,11 +35,7 @@
       "direction": "column",
       "alignItems": "center",
       "style": {
-        "backgroundColor": "var(--containerNested)",
-        "border": "1px solid var(--border)",
-        "borderRadius": "12px",
-        "padding": "9px 6px",
-        "gap": "2px"
+        "classes": "roast-cell"
       }
     },
     "children": [
@@ -51,12 +47,7 @@
         "props": {
           "text": "Event",
           "style": {
-            "fontSize": "11px",
-            "fontWeight": "700",
-            "color": "var(--neutral-60)",
-            "textTransform": "uppercase",
-            "letterSpacing": "0.08em",
-            "textAlign": "center"
+            "classes": "roast-event-name"
           }
         },
         "propConfig": {
@@ -86,10 +77,7 @@
         "props": {
           "text": "--:--",
           "style": {
-            "fontSize": "17px",
-            "fontWeight": "700",
-            "color": "var(--label)",
-            "textAlign": "center"
+            "classes": "roast-event-time"
           }
         },
         "propConfig": {
@@ -111,10 +99,7 @@
         "props": {
           "text": "---",
           "style": {
-            "fontSize": "12px",
-            "fontWeight": "600",
-            "color": "var(--neutral-70)",
-            "textAlign": "center"
+            "classes": "roast-event-temp"
           }
         },
         "propConfig": {

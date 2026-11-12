@@ -16,12 +16,7 @@
     "props": {
       "direction": "column",
       "style": {
-        "backgroundColor": "var(--container)",
-        "border": "1px solid var(--border)",
-        "borderRadius": "16px",
-        "boxShadow": "var(--boxShadow2)",
-        "padding": "16px 18px",
-        "gap": "10px"
+        "classes": "roast-card roast-gap-10"
       }
     },
     "children": [
@@ -44,11 +39,7 @@
             "props": {
               "text": "Roaster Controls",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "var(--callToAction)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.08em"
+                "classes": "roast-section-title"
               }
             }
           },
@@ -60,12 +51,7 @@
             "props": {
               "text": "Off",
               "style": {
-                "fontSize": "11px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "backgroundColor": "#6b7280",
-                "padding": "3px 12px",
-                "borderRadius": "999px"
+                "classes": "roast-mode-pill"
               }
             },
             "propConfig": {
@@ -122,7 +108,7 @@
           "direction": "row",
           "wrap": "wrap",
           "style": {
-            "gap": "8px"
+            "classes": "roast-gap-8"
           }
         },
         "children": [
@@ -134,15 +120,7 @@
             "props": {
               "text": "Charge",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 6px",
-                "cursor": "pointer",
-                "border": "none",
-                "width": "100%",
-                "backgroundColor": "#dc2626"
+                "classes": "roast-btn roast-btn-event roast-btn-charge"
               }
             },
             "position": {
@@ -166,7 +144,7 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
-                    "script": "\tB = '[default]Roastery/CurrentBatch'\n\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/FanLevel', B + '/HeatLevel'])\n\ttemp = qvs[0].value\n\tfan = qvs[1].value\n\theat = qvs[2].value\n\tnow = system.date.now()\n\tstart = now\n\tsystem.tag.writeBlocking([B + '/State', B + '/StartTime', B + '/ChargeTime', B + '/ChargeTempF', B + '/Mode', B + '/WeightOutG'], ['Roasting', now, now, temp, 'Roast', 0.0])\n\tpaths = []\n\tvalues = []\n\tfor stem in ['DryEnd', 'FirstCrackStart', 'FirstCrackEnd', 'SecondCrackStart', 'SecondCrackEnd', 'Drop']:\n\t\tpaths += [B + '/' + stem + 'Time', B + '/' + stem + 'TempF', B + '/' + stem + 'ElapsedSec']\n\t\tvalues += [None, 0.0, -1]\n\tfor i in [1, 2, 3, 4]:\n\t\tpaths += [B + '/CustomEvent' + str(i) + 'Time', B + '/CustomEvent' + str(i) + 'TempF', B + '/CustomEvent' + str(i) + 'ElapsedSec']\n\t\tvalues += [None, 0.0, -1]\n\tsystem.tag.writeBlocking(paths, values)\n\tlogRows = [[now, 0.0, 'Event', 'Charge', float(temp), float(fan), float(heat)], [now, 0.0, 'Fan', 'Fan ' + str(fan), float(temp), float(fan), float(heat)], [now, 0.0, 'Heat', 'Heat ' + str(heat), float(temp), float(fan), float(heat)]]\n\tsystem.tag.writeBlocking(['[default]Roastery/EventsLog'], [system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], logRows)])\n\tq = system.tag.readBlocking([B + '/TargetChargeTempF', B + '/TargetDryEndSec', B + '/TargetDryEndTempF', B + '/TargetFCSec', B + '/TargetFCTempF', B + '/TargetDropSec', B + '/TargetDropTempF', '[default]Roastery/BackgroundCurveJson'])\n\tpts = [(0.0, q[0].value), (float(q[1].value), q[2].value), (float(q[3].value), q[4].value), (float(q[5].value), q[6].value)]\n\tdef planAt(s):\n\t\tfor i in range(len(pts) - 1):\n\t\t\tt0 = pts[i][0]\n\t\t\tv0 = pts[i][1]\n\t\t\tt1 = pts[i + 1][0]\n\t\t\tv1 = pts[i + 1][1]\n\t\t\tif s <= t1:\n\t\t\t\tif t1 <= t0:\n\t\t\t\t\treturn v1\n\t\t\t\treturn v0 + (v1 - v0) * (s - t0) / (t1 - t0)\n\t\treturn pts[-1][1]\n\tfrom java.util import Date\n\tstartMs = start.getTime()\n\trows = []\n\ts = 0.0\n\twhile s < pts[-1][0]:\n\t\trows.append([Date(long(startMs + s * 1000)), planAt(s)])\n\t\ts += 15.0\n\trows.append([Date(long(startMs + pts[-1][0] * 1000)), pts[-1][1]])\n\tsystem.tag.writeBlocking(['[default]Roastery/TargetProfileDS'], [system.dataset.toDataSet(['t_stamp', 'plan'], rows)])\n\tbgRows = []\n\tbgJson = q[7].value\n\tif bgJson:\n\t\timport json as _json\n\t\tfor pair in _json.loads(bgJson):\n\t\t\tbgRows.append([Date(long(startMs + float(pair[0]) * 1000)), float(pair[1])])\n\tsystem.tag.writeBlocking(['[default]Roastery/BackgroundDS'], [system.dataset.toDataSet(['t_stamp', 'bg'], bgRows)])\n"
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.charge()\n"
                   }
                 }
               }
@@ -180,15 +158,7 @@
             "props": {
               "text": "Dry End",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 6px",
-                "cursor": "pointer",
-                "border": "none",
-                "width": "100%",
-                "backgroundColor": "#0c7bb3"
+                "classes": "roast-btn roast-btn-event roast-btn-blue"
               }
             },
             "position": {
@@ -212,7 +182,7 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
-                    "script": "\tB = '[default]Roastery/CurrentBatch'\n\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime'])\n\ttemp = qvs[0].value\n\tstart = qvs[1].value\n\tnow = system.date.now()\n\telapsed = -1\n\tif start is not None:\n\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\twp = [B + '/DryEndTime', B + '/DryEndTempF', B + '/DryEndElapsedSec']\n\twv = [now, temp, elapsed]\n\tsystem.tag.writeBlocking(wp, wv)\n\tlogPath = '[default]Roastery/EventsLog'\n\tlog = system.tag.readBlocking([logPath])[0].value\n\tif log is None:\n\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Event', 'Dry End', float(temp), None, None])\n\tsystem.tag.writeBlocking([logPath], [log])\n"
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.stamp_event('DryEnd', 'Dry End')\n"
                   }
                 }
               }
@@ -226,15 +196,7 @@
             "props": {
               "text": "FC Start",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 6px",
-                "cursor": "pointer",
-                "border": "none",
-                "width": "100%",
-                "backgroundColor": "#0c7bb3"
+                "classes": "roast-btn roast-btn-event roast-btn-blue"
               }
             },
             "position": {
@@ -258,7 +220,7 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
-                    "script": "\tB = '[default]Roastery/CurrentBatch'\n\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime'])\n\ttemp = qvs[0].value\n\tstart = qvs[1].value\n\tnow = system.date.now()\n\telapsed = -1\n\tif start is not None:\n\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\twp = [B + '/FirstCrackStartTime', B + '/FirstCrackStartTempF', B + '/FirstCrackStartElapsedSec']\n\twv = [now, temp, elapsed]\n\tsystem.tag.writeBlocking(wp, wv)\n\tlogPath = '[default]Roastery/EventsLog'\n\tlog = system.tag.readBlocking([logPath])[0].value\n\tif log is None:\n\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Event', 'First Crack Start', float(temp), None, None])\n\tsystem.tag.writeBlocking([logPath], [log])\n"
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.stamp_event('FirstCrackStart', 'First Crack Start')\n"
                   }
                 }
               }
@@ -272,15 +234,7 @@
             "props": {
               "text": "FC End",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 6px",
-                "cursor": "pointer",
-                "border": "none",
-                "width": "100%",
-                "backgroundColor": "#0c7bb3"
+                "classes": "roast-btn roast-btn-event roast-btn-blue"
               }
             },
             "position": {
@@ -304,7 +258,7 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
-                    "script": "\tB = '[default]Roastery/CurrentBatch'\n\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime'])\n\ttemp = qvs[0].value\n\tstart = qvs[1].value\n\tnow = system.date.now()\n\telapsed = -1\n\tif start is not None:\n\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\twp = [B + '/FirstCrackEndTime', B + '/FirstCrackEndTempF', B + '/FirstCrackEndElapsedSec']\n\twv = [now, temp, elapsed]\n\tsystem.tag.writeBlocking(wp, wv)\n\tlogPath = '[default]Roastery/EventsLog'\n\tlog = system.tag.readBlocking([logPath])[0].value\n\tif log is None:\n\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Event', 'First Crack End', float(temp), None, None])\n\tsystem.tag.writeBlocking([logPath], [log])\n"
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.stamp_event('FirstCrackEnd', 'First Crack End')\n"
                   }
                 }
               }
@@ -321,7 +275,7 @@
           "direction": "row",
           "wrap": "wrap",
           "style": {
-            "gap": "8px"
+            "classes": "roast-gap-8"
           }
         },
         "children": [
@@ -333,15 +287,7 @@
             "props": {
               "text": "SC Start",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 6px",
-                "cursor": "pointer",
-                "border": "none",
-                "width": "100%",
-                "backgroundColor": "#2563eb"
+                "classes": "roast-btn roast-btn-event roast-btn-sc"
               }
             },
             "position": {
@@ -365,7 +311,7 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
-                    "script": "\tB = '[default]Roastery/CurrentBatch'\n\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime'])\n\ttemp = qvs[0].value\n\tstart = qvs[1].value\n\tnow = system.date.now()\n\telapsed = -1\n\tif start is not None:\n\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\twp = [B + '/SecondCrackStartTime', B + '/SecondCrackStartTempF', B + '/SecondCrackStartElapsedSec']\n\twv = [now, temp, elapsed]\n\tsystem.tag.writeBlocking(wp, wv)\n\tlogPath = '[default]Roastery/EventsLog'\n\tlog = system.tag.readBlocking([logPath])[0].value\n\tif log is None:\n\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Event', 'Second Crack Start', float(temp), None, None])\n\tsystem.tag.writeBlocking([logPath], [log])\n"
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.stamp_event('SecondCrackStart', 'Second Crack Start')\n"
                   }
                 }
               }
@@ -379,15 +325,7 @@
             "props": {
               "text": "SC End",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 6px",
-                "cursor": "pointer",
-                "border": "none",
-                "width": "100%",
-                "backgroundColor": "#2563eb"
+                "classes": "roast-btn roast-btn-event roast-btn-sc"
               }
             },
             "position": {
@@ -411,7 +349,7 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
-                    "script": "\tB = '[default]Roastery/CurrentBatch'\n\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime'])\n\ttemp = qvs[0].value\n\tstart = qvs[1].value\n\tnow = system.date.now()\n\telapsed = -1\n\tif start is not None:\n\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\twp = [B + '/SecondCrackEndTime', B + '/SecondCrackEndTempF', B + '/SecondCrackEndElapsedSec']\n\twv = [now, temp, elapsed]\n\tsystem.tag.writeBlocking(wp, wv)\n\tlogPath = '[default]Roastery/EventsLog'\n\tlog = system.tag.readBlocking([logPath])[0].value\n\tif log is None:\n\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Event', 'Second Crack End', float(temp), None, None])\n\tsystem.tag.writeBlocking([logPath], [log])\n"
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.stamp_event('SecondCrackEnd', 'Second Crack End')\n"
                   }
                 }
               }
@@ -425,15 +363,7 @@
             "props": {
               "text": "Drop",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 6px",
-                "cursor": "pointer",
-                "border": "none",
-                "width": "100%",
-                "backgroundColor": "#334155"
+                "classes": "roast-btn roast-btn-event roast-btn-drop"
               }
             },
             "position": {
@@ -457,7 +387,7 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
-                    "script": "\tB = '[default]Roastery/CurrentBatch'\n\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime'])\n\ttemp = qvs[0].value\n\tstart = qvs[1].value\n\tnow = system.date.now()\n\telapsed = -1\n\tif start is not None:\n\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\twp = [B + '/DropTime', B + '/DropTempF', B + '/DropElapsedSec']\n\twv = [now, temp, elapsed]\n\twp.append(B + '/State')\n\twv.append('Dropped')\n\tsystem.tag.writeBlocking(wp, wv)\n\tlogPath = '[default]Roastery/EventsLog'\n\tlog = system.tag.readBlocking([logPath])[0].value\n\tif log is None:\n\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Event', 'Drop', float(temp), None, None])\n\tsystem.tag.writeBlocking([logPath], [log])\n"
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.drop()\n"
                   }
                 }
               }
@@ -471,15 +401,7 @@
             "props": {
               "text": "Cool",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 6px",
-                "cursor": "pointer",
-                "border": "none",
-                "width": "100%",
-                "backgroundColor": "#0284c7"
+                "classes": "roast-btn roast-btn-event roast-btn-cool"
               }
             },
             "position": {
@@ -503,7 +425,7 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
-                    "script": "\tB = '[default]Roastery/CurrentBatch'\n\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime'])\n\ttemp = qvs[0].value\n\tstart = qvs[1].value\n\tnow = system.date.now()\n\telapsed = -1\n\tif start is not None:\n\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\tsystem.tag.writeBlocking([B + '/State', B + '/Mode'], ['Cooling', 'Cool'])\n\tlogPath = '[default]Roastery/EventsLog'\n\tlog = system.tag.readBlocking([logPath])[0].value\n\tif log is None:\n\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Event', 'Cool', float(temp), None, None])\n\tsystem.tag.writeBlocking([logPath], [log])\n"
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.cool()\n"
                   }
                 }
               }
@@ -520,7 +442,7 @@
           "direction": "row",
           "wrap": "wrap",
           "style": {
-            "gap": "8px"
+            "classes": "roast-gap-8"
           }
         },
         "children": [
@@ -532,15 +454,7 @@
             "props": {
               "text": "Finish",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 6px",
-                "cursor": "pointer",
-                "border": "none",
-                "width": "100%",
-                "backgroundColor": "#16a34a"
+                "classes": "roast-btn roast-btn-event roast-btn-green"
               }
             },
             "position": {
@@ -564,7 +478,7 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
-                    "script": "\tB = '[default]Roastery/CurrentBatch'\n\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime'])\n\ttemp = qvs[0].value\n\tstart = qvs[1].value\n\tnow = system.date.now()\n\telapsed = -1\n\tif start is not None:\n\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\tsystem.tag.writeBlocking([B + '/State', B + '/Mode'], ['Complete', 'Off'])\n\tlogPath = '[default]Roastery/EventsLog'\n\tlog = system.tag.readBlocking([logPath])[0].value\n\tif log is None:\n\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Event', 'Finish', float(temp), None, None])\n\tsystem.tag.writeBlocking([logPath], [log])\n"
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.finish()\n"
                   }
                 }
               }
@@ -578,15 +492,7 @@
             "props": {
               "text": "Reset",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 6px",
-                "cursor": "pointer",
-                "border": "none",
-                "width": "100%",
-                "backgroundColor": "#6b7280"
+                "classes": "roast-btn roast-btn-event roast-btn-reset"
               }
             },
             "position": {
@@ -610,7 +516,7 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
-                    "script": "\tB = '[default]Roastery/CurrentBatch'\n\tsystem.tag.writeBlocking([B + '/State', B + '/Mode', B + '/StartTime', B + '/ChargeTime', B + '/ChargeTempF', B + '/WeightOutG'], ['Idle', 'Off', None, None, 0.0, 0.0])\n\tpaths = []\n\tvalues = []\n\tfor stem in ['DryEnd', 'FirstCrackStart', 'FirstCrackEnd', 'SecondCrackStart', 'SecondCrackEnd', 'Drop']:\n\t\tpaths += [B + '/' + stem + 'Time', B + '/' + stem + 'TempF', B + '/' + stem + 'ElapsedSec']\n\t\tvalues += [None, 0.0, -1]\n\tfor i in [1, 2, 3, 4]:\n\t\tpaths += [B + '/CustomEvent' + str(i) + 'Time', B + '/CustomEvent' + str(i) + 'TempF', B + '/CustomEvent' + str(i) + 'ElapsedSec']\n\t\tvalues += [None, 0.0, -1]\n\tsystem.tag.writeBlocking(paths, values)\n\temptyLog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\tsystem.tag.writeBlocking(['[default]Roastery/EventsLog'], [emptyLog])\n\tsystem.tag.writeBlocking(['[default]Roastery/TargetProfileDS'], [system.dataset.toDataSet(['t_stamp', 'plan'], [])])\n\tsystem.tag.writeBlocking(['[default]Roastery/BackgroundDS'], [system.dataset.toDataSet(['t_stamp', 'bg'], [])])\n"
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.reset_batch()\n"
                   }
                 }
               }
@@ -624,15 +530,7 @@
             "props": {
               "text": "Custom 1",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 6px",
-                "cursor": "pointer",
-                "border": "none",
-                "width": "100%",
-                "backgroundColor": "#7c3aed"
+                "classes": "roast-btn roast-btn-event roast-btn-purple"
               }
             },
             "position": {
@@ -667,7 +565,7 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
-                    "script": "\tB = '[default]Roastery/CurrentBatch'\n\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime', B + '/CustomEvent1Name'])\n\ttemp = qvs[0].value\n\tstart = qvs[1].value\n\tname = qvs[2].value\n\tnow = system.date.now()\n\telapsed = -1\n\tif start is not None:\n\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\tsystem.tag.writeBlocking([B + '/CustomEvent1Time', B + '/CustomEvent1TempF', B + '/CustomEvent1ElapsedSec'], [now, temp, elapsed])\n\tlogPath = '[default]Roastery/EventsLog'\n\tlog = system.tag.readBlocking([logPath])[0].value\n\tif log is None:\n\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Custom', name, float(temp), None, None])\n\tsystem.tag.writeBlocking([logPath], [log])\n"
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.stamp_custom(1)\n"
                   }
                 }
               }
@@ -681,15 +579,7 @@
             "props": {
               "text": "Custom 2",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 6px",
-                "cursor": "pointer",
-                "border": "none",
-                "width": "100%",
-                "backgroundColor": "#7c3aed"
+                "classes": "roast-btn roast-btn-event roast-btn-purple"
               }
             },
             "position": {
@@ -724,7 +614,7 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
-                    "script": "\tB = '[default]Roastery/CurrentBatch'\n\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime', B + '/CustomEvent2Name'])\n\ttemp = qvs[0].value\n\tstart = qvs[1].value\n\tname = qvs[2].value\n\tnow = system.date.now()\n\telapsed = -1\n\tif start is not None:\n\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\tsystem.tag.writeBlocking([B + '/CustomEvent2Time', B + '/CustomEvent2TempF', B + '/CustomEvent2ElapsedSec'], [now, temp, elapsed])\n\tlogPath = '[default]Roastery/EventsLog'\n\tlog = system.tag.readBlocking([logPath])[0].value\n\tif log is None:\n\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Custom', name, float(temp), None, None])\n\tsystem.tag.writeBlocking([logPath], [log])\n"
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.stamp_custom(2)\n"
                   }
                 }
               }
@@ -738,15 +628,7 @@
             "props": {
               "text": "Custom 3",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 6px",
-                "cursor": "pointer",
-                "border": "none",
-                "width": "100%",
-                "backgroundColor": "#7c3aed"
+                "classes": "roast-btn roast-btn-event roast-btn-purple"
               }
             },
             "position": {
@@ -781,7 +663,7 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
-                    "script": "\tB = '[default]Roastery/CurrentBatch'\n\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime', B + '/CustomEvent3Name'])\n\ttemp = qvs[0].value\n\tstart = qvs[1].value\n\tname = qvs[2].value\n\tnow = system.date.now()\n\telapsed = -1\n\tif start is not None:\n\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\tsystem.tag.writeBlocking([B + '/CustomEvent3Time', B + '/CustomEvent3TempF', B + '/CustomEvent3ElapsedSec'], [now, temp, elapsed])\n\tlogPath = '[default]Roastery/EventsLog'\n\tlog = system.tag.readBlocking([logPath])[0].value\n\tif log is None:\n\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Custom', name, float(temp), None, None])\n\tsystem.tag.writeBlocking([logPath], [log])\n"
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.stamp_custom(3)\n"
                   }
                 }
               }
@@ -795,15 +677,7 @@
             "props": {
               "text": "Custom 4",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 6px",
-                "cursor": "pointer",
-                "border": "none",
-                "width": "100%",
-                "backgroundColor": "#7c3aed"
+                "classes": "roast-btn roast-btn-event roast-btn-purple"
               }
             },
             "position": {
@@ -838,7 +712,7 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
-                    "script": "\tB = '[default]Roastery/CurrentBatch'\n\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime', B + '/CustomEvent4Name'])\n\ttemp = qvs[0].value\n\tstart = qvs[1].value\n\tname = qvs[2].value\n\tnow = system.date.now()\n\telapsed = -1\n\tif start is not None:\n\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\tsystem.tag.writeBlocking([B + '/CustomEvent4Time', B + '/CustomEvent4TempF', B + '/CustomEvent4ElapsedSec'], [now, temp, elapsed])\n\tlogPath = '[default]Roastery/EventsLog'\n\tlog = system.tag.readBlocking([logPath])[0].value\n\tif log is None:\n\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Custom', name, float(temp), None, None])\n\tsystem.tag.writeBlocking([logPath], [log])\n"
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.stamp_custom(4)\n"
                   }
                 }
               }
@@ -855,7 +729,7 @@
           "direction": "row",
           "wrap": "wrap",
           "style": {
-            "gap": "14px"
+            "classes": "roast-gap-14"
           }
         },
         "children": [
@@ -868,7 +742,7 @@
               "direction": "column",
               "alignItems": "center",
               "style": {
-                "gap": "4px"
+                "classes": "roast-gap-8"
               }
             },
             "children": [
@@ -880,11 +754,7 @@
                 "props": {
                   "text": "FAN",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "var(--neutral-60)",
-                    "textTransform": "uppercase",
-                    "letterSpacing": "0.1em"
+                    "classes": "roast-caption"
                   }
                 }
               },
@@ -898,7 +768,7 @@
                   "justify": "center",
                   "alignItems": "center",
                   "style": {
-                    "gap": "8px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -910,14 +780,7 @@
                     "props": {
                       "text": "\u2212",
                       "style": {
-                        "fontSize": "17px",
-                        "fontWeight": "700",
-                        "color": "#ffffff",
-                        "borderRadius": "10px",
-                        "padding": "6px 14px",
-                        "cursor": "pointer",
-                        "border": "none",
-                        "backgroundColor": "#6b7280"
+                        "classes": "roast-btn roast-btn-step roast-btn-reset"
                       }
                     },
                     "events": {
@@ -926,7 +789,7 @@
                           "scope": "G",
                           "type": "script",
                           "config": {
-                            "script": "\tB = '[default]Roastery/CurrentBatch'\n\tpath = B + '/FanLevel'\n\tcur = system.tag.readBlocking([path])[0].value\n\tnew = cur + (-1)\n\tif new < 1:\n\t\tnew = 1\n\tif new > 9:\n\t\tnew = 9\n\tif new != cur:\n\t\tsystem.tag.writeBlocking([path], [new])\n\t\tstate = system.tag.readBlocking([B + '/State'])[0].value\n\t\tif state == 'Roasting':\n\t\t\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime'])\n\t\t\ttemp = qvs[0].value\n\t\t\tstart = qvs[1].value\n\t\t\tnow = system.date.now()\n\t\t\telapsed = -1\n\t\t\tif start is not None:\n\t\t\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\t\t\tlogPath = '[default]Roastery/EventsLog'\n\t\t\tlog = system.tag.readBlocking([logPath])[0].value\n\t\t\tif log is None:\n\t\t\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\t\t\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Fan', 'Fan ' + str(new), float(temp), float(new), None])\n\t\t\tsystem.tag.writeBlocking([logPath], [log])\n"
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('FanLevel', -1, 'Fan')\n"
                           }
                         }
                       }
@@ -940,11 +803,7 @@
                     "props": {
                       "text": "5",
                       "style": {
-                        "fontSize": "26px",
-                        "fontWeight": "700",
-                        "color": "var(--label)",
-                        "textAlign": "center",
-                        "minWidth": "44px"
+                        "classes": "roast-stepper-value"
                       }
                     },
                     "propConfig": {
@@ -976,14 +835,7 @@
                     "props": {
                       "text": "+",
                       "style": {
-                        "fontSize": "17px",
-                        "fontWeight": "700",
-                        "color": "#ffffff",
-                        "borderRadius": "10px",
-                        "padding": "6px 14px",
-                        "cursor": "pointer",
-                        "border": "none",
-                        "backgroundColor": "#0c7bb3"
+                        "classes": "roast-btn roast-btn-step roast-btn-blue"
                       }
                     },
                     "events": {
@@ -992,7 +844,7 @@
                           "scope": "G",
                           "type": "script",
                           "config": {
-                            "script": "\tB = '[default]Roastery/CurrentBatch'\n\tpath = B + '/FanLevel'\n\tcur = system.tag.readBlocking([path])[0].value\n\tnew = cur + (1)\n\tif new < 1:\n\t\tnew = 1\n\tif new > 9:\n\t\tnew = 9\n\tif new != cur:\n\t\tsystem.tag.writeBlocking([path], [new])\n\t\tstate = system.tag.readBlocking([B + '/State'])[0].value\n\t\tif state == 'Roasting':\n\t\t\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime'])\n\t\t\ttemp = qvs[0].value\n\t\t\tstart = qvs[1].value\n\t\t\tnow = system.date.now()\n\t\t\telapsed = -1\n\t\t\tif start is not None:\n\t\t\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\t\t\tlogPath = '[default]Roastery/EventsLog'\n\t\t\tlog = system.tag.readBlocking([logPath])[0].value\n\t\t\tif log is None:\n\t\t\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\t\t\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Fan', 'Fan ' + str(new), float(temp), float(new), None])\n\t\t\tsystem.tag.writeBlocking([logPath], [log])\n"
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('FanLevel', 1, 'Fan')\n"
                           }
                         }
                       }
@@ -1016,7 +868,7 @@
               "direction": "column",
               "alignItems": "center",
               "style": {
-                "gap": "4px"
+                "classes": "roast-gap-8"
               }
             },
             "children": [
@@ -1028,11 +880,7 @@
                 "props": {
                   "text": "HEAT",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "var(--neutral-60)",
-                    "textTransform": "uppercase",
-                    "letterSpacing": "0.1em"
+                    "classes": "roast-caption"
                   }
                 }
               },
@@ -1046,7 +894,7 @@
                   "justify": "center",
                   "alignItems": "center",
                   "style": {
-                    "gap": "8px"
+                    "classes": "roast-gap-8"
                   }
                 },
                 "children": [
@@ -1058,14 +906,7 @@
                     "props": {
                       "text": "\u2212",
                       "style": {
-                        "fontSize": "17px",
-                        "fontWeight": "700",
-                        "color": "#ffffff",
-                        "borderRadius": "10px",
-                        "padding": "6px 14px",
-                        "cursor": "pointer",
-                        "border": "none",
-                        "backgroundColor": "#6b7280"
+                        "classes": "roast-btn roast-btn-step roast-btn-reset"
                       }
                     },
                     "events": {
@@ -1074,7 +915,7 @@
                           "scope": "G",
                           "type": "script",
                           "config": {
-                            "script": "\tB = '[default]Roastery/CurrentBatch'\n\tpath = B + '/HeatLevel'\n\tcur = system.tag.readBlocking([path])[0].value\n\tnew = cur + (-1)\n\tif new < 1:\n\t\tnew = 1\n\tif new > 9:\n\t\tnew = 9\n\tif new != cur:\n\t\tsystem.tag.writeBlocking([path], [new])\n\t\tstate = system.tag.readBlocking([B + '/State'])[0].value\n\t\tif state == 'Roasting':\n\t\t\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime'])\n\t\t\ttemp = qvs[0].value\n\t\t\tstart = qvs[1].value\n\t\t\tnow = system.date.now()\n\t\t\telapsed = -1\n\t\t\tif start is not None:\n\t\t\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\t\t\tlogPath = '[default]Roastery/EventsLog'\n\t\t\tlog = system.tag.readBlocking([logPath])[0].value\n\t\t\tif log is None:\n\t\t\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\t\t\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Heat', 'Heat ' + str(new), float(temp), None, float(new)])\n\t\t\tsystem.tag.writeBlocking([logPath], [log])\n"
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('HeatLevel', -1, 'Heat')\n"
                           }
                         }
                       }
@@ -1088,11 +929,7 @@
                     "props": {
                       "text": "5",
                       "style": {
-                        "fontSize": "26px",
-                        "fontWeight": "700",
-                        "color": "var(--label)",
-                        "textAlign": "center",
-                        "minWidth": "44px"
+                        "classes": "roast-stepper-value"
                       }
                     },
                     "propConfig": {
@@ -1124,14 +961,7 @@
                     "props": {
                       "text": "+",
                       "style": {
-                        "fontSize": "17px",
-                        "fontWeight": "700",
-                        "color": "#ffffff",
-                        "borderRadius": "10px",
-                        "padding": "6px 14px",
-                        "cursor": "pointer",
-                        "border": "none",
-                        "backgroundColor": "#dc2626"
+                        "classes": "roast-btn roast-btn-step roast-btn-charge"
                       }
                     },
                     "events": {
@@ -1140,7 +970,7 @@
                           "scope": "G",
                           "type": "script",
                           "config": {
-                            "script": "\tB = '[default]Roastery/CurrentBatch'\n\tpath = B + '/HeatLevel'\n\tcur = system.tag.readBlocking([path])[0].value\n\tnew = cur + (1)\n\tif new < 1:\n\t\tnew = 1\n\tif new > 9:\n\t\tnew = 9\n\tif new != cur:\n\t\tsystem.tag.writeBlocking([path], [new])\n\t\tstate = system.tag.readBlocking([B + '/State'])[0].value\n\t\tif state == 'Roasting':\n\t\t\tqvs = system.tag.readBlocking([B + '/BeanTempF', B + '/StartTime'])\n\t\t\ttemp = qvs[0].value\n\t\t\tstart = qvs[1].value\n\t\t\tnow = system.date.now()\n\t\t\telapsed = -1\n\t\t\tif start is not None:\n\t\t\t\telapsed = int((now.getTime() - start.getTime()) / 1000)\n\t\t\tlogPath = '[default]Roastery/EventsLog'\n\t\t\tlog = system.tag.readBlocking([logPath])[0].value\n\t\t\tif log is None:\n\t\t\t\tlog = system.dataset.toDataSet(['t_stamp', 'elapsedSec', 'kind', 'label', 'tempF', 'fan', 'heat'], [])\n\t\t\tlog = system.dataset.addRow(log, [now, float(max(elapsed, 0)), 'Heat', 'Heat ' + str(new), float(temp), None, float(new)])\n\t\t\tsystem.tag.writeBlocking([logPath], [log])\n"
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('HeatLevel', 1, 'Heat')\n"
                           }
                         }
                       }
@@ -1175,14 +1005,7 @@
             "props": {
               "text": "Roast Setup",
               "style": {
-                "fontSize": "14px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "10px 18px",
-                "cursor": "pointer",
-                "border": "none",
-                "backgroundColor": "#0c7bb3"
+                "classes": "roast-btn roast-btn-primary"
               }
             },
             "events": {

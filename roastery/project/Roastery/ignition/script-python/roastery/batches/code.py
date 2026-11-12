@@ -1,0 +1,520 @@
+# Roastery batch persistence: full CRUD for previous batches in
+# Postgres, through NAMED QUERIES only. This module is the only
+# caller of the batch named queries; no view binding or handler
+# carries SQL.
+#
+# Data model (docs: roastery/docs/coffee-roaster-app.md):
+# - batches: surrogate id PK, batch_number UNIQUE (the human batch
+#   number), relational columns only for listing and sorting
+#   (roast_start, roast_end, bean_name, drop_temp_f), and a `data`
+#   JSONB column with the complete batch document (metadata, events
+#   with times and temps, phase durations, DTR, AUC, weights, roast
+#   degree, target profile, notes), so the batch schema can evolve
+#   without migrations.
+# - batch_series: one row per curve sample keyed by batch_number
+#   (FK, ON DELETE CASCADE): t_offset_sec, sample_ts, bean_temp_f,
+#   rate_of_rise_f, fan_level, heat_level. Written at save time from
+#   the CurveSamples dataset roastery.core records during the roast,
+#   through Series/InsertBatch (one call; the points travel as a
+#   JSON array parameter unpacked in SQL). View as Background reads
+#   the series back through Series/SelectByBatch, so every batch
+#   carries its own curve like an Artisan roast file.
+
+import roastery.core as core
+
+NQ_SELECT_ALL = 'Roastery/Batches/SelectAll'
+NQ_SELECT_BY_ID = 'Roastery/Batches/SelectById'
+NQ_INSERT = 'Roastery/Batches/Insert'
+NQ_UPDATE = 'Roastery/Batches/Update'
+NQ_DELETE = 'Roastery/Batches/Delete'
+NQ_SERIES_INSERT = 'Roastery/Series/InsertBatch'
+NQ_SERIES_SELECT = 'Roastery/Series/SelectByBatch'
+
+BACKGROUND_LABEL = '[default]Roastery/BackgroundLabel'
+ROASTLOG_TAG = '[default]Roastery/RoastLog'
+REFRESH_MESSAGE = 'roastery-batches-refresh'
+
+
+def _run(path, params=None):
+    return system.db.runNamedQuery(path, params or {})
+
+
+def _iso(dt):
+    if dt is None:
+        return None
+    return system.date.format(dt, "yyyy-MM-dd'T'HH:mm:ss")
+
+
+def _doc_of(cell):
+    """SelectById returns the JSONB document as JSON text."""
+    if cell is None:
+        return {}
+    if isinstance(cell, basestring):
+        return system.util.jsonDecode(cell)
+    return system.util.jsonDecode(str(cell))
+
+
+# ---------------------------------------------------------------- document
+
+def roast_degree(drop_temp_f):
+    t = drop_temp_f or 0.0
+    if t < 390:
+        return 'Cinnamon'
+    if t < 396:
+        return 'New England'
+    if t < 401:
+        return 'American'
+    if t < 406:
+        return 'City'
+    if t < 411:
+        return 'City+'
+    if t < 416:
+        return 'Full City'
+    if t < 421:
+        return 'Full City+'
+    if t < 426:
+        return 'Vienna'
+    if t < 436:
+        return 'French'
+    return 'Italian'
+
+
+def curve_auc(points, charge_temp_f):
+    """Trapezoid area between the bean curve and the charge temp, in
+    degree F minutes (same definition as the v2 roast log save)."""
+    auc = 0.0
+    base = charge_temp_f or 0.0
+    for i in range(len(points) - 1):
+        a, b = points[i], points[i + 1]
+        dt_min = (b['t'] - a['t']) / 60.0
+        if dt_min <= 0:
+            continue
+        avg = (a['bt'] + b['bt']) / 2.0
+        if avg > base:
+            auc += (avg - base) * dt_min
+    return auc
+
+
+def _event_doc(vals, stem):
+    elapsed = vals[stem + 'ElapsedSec']
+    if elapsed is None or elapsed < 0:
+        return None
+    return {'t': elapsed, 'ts': _iso(vals[stem + 'Time']),
+            'tempF': vals[stem + 'TempF']}
+
+
+def _trace_summary():
+    ds = system.tag.readBlocking([core.EVENTS_LOG])[0].value
+    out = []
+    if ds is None:
+        return out
+    for r in range(ds.rowCount):
+        if ds.getValueAt(r, 'kind') == 'stepper':
+            out.append({'t': float(ds.getValueAt(r, 'elapsedSec')),
+                        'label': ds.getValueAt(r, 'label'),
+                        'fan': float(ds.getValueAt(r, 'fan')),
+                        'heat': float(ds.getValueAt(r, 'heat'))})
+    return out
+
+
+def build_document():
+    """Assemble the JSONB batch document from the CurrentBatch tags."""
+    members = ['BatchNumber', 'BeanName', 'ChargeTime', 'DropTime',
+               'ChargeTempF', 'DropTempF', 'DropElapsedSec',
+               'ActiveSource']
+    members += list(core.FORM_MEMBERS)
+    for stem in ('DryEnd', 'FirstCrackStart', 'FirstCrackEnd',
+                 'SecondCrackStart', 'SecondCrackEnd', 'Drop'):
+        members += [stem + 'Time', stem + 'TempF', stem + 'ElapsedSec']
+    for i in (1, 2, 3, 4):
+        members += ['CustomEvent%dName' % i, 'CustomEvent%dKind' % i,
+                    'CustomEvent%dTime' % i, 'CustomEvent%dTempF' % i,
+                    'CustomEvent%dElapsedSec' % i]
+    members += ['TargetChargeTempF', 'TargetDryEndSec',
+                'TargetDryEndTempF', 'TargetFCSec', 'TargetFCTempF',
+                'TargetDropSec', 'TargetDropTempF']
+    vals = core.read_members(members)
+    total = vals['DropElapsedSec'] or 0
+    dry = vals['DryEndElapsedSec']
+    dry = dry if dry is not None and dry >= 0 else 0
+    fc = vals['FirstCrackStartElapsedSec']
+    fc = fc if fc is not None and fc >= 0 else total
+    charge_w = vals['ChargeWeightG'] or 0.0
+    out_w = vals['WeightOutG'] or 0.0
+    loss = ((charge_w - out_w) * 100.0 / charge_w) if out_w > 0 and charge_w > 0 else 0.0
+    return {
+        'batchNumber': vals['BatchNumber'],
+        'beanName': vals['BeanName'],
+        'roastStart': _iso(vals['ChargeTime']),
+        'roastEnd': _iso(vals['DropTime']),
+        'dropTempF': vals['DropTempF'],
+        'roastDegree': roast_degree(vals['DropTempF']),
+        'totalSec': total,
+        'phases': {'dryingSec': dry, 'maillardSec': fc - dry,
+                   'developmentSec': total - fc,
+                   'dtrPct': ((total - fc) * 100.0 / total) if total > 0 else 0.0},
+        'auc': curve_auc(core.curve_points(), vals['ChargeTempF']),
+        'weightLossPct': loss,
+        'source': vals['ActiveSource'],
+        'metadata': dict((m, vals[m]) for m in core.FORM_MEMBERS),
+        'events': {
+            'charge': {'t': 0, 'ts': _iso(vals['ChargeTime']),
+                       'tempF': vals['ChargeTempF']},
+            'dryEnd': _event_doc(vals, 'DryEnd'),
+            'fcStart': _event_doc(vals, 'FirstCrackStart'),
+            'fcEnd': _event_doc(vals, 'FirstCrackEnd'),
+            'scStart': _event_doc(vals, 'SecondCrackStart'),
+            'scEnd': _event_doc(vals, 'SecondCrackEnd'),
+            'drop': _event_doc(vals, 'Drop'),
+            'custom': [
+                {'name': vals['CustomEvent%dName' % i],
+                 'kind': vals['CustomEvent%dKind' % i],
+                 't': vals['CustomEvent%dElapsedSec' % i],
+                 'tempF': vals['CustomEvent%dTempF' % i]}
+                for i in (1, 2, 3, 4)
+                if vals['CustomEvent%dElapsedSec' % i] is not None
+                and vals['CustomEvent%dElapsedSec' % i] >= 0]},
+        'target': {'chargeTempF': vals['TargetChargeTempF'],
+                   'dryEndSec': vals['TargetDryEndSec'],
+                   'dryEndTempF': vals['TargetDryEndTempF'],
+                   'fcSec': vals['TargetFCSec'],
+                   'fcTempF': vals['TargetFCTempF'],
+                   'dropSec': vals['TargetDropSec'],
+                   'dropTempF': vals['TargetDropTempF']},
+        'fanHeatTrace': _trace_summary()}
+
+
+# ---------------------------------------------------------------- CRUD
+
+def get_batch(batch_number):
+    ds = _run(NQ_SELECT_BY_ID, {'batch_number': int(batch_number)})
+    if ds.rowCount == 0:
+        return None
+    return {'id': ds.getValueAt(0, 'id'),
+            'batchNumber': ds.getValueAt(0, 'batch_number'),
+            'roastStart': ds.getValueAt(0, 'roast_start'),
+            'roastEnd': ds.getValueAt(0, 'roast_end'),
+            'beanName': ds.getValueAt(0, 'bean_name'),
+            'dropTempF': ds.getValueAt(0, 'drop_temp_f'),
+            'document': _doc_of(ds.getValueAt(0, 'data'))}
+
+
+def delete_batch(batch_number):
+    """Delete named query; batch_series rows cascade in Postgres."""
+    return _run(NQ_DELETE, {'batch_number': int(batch_number)})
+
+
+def _insert_series(batch_number, points):
+    if not points:
+        return 0
+    payload = []
+    for p in points:
+        item = {'t': p['t'], 'bt': p['bt'], 'ror': p['ror']}
+        if p.get('ts') is not None:
+            item['ts'] = system.date.format(p['ts'], "yyyy-MM-dd'T'HH:mm:ss.SSSZ")
+        if p.get('fan') is not None:
+            item['fan'] = p['fan']
+        if p.get('heat') is not None:
+            item['heat'] = p['heat']
+        payload.append(item)
+    return _run(NQ_SERIES_INSERT, {
+        'batch_number': int(batch_number),
+        'points': system.util.jsonEncode(payload)})
+
+
+def save_current_batch(self):
+    """Summary view Save button: persist the finished roast through
+    the Insert named query, then its recorded curve through
+    Series/InsertBatch."""
+    vals = core.read_members(['BatchNumber', 'BeanName', 'ChargeTime',
+                              'DropTime', 'DropTempF'])
+    doc = build_document()
+    _run(NQ_INSERT, {
+        'batch_number': vals['BatchNumber'],
+        'roast_start': vals['ChargeTime'],
+        'roast_end': vals['DropTime'],
+        'bean_name': vals['BeanName'],
+        'drop_temp_f': vals['DropTempF'],
+        'data': system.util.jsonEncode(doc)})
+    _insert_series(vals['BatchNumber'], core.curve_points())
+    self.view.custom.saveNote = 'Saved batch %d to the database.' % vals['BatchNumber']
+    return vals['BatchNumber']
+
+
+# ---------------------------------------------------------------- edit form
+
+def _apply_form(doc, payload):
+    meta = dict(doc.get('metadata') or {})
+    for k in core.FORM_MEMBERS:
+        if k not in payload:
+            continue
+        v = payload[k]
+        if v is None:
+            continue
+        try:
+            meta[k] = core.coerce(k, v)
+        except Exception:
+            continue
+    doc['metadata'] = meta
+    if meta.get('BeanName'):
+        doc['beanName'] = meta['BeanName']
+    return doc
+
+
+def edit_form_data_for(view):
+    """BatchEdit popup prefill (called from the view onStartup, so it
+    receives the view). In create mode the form starts blank except
+    the bean defaults; in edit mode it comes from the stored batch
+    document (SelectById)."""
+    if view.params.createMode:
+        return {'BeanName': '', 'Origin': '', 'Region': '', 'Farm': '',
+                'Altitude': '', 'Variety': '', 'Process': '',
+                'HarvestYear': 2025, 'MoisturePct': 0.0,
+                'DensityGL': 0.0, 'ChargeWeightG': 200.0,
+                'TargetDropTempF': 415.0, 'RoastLevel': '',
+                'OperatorName': '', 'Notes': '', 'WeightOutG': 0.0,
+                'BatchNumber': 0}
+    batch = get_batch(view.params.batchNumber)
+    if batch is None:
+        return {}
+    meta = dict(batch['document'].get('metadata') or {})
+    data = {}
+    for m in core.FORM_MEMBERS:
+        v = meta.get(m)
+        if v is None:
+            v = 0 if m in core.FORM_INTS else (0.0 if m in core.FORM_FLOATS else '')
+        data[m] = v
+    data['BatchNumber'] = batch['batchNumber']
+    return data
+
+
+def batch_edit_submit(self, event):
+    """BatchEdit popup form submit for both modes."""
+    if self.view.params.createMode:
+        _create_submit(self, event)
+    else:
+        _update_submit(self, event)
+
+
+def _update_submit(self, event):
+    batch_number = int(self.view.params.batchNumber or 0)
+    batch = get_batch(batch_number)
+    if batch is None:
+        self.view.custom.editNote = 'Batch %d no longer exists.' % batch_number
+        return
+    doc = _apply_form(batch['document'], event)
+    _run(NQ_UPDATE, {
+        'batch_number': batch_number,
+        'bean_name': doc.get('beanName'),
+        'drop_temp_f': batch['dropTempF'],
+        'data': system.util.jsonEncode(doc)})
+    self.view.custom.editNote = 'Saved batch %d.' % batch_number
+    system.perspective.sendMessage(REFRESH_MESSAGE, {}, scope='session')
+
+
+def _create_submit(self, event):
+    try:
+        number = int(float(event['BatchNumber']))
+    except Exception:
+        number = 0
+    if not number:
+        self.view.custom.editNote = 'Enter a batch number to create.'
+        return
+    if get_batch(number) is not None:
+        self.view.custom.editNote = 'Batch %d already exists.' % number
+        return
+    doc = {'batchNumber': number, 'beanName': '', 'roastDegree': '',
+           'totalSec': 0, 'phases': {}, 'events': {}, 'metadata': {},
+           'manualEntry': True}
+    doc = _apply_form(doc, event)
+    now = system.date.now()
+    _run(NQ_INSERT, {
+        'batch_number': number, 'roast_start': now, 'roast_end': now,
+        'bean_name': doc.get('beanName') or '', 'drop_temp_f': 0.0,
+        'data': system.util.jsonEncode(doc)})
+    self.view.custom.editNote = 'Created batch %d.' % number
+    system.perspective.sendMessage(REFRESH_MESSAGE, {}, scope='session')
+
+
+# ---------------------------------------------------------------- Batches page
+
+def select_row(self, event):
+    """Batches table row click: remember the selection in view
+    custom props (the action buttons act on it)."""
+    row = event.value
+    try:
+        number = row['batch_number']
+        bean = row['bean_name']
+    except Exception:
+        number = row.get('batch_number')
+        bean = row.get('bean_name')
+    self.view.custom.selBatchNumber = int(number) if number is not None else 0
+    self.view.custom.selLabel = 'Batch %s - %s' % (number, bean)
+    self.view.custom.selNote = ('Selected batch %s (%s). Edit it, delete it, '
+                                'or view it as a background.' % (number, bean))
+    self.view.custom.confirmDelete = False
+
+
+def refresh_table(self):
+    """Re-run the table's SelectAll binding. Called by the panel's
+    refresh message handler (self is the panel root) and by panel
+    actions such as confirm_delete (self is a component in the
+    panel); resolve the table either way. Note: self.view.root is
+    not a valid path in this scripting model."""
+    table = self.getChild('BatchTable')
+    if table is None:
+        # getChild returns None (does not raise) when the child is
+        # not under this component; resolve from the view root.
+        table = self.view.getChild('root').getChild('BatchTable')
+    table.refreshBinding('props.data')
+
+
+def open_editor(self, create=False):
+    number = 0 if create else int(self.view.custom.selBatchNumber or 0)
+    if not create and number <= 0:
+        return
+    system.perspective.openPopup(
+        'roastery-batch-edit', 'Views/BatchEdit',
+        {'batchNumber': number, 'createMode': bool(create)},
+        {'title': 'New Batch' if create else 'Edit Batch %d' % number,
+         'modal': True, 'showCloseIcon': True, 'draggable': True,
+         'resizable': True, 'overlayDismiss': True,
+         'position': {'width': 'min(660px, 94vw)',
+                      'height': 'min(780px, 94vh)'}})
+
+
+def arm_delete(self):
+    number = int(self.view.custom.selBatchNumber or 0)
+    if number <= 0:
+        return
+    self.view.custom.confirmDelete = True
+    self.view.custom.selNote = ('Delete batch %d and its curve? '
+                                'Press Confirm Delete to proceed.' % number)
+
+
+def cancel_delete(self):
+    self.view.custom.confirmDelete = False
+    self.view.custom.selNote = 'Delete cancelled.'
+
+
+def confirm_delete(self):
+    number = int(self.view.custom.selBatchNumber or 0)
+    if number <= 0:
+        return
+    delete_batch(number)
+    self.view.custom.confirmDelete = False
+    self.view.custom.selBatchNumber = 0
+    self.view.custom.selLabel = ''
+    self.view.custom.selNote = 'Deleted batch %d.' % number
+    # Refresh through the panel's message handler (self is the
+    # panel root there), the same path the edit popup saves use.
+    system.perspective.sendMessage(REFRESH_MESSAGE, {}, scope='session')
+
+
+def set_background(self):
+    """View as Background: read the selected batch's curve from the
+    batch_series table (Series/SelectByBatch) and stage it as the
+    Main background overlay, then navigate to the console."""
+    batch_number = int(self.view.custom.selBatchNumber or 0)
+    if batch_number <= 0:
+        return
+    ds = _run(NQ_SERIES_SELECT, {'batch_number': batch_number})
+    pairs = []
+    for r in range(ds.rowCount):
+        pairs.append([ds.getValueAt(r, 't_offset_sec'),
+                      ds.getValueAt(r, 'bean_temp_f')])
+    batch = get_batch(batch_number)
+    label = 'Batch %d' % batch_number
+    if batch is not None and batch['beanName']:
+        label += ' - ' + batch['beanName']
+    system.tag.writeBlocking(
+        [core.BACKGROUND_JSON, BACKGROUND_LABEL],
+        [system.util.jsonEncode(pairs), label])
+    core.build_overlays()
+    system.perspective.navigate(page='/')
+
+
+# ---------------------------------------------------------------- seed
+
+def seed_from_roastlog():
+    """One time migration: copy the legacy RoastLog dataset tag rows
+    into the batches and batch_series tables. All seven legacy rows
+    carry batch number 1042 (v2 test saves), so duplicates are
+    renumbered in chronological order and each document records
+    seededFromRoastLog and originalBatchNumber. Curve points come
+    from the stored curveJson ([seconds, temp] pairs); rate of rise
+    is derived by finite difference; fan and heat were not recorded
+    in v2 and stay null. Returns the number of batches inserted."""
+    from java.util import Date
+    ds = system.tag.readBlocking([ROASTLOG_TAG])[0].value
+    if ds is None or ds.rowCount == 0:
+        return 0
+    existing = set()
+    all_ds = _run(NQ_SELECT_ALL)
+    for r in range(all_ds.rowCount):
+        existing.add(all_ds.getValueAt(r, 'batch_number'))
+    rows = []
+    for r in range(ds.rowCount):
+        rows.append(dict((c, ds.getValueAt(r, c)) for c in ds.columnNames))
+    rows.sort(key=lambda d: d['roastDate'])
+    inserted = 0
+    next_number = 1042
+    for row in rows:
+        while next_number in existing:
+            next_number += 1
+        number = next_number
+        existing.add(number)
+        total = row['totalSec'] or 0.0
+        end = row['roastDate']
+        start = Date(long(end.getTime() - total * 1000)) if end is not None else None
+        charge_g = row['chargeG'] or 0.0
+        loss = row['weightLossPct'] or 0.0
+        doc = {
+            'batchNumber': number,
+            'beanName': row['bean'],
+            'roastStart': _iso(start),
+            'roastEnd': _iso(end),
+            'dropTempF': row['dropTempF'],
+            'roastDegree': row['level'],
+            'totalSec': total,
+            'phases': {'dryingSec': row['drySec'],
+                       'maillardSec': row['maillardSec'],
+                       'developmentSec': row['devSec'],
+                       'dtrPct': row['dtrPct']},
+            'auc': row['auc'],
+            'weightLossPct': loss,
+            'seededFromRoastLog': True,
+            'originalBatchNumber': row['batch'],
+            'metadata': {'BeanName': row['bean'], 'Origin': row['origin'],
+                         'ChargeWeightG': charge_g,
+                         'WeightOutG': charge_g * (1.0 - loss / 100.0)},
+            'events': {'charge': {'t': 0, 'ts': _iso(start),
+                                  'tempF': None},
+                       'drop': {'t': total, 'ts': _iso(end),
+                                'tempF': row['dropTempF']}}}
+        _run(NQ_INSERT, {
+            'batch_number': number, 'roast_start': start,
+            'roast_end': end, 'bean_name': row['bean'],
+            'drop_temp_f': row['dropTempF'],
+            'data': system.util.jsonEncode(doc)})
+        pairs = system.util.jsonDecode(row['curveJson'] or '[]')
+        by_sec = {}
+        for sec, temp in pairs:
+            by_sec[int(round(sec))] = temp
+        secs = sorted(by_sec.keys())
+        points = []
+        for i, sec in enumerate(secs):
+            if 0 < i < len(secs) - 1:
+                ror = (by_sec[secs[i + 1]] - by_sec[secs[i - 1]]) * 60.0 / (secs[i + 1] - secs[i - 1])
+            elif len(secs) > 1 and i == 0:
+                ror = (by_sec[secs[1]] - by_sec[secs[0]]) * 60.0 / max(secs[1] - secs[0], 1)
+            elif len(secs) > 1:
+                ror = (by_sec[secs[-1]] - by_sec[secs[-2]]) * 60.0 / max(secs[-1] - secs[-2], 1)
+            else:
+                ror = 0.0
+            ts = Date(long(start.getTime() + sec * 1000)) if start is not None else None
+            points.append({'t': sec, 'ts': ts, 'bt': by_sec[sec],
+                           'ror': ror})
+        _insert_series(number, points)
+        inserted += 1
+    return inserted

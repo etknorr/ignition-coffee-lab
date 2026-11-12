@@ -16,12 +16,7 @@
     "props": {
       "direction": "column",
       "style": {
-        "backgroundColor": "var(--container)",
-        "border": "1px solid var(--border)",
-        "borderRadius": "16px",
-        "boxShadow": "var(--boxShadow2)",
-        "padding": "14px 18px",
-        "gap": "10px"
+        "classes": "roast-card roast-gap-10"
       }
     },
     "children": [
@@ -44,11 +39,7 @@
             "props": {
               "text": "Phases",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "var(--callToAction)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.08em"
+                "classes": "roast-section-title"
               }
             }
           },
@@ -60,9 +51,7 @@
             "props": {
               "text": "DTR",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "var(--callToAction)"
+                "classes": "roast-accent-text"
               }
             },
             "propConfig": {
@@ -86,8 +75,7 @@
         "props": {
           "direction": "row",
           "style": {
-            "gap": "4px",
-            "width": "100%"
+            "classes": "roast-gap-8 roast-full"
           }
         },
         "children": [
@@ -101,10 +89,7 @@
               "justify": "center",
               "alignItems": "center",
               "style": {
-                "backgroundColor": "#0284c7",
-                "borderRadius": "8px",
-                "padding": "7px 4px",
-                "minWidth": "86px"
+                "classes": "roast-seg roast-seg-drying"
               }
             },
             "children": [
@@ -116,12 +101,7 @@
                 "props": {
                   "text": "DRYING",
                   "style": {
-                    "fontSize": "12px",
-                    "fontWeight": "700",
-                    "color": "#ffffff",
-                    "textAlign": "center",
-                    "whiteSpace": "nowrap",
-                    "overflow": "hidden"
+                    "classes": "roast-seg-text"
                   }
                 },
                 "propConfig": {
@@ -157,10 +137,7 @@
               "justify": "center",
               "alignItems": "center",
               "style": {
-                "backgroundColor": "#2563eb",
-                "borderRadius": "8px",
-                "padding": "7px 4px",
-                "minWidth": "86px"
+                "classes": "roast-seg roast-seg-maillard"
               }
             },
             "children": [
@@ -172,12 +149,7 @@
                 "props": {
                   "text": "MAILLARD",
                   "style": {
-                    "fontSize": "12px",
-                    "fontWeight": "700",
-                    "color": "#ffffff",
-                    "textAlign": "center",
-                    "whiteSpace": "nowrap",
-                    "overflow": "hidden"
+                    "classes": "roast-seg-text"
                   }
                 },
                 "propConfig": {
@@ -213,10 +185,7 @@
               "justify": "center",
               "alignItems": "center",
               "style": {
-                "backgroundColor": "#1e40af",
-                "borderRadius": "8px",
-                "padding": "7px 4px",
-                "minWidth": "86px"
+                "classes": "roast-seg roast-seg-development"
               }
             },
             "children": [
@@ -228,12 +197,7 @@
                 "props": {
                   "text": "DEVELOPMENT",
                   "style": {
-                    "fontSize": "12px",
-                    "fontWeight": "700",
-                    "color": "#ffffff",
-                    "textAlign": "center",
-                    "whiteSpace": "nowrap",
-                    "overflow": "hidden"
+                    "classes": "roast-seg-text"
                   }
                 },
                 "propConfig": {

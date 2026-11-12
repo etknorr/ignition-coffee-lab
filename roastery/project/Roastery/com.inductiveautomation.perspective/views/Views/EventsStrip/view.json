@@ -16,12 +16,7 @@
     "props": {
       "direction": "column",
       "style": {
-        "backgroundColor": "var(--container)",
-        "border": "1px solid var(--border)",
-        "borderRadius": "16px",
-        "boxShadow": "var(--boxShadow2)",
-        "padding": "16px 18px",
-        "gap": "10px"
+        "classes": "roast-card roast-gap-10"
       }
     },
     "children": [
@@ -33,11 +28,7 @@
         "props": {
           "text": "Roast Events",
           "style": {
-            "fontSize": "13px",
-            "fontWeight": "700",
-            "color": "var(--callToAction)",
-            "textTransform": "uppercase",
-            "letterSpacing": "0.08em"
+            "classes": "roast-section-title"
           }
         }
       },
@@ -50,7 +41,7 @@
           "direction": "row",
           "wrap": "wrap",
           "style": {
-            "gap": "8px"
+            "classes": "roast-gap-8"
           }
         },
         "children": [
@@ -387,7 +378,7 @@
           "direction": "row",
           "wrap": "wrap",
           "style": {
-            "gap": "8px"
+            "classes": "roast-gap-8"
           }
         },
         "children": [

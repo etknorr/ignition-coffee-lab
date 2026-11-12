@@ -53,7 +53,7 @@
         "scope": "G",
         "type": "script",
         "config": {
-          "script": "\tself.view.custom.themeText = 'Theme: ' + str(self.session.props.theme)\n"
+          "script": "\timport roastery.core\n\troastery.core.main_startup(self)\n"
         }
       }
     }
@@ -66,7 +66,7 @@
     "props": {
       "direction": "column",
       "style": {
-        "backgroundColor": "var(--containerRoot)"
+        "classes": "roast-app"
       }
     },
     "children": [
@@ -81,11 +81,7 @@
           "alignItems": "center",
           "wrap": "wrap",
           "style": {
-            "backgroundColor": "var(--container)",
-            "backgroundImage": "linear-gradient(90deg, var(--container), var(--containerNested))",
-            "padding": "10px 22px",
-            "gap": "10px",
-            "boxShadow": "var(--boxShadow1)"
+            "classes": "roast-header"
           }
         },
         "children": [
@@ -97,7 +93,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "gap": "2px"
+                "classes": "roast-gap-8"
               }
             },
             "children": [
@@ -109,9 +105,7 @@
                 "props": {
                   "text": "Ember & Oak Roastery",
                   "style": {
-                    "fontSize": "21px",
-                    "fontWeight": "700",
-                    "color": "var(--label)"
+                    "classes": "roast-title"
                   }
                 }
               },
@@ -123,8 +117,7 @@
                 "props": {
                   "text": "Artisan Roast Console \u00b7 FreshRoast SR800",
                   "style": {
-                    "fontSize": "12px",
-                    "color": "var(--neutral-70)"
+                    "classes": "roast-subtitle"
                   }
                 }
               }
@@ -140,7 +133,7 @@
               "alignItems": "center",
               "wrap": "wrap",
               "style": {
-                "gap": "12px"
+                "classes": "roast-gap-12"
               }
             },
             "children": [
@@ -152,9 +145,7 @@
                 "props": {
                   "text": "",
                   "style": {
-                    "fontSize": "13px",
-                    "fontWeight": "600",
-                    "color": "var(--label)"
+                    "classes": "roast-chip"
                   }
                 },
                 "propConfig": {
@@ -176,12 +167,7 @@
                 "props": {
                   "text": "SR800",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "#ffffff",
-                    "padding": "4px 12px",
-                    "borderRadius": "999px",
-                    "boxShadow": "0 0 10px rgba(74, 222, 128, 0.35)"
+                    "classes": "roast-pill"
                   }
                 },
                 "propConfig": {
@@ -189,7 +175,7 @@
                     "binding": {
                       "type": "expr",
                       "config": {
-                        "expression": "if({[default]Roastery/CurrentBatch/BeanTempF} > 0, 'SR800 CONNECTED', 'SR800 OFFLINE')"
+                        "expression": "if({[default]Roastery/CurrentBatch/BeanTempF} > 0, {[default]Roastery/CurrentBatch/ActiveSource} + ' CONNECTED', {[default]Roastery/CurrentBatch/ActiveSource} + ' OFFLINE')"
                       }
                     }
                   },
@@ -211,12 +197,7 @@
                 "props": {
                   "text": "Idle",
                   "style": {
-                    "fontSize": "12px",
-                    "fontWeight": "700",
-                    "color": "#ffffff",
-                    "padding": "4px 14px",
-                    "borderRadius": "999px",
-                    "textAlign": "center"
+                    "classes": "roast-pill"
                   }
                 },
                 "propConfig": {
@@ -281,10 +262,7 @@
                 "props": {
                   "text": "00:00",
                   "style": {
-                    "fontSize": "27px",
-                    "fontWeight": "700",
-                    "color": "var(--label)",
-                    "fontFamily": "monospace"
+                    "classes": "roast-clock"
                   }
                 },
                 "propConfig": {
@@ -306,14 +284,7 @@
                 "props": {
                   "text": "",
                   "style": {
-                    "fontSize": "12px",
-                    "fontWeight": "700",
-                    "color": "var(--label)",
-                    "backgroundColor": "transparent",
-                    "border": "1px solid var(--border)",
-                    "borderRadius": "8px",
-                    "padding": "6px 14px",
-                    "cursor": "pointer"
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
                   }
                 },
                 "propConfig": {
@@ -332,7 +303,7 @@
                       "scope": "G",
                       "type": "script",
                       "config": {
-                        "script": "\tcur = self.session.props.theme\n\tnew = 'light' if cur == 'dark' else 'dark'\n\tself.session.props.theme = new\n\tself.view.custom.themeText = 'Theme: ' + new\n"
+                        "script": "\timport roastery.core, roastery.batches\n\troastery.core.theme_toggle(self)\n"
                       }
                     }
                   }
@@ -341,19 +312,12 @@
               {
                 "type": "ia.input.button",
                 "meta": {
-                  "name": "LogButton"
+                  "name": "BatchesButton"
                 },
                 "props": {
-                  "text": "Roast Log",
+                  "text": "Batches",
                   "style": {
-                    "fontSize": "12px",
-                    "fontWeight": "700",
-                    "color": "var(--label)",
-                    "backgroundColor": "transparent",
-                    "border": "1px solid var(--border)",
-                    "borderRadius": "8px",
-                    "padding": "6px 14px",
-                    "cursor": "pointer"
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
                   }
                 },
                 "events": {
@@ -362,7 +326,7 @@
                       "scope": "G",
                       "type": "script",
                       "config": {
-                        "script": "\tsystem.perspective.navigate(page='/log')\n"
+                        "script": "\tsystem.perspective.navigate(page='/batches')\n"
                       }
                     }
                   }
@@ -386,9 +350,7 @@
           "direction": "row",
           "alignItems": "center",
           "style": {
-            "backgroundColor": "#991b1b",
-            "padding": "9px 22px",
-            "boxShadow": "0 0 18px rgba(239, 68, 68, 0.35)"
+            "classes": "roast-banner"
           }
         },
         "children": [
@@ -400,9 +362,7 @@
             "props": {
               "text": "",
               "style": {
-                "fontSize": "14px",
-                "fontWeight": "700",
-                "color": "#ffffff"
+                "classes": "roast-banner-text"
               }
             },
             "propConfig": {
@@ -441,8 +401,7 @@
         "props": {
           "direction": "column",
           "style": {
-            "padding": "16px 20px",
-            "gap": "14px"
+            "classes": "roast-content"
           }
         },
         "children": [
@@ -454,12 +413,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "backgroundColor": "var(--container)",
-                "border": "1px solid var(--border)",
-                "borderRadius": "16px",
-                "boxShadow": "var(--boxShadow2)",
-                "padding": "16px 18px",
-                "gap": "8px"
+                "classes": "roast-card roast-gap-8"
               }
             },
             "children": [
@@ -482,9 +436,7 @@
                     "props": {
                       "text": "Roast Curve",
                       "style": {
-                        "fontSize": "14px",
-                        "fontWeight": "700",
-                        "color": "var(--label)"
+                        "classes": "roast-value-strong"
                       }
                     }
                   },
@@ -496,9 +448,7 @@
                     "props": {
                       "text": "",
                       "style": {
-                        "fontSize": "11px",
-                        "fontWeight": "600",
-                        "color": "var(--neutral-70)"
+                        "classes": "roast-note"
                       }
                     },
                     "propConfig": {
@@ -1936,11 +1886,7 @@
                 "props": {
                   "text": "Fan / Heat Levels",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "var(--neutral-60)",
-                    "textTransform": "uppercase",
-                    "letterSpacing": "0.1em"
+                    "classes": "roast-caption"
                   }
                 },
                 "position": {
@@ -2755,7 +2701,7 @@
               "direction": "row",
               "wrap": "wrap",
               "style": {
-                "gap": "12px"
+                "classes": "roast-gap-12"
               }
             },
             "children": [
@@ -2850,7 +2796,7 @@
                     "title": "Deviation",
                     "valueText": "--",
                     "unit": "",
-                    "accent": "var(--callToAction)"
+                    "accent": "#0c7bb3"
                   }
                 },
                 "position": {
@@ -2960,7 +2906,7 @@
                     "title": "Phase",
                     "valueText": "Pre-charge",
                     "unit": "",
-                    "accent": "var(--success)"
+                    "accent": "#16a34a"
                   }
                 },
                 "position": {
@@ -2990,7 +2936,7 @@
                     "title": "Target Drop",
                     "valueText": "415",
                     "unit": "deg F",
-                    "accent": "var(--neutral-60)"
+                    "accent": "#64748b"
                   }
                 },
                 "position": {
@@ -3036,7 +2982,7 @@
               "alignItems": "flex-start",
               "wrap": "wrap",
               "style": {
-                "gap": "14px"
+                "classes": "roast-gap-14"
               }
             },
             "children": [

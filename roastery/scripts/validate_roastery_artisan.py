@@ -25,7 +25,8 @@ SINCE = int(sys.argv[2]) if len(sys.argv) > 2 else int((time.time() - 900) * 100
 PROJECT = 'Roastery'
 BASE = 'http://localhost:8088'
 PROJ_DIR = os.path.join(GW, 'data', 'projects', PROJECT)
-VIEWS = ('Views/Main', 'Views/Config', 'Views/Log', 'Views/Tile',
+VIEWS = ('Views/Main', 'Views/Config', 'Views/Batches',
+         'Views/BatchesPanel', 'Views/BatchEdit', 'Views/Tile',
          'Views/EventCell', 'Views/EventsStrip', 'Views/PhasesBar',
          'Views/Controls', 'Views/MetaCard', 'Views/Summary')
 
@@ -38,7 +39,13 @@ def normalize(x, in_events=False):
     if isinstance(x, dict):
         out = {}
         for k, v in x.items():
-            if k == 'propConfig' and v in ({}, None):
+            if k in ('propConfig', 'events') and v in ({}, None):
+                continue
+            if k == 'scripts':
+                # Component script configs (message handlers, custom
+                # methods) are stripped from the served project
+                # payload like binding configs; they are verified
+                # functionally in verify_roastery_v3.py instead.
                 continue
             if k == 'children' and v == []:
                 continue
@@ -66,6 +73,32 @@ def main():
     proj = json.load(opener.open(f'{BASE}/data/perspective/project/{PROJECT}', timeout=15))
     views = proj.get('project', {}).get('views', {}) or proj.get('views', {})
     report = {'served_views': sorted(views), 'views': {}}
+    # v3 resources on disk: library modules, named queries, styles.
+    res_checks = {}
+    lib = os.path.join(PROJ_DIR, 'ignition', 'script-python', 'roastery')
+    res_checks['library_core'] = os.path.exists(
+        os.path.join(lib, 'core', 'code.py'))
+    res_checks['library_batches'] = os.path.exists(
+        os.path.join(lib, 'batches', 'code.py'))
+    nq_root = os.path.join(PROJ_DIR, 'ignition', 'named-query', 'Roastery')
+    nq_names = []
+    for _dp, _dn, _fn in os.walk(nq_root):
+        if 'query.sql' in _fn:
+            nq_names.append(os.path.relpath(_dp, nq_root))
+    res_checks['named_queries'] = sorted(nq_names)
+    # Style classes are not part of the project payload in 8.3;
+    # they are served to the client separately. Verify them on disk
+    # here and in the rendered DOM in verify_roastery_v3.py.
+    sc_root = os.path.join(PROJ_DIR, 'com.inductiveautomation.perspective',
+                           'style-classes')
+    have = sorted(d for d in os.listdir(sc_root)
+                  if os.path.exists(os.path.join(sc_root, d, 'style.json')))
+    res_checks['style_classes_on_disk'] = len(have)
+    res_checks['roast_card_on_disk'] = 'roast-card' in have
+    res_checks['stylesheet_on_disk'] = os.path.exists(os.path.join(
+        PROJ_DIR, 'com.inductiveautomation.perspective', 'stylesheet',
+        'stylesheet.css'))
+    report['resources'] = res_checks
     for rel in VIEWS:
         want = load_file_view(rel)
         served = views.get(rel)
@@ -91,10 +124,15 @@ def main():
     send('client-start', {'path': f'/data/perspective/client/{PROJECT}/'})
     time.sleep(2)
     starts = [(v, {}) for v in VIEWS]
-    starts[3] = ('Views/Tile', {'title': 'Validator', 'valueText': '1.0',
-                                'unit': 'x', 'accent': '#ffb454'})
-    starts[4] = ('Views/EventCell', {'name': 'Charge', 'timeText': '00:00',
-                                     'tempText': '200 F', 'done': True})
+    by_name = {v: i for i, (v, _p) in enumerate(starts)}
+    starts[by_name['Views/Tile']] = (
+        'Views/Tile', {'title': 'Validator', 'valueText': '1.0',
+                       'unit': 'x', 'accent': '#ffb454'})
+    starts[by_name['Views/EventCell']] = (
+        'Views/EventCell', {'name': 'Charge', 'timeText': '00:00',
+                            'tempText': '200 F', 'done': True})
+    starts[by_name['Views/BatchEdit']] = (
+        'Views/BatchEdit', {'batchNumber': 0, 'createMode': True})
     starts.append(('BogusViewXYZ', {}))
     for v, params in starts:
         send('view-start', {'resourcePath': v, 'mountPath': 'C',
@@ -126,7 +164,12 @@ def main():
                            'w'), indent=1)
     print(json.dumps(report, indent=1)[:4000])
     ok = (all(v['served'] and v['deep_equal'] for v in report['views'].values())
-          and not hits and bogus >= 1)
+          and not hits and bogus >= 1
+          and report['resources']['library_core']
+          and report['resources']['library_batches']
+          and len(report['resources']['named_queries']) == 7
+          and report['resources']['roast_card_on_disk']
+          and report['resources']['stylesheet_on_disk'])
     print('VALIDATION', 'PASS' if ok else 'CHECK REPORT')
 
 if __name__ == '__main__':

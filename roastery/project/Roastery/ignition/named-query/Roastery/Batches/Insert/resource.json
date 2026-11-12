@@ -1,0 +1,55 @@
+{
+  "scope": "G",
+  "version": 2,
+  "restricted": false,
+  "overridable": true,
+  "files": [
+    "query.sql"
+  ],
+  "attributes": {
+    "type": "Query",
+    "database": "db",
+    "parameters": [
+      {
+        "type": "Parameter",
+        "identifier": "batch_number",
+        "sqlType": 2
+      },
+      {
+        "type": "Parameter",
+        "identifier": "roast_start",
+        "sqlType": 8
+      },
+      {
+        "type": "Parameter",
+        "identifier": "roast_end",
+        "sqlType": 8
+      },
+      {
+        "type": "Parameter",
+        "identifier": "bean_name",
+        "sqlType": 7
+      },
+      {
+        "type": "Parameter",
+        "identifier": "drop_temp_f",
+        "sqlType": 5
+      },
+      {
+        "type": "Parameter",
+        "identifier": "data",
+        "sqlType": 7
+      }
+    ],
+    "permissions": [],
+    "enabled": true,
+    "fallbackEnabled": false,
+    "fallbackValue": "",
+    "description": "Roastery v3",
+    "useMaxReturnSize": false,
+    "maxReturnSize": 1000,
+    "cacheEnabled": false,
+    "cacheAmount": 1,
+    "autoBatchEnabled": false
+  }
+}

@@ -484,3 +484,332 @@ roastery-v2-dark-mobile.png, roastery-v2-light-mobile.png (lab
 showcase/shots only; the repo stays config only). Maker gateway
 RUNNING, batch at clean Idle (Farm Buku Abel, WeightOutG 0,
 Fan 5, Heat 5, background cleared).
+
+## Roastery v3: database CRUD, scripting library, style classes (Maker 2027 gateway, verified 2026-11-12)
+
+V3 is an architecture pass. The console behavior from v2 is
+unchanged; what changed is where the data lives, where the code
+lives, and how styling is organized.
+
+### Previous batches: Postgres via named queries only
+
+The RoastLog dataset tag is no longer the store (the tag still
+exists and is unused by the app; see Seed below). Previous
+batches live in Postgres, reached only through named queries
+defined in the project. No binding or script contains embedded
+SQL; the only SQL in the project is inside the named query
+resources.
+
+Tables (DDL in scripts/setup_roastery_db.py, idempotent):
+
+- batches: id BIGSERIAL primary key, batch_number INTEGER
+  UNIQUE (the human batch number, e.g. 1042), roast_start and
+  roast_end TIMESTAMPTZ, bean_name TEXT, drop_temp_f DOUBLE,
+  data JSONB, created_at and updated_at. The relational columns
+  are only what the Batches page lists, sorts, and filters on.
+  Everything else about the batch (the full 16 field metadata
+  set, event times and temps, phase durations, DTR, AUC, weight
+  loss, roast degree, target profile, fan and heat trace) lives
+  in the data JSONB document, so the batch schema can evolve
+  without migrations. The scripting library assembles and
+  disassembles the document.
+- batch_series: one row per curve sample, batch_number foreign
+  key to batches (ON DELETE CASCADE), t_offset_sec, sample_ts,
+  bean_temp_f, rate_of_rise_f, fan_level, heat_level. Written at
+  save time from the samples the app records during the roast,
+  so every batch carries its own curve, like an Artisan roast
+  file.
+
+Named queries (folder Roastery in the project):
+
+- Roastery/Batches/SelectAll: newest first; returns the
+  relational columns plus the JSONB extractions the table
+  displays (origin, charge weight, weight out, DTR, roast
+  degree, total seconds).
+- Roastery/Batches/SelectById: one batch with its document.
+- Roastery/Batches/Insert and Update: write the relational
+  columns and CAST(:data AS jsonb) for the document.
+- Roastery/Batches/Delete: deletes the batch; its series rows
+  cascade in Postgres.
+- Roastery/Series/InsertBatch: bulk insert of one batch's
+  samples; the library passes a JSON array parameter and the
+  query unpacks it with jsonb_array_elements.
+- Roastery/Series/SelectByBatch: the curve for one batch.
+
+Background route (settled design): View as Background reads the
+selected batch's rows through Series/SelectByBatch, stages them
+in the BackgroundCurveJson tag, and the library shapes the
+overlay dataset on the current roast's timeline. No historian
+dependency for backgrounds.
+
+Batches page: page /batches is a thin shell (header plus an
+embed) around the reusable Views/BatchesPanel, which holds the
+table (a named query binding to SelectAll), row selection,
+Edit, Delete with a confirm step, View as Background, and New
+Batch. Edit and New Batch open Views/BatchEdit as a popup: the
+proven ia.input.form pattern, 17 fields (the 16 metadata fields
+plus BatchNumber in create mode), prefilled from SelectById by
+a library function, submitted through a thin handler that calls
+the library, which coerces values and writes via Update or
+Insert. After a popup save, the library sends the session
+message roastery-batches-refresh; the panel's message handler
+re-runs the table binding. The panel is built as an embedded
+view so the coming tabbed shell (Roast, Configure, Log) can
+reuse it as the Log tab.
+
+Seed: the seven test batches that were in the old RoastLog
+dataset tag were migrated into the batches table by
+roastery.batches.seed_from_roastlog(). All seven were saves of
+the same accelerated v2 click test under batch number 1042, so
+they were renumbered chronologically to 1042 through 1048 (the
+documents carry seededFromRoastLog and originalBatchNumber).
+Their curves were converted into batch_series rows (RoR by
+finite difference, fan and heat null; the old log did not
+record them).
+
+### Historian: SQL historian on the db connection
+
+Tag history for BeanTempF and RateOfRiseF now points at the SQL
+historian provider named db (Postgres), not CoreHistorian. The
+CoreHistorian provider stays defined but unused.
+
+Beta trap, verified twice: the SQL historian sink
+initialization is not idempotent. If the sqlth_* tables already
+exist when the sink initializes (for example after a gateway
+restart), sink creation fails with "relation already exists",
+the sink faults, and no history is stored. Recovery, proven in
+the lab: drop the sqlth_* tables, then PUT the database
+connection resource back to bounce the connection; the sink
+recreates its schema (including the monthly data partitions)
+and resumes storing. The docs carry this because a plain
+gateway restart will hit it.
+
+### Scripting library: the roastery package
+
+All application Python lives in the project scripting library,
+package roastery, two modules:
+
+- roastery.core: the BeanTempF valueChanged logic (RoR
+  derivation with exponential smoothing and the 50 F jump
+  reseed), curve sampling into the CurveSamples dataset while
+  roasting, event stamping (standard and custom), charge, drop,
+  cool, finish, reset, the fan and heat stepper, target and
+  background overlay building, the config form data and submit
+  (including coercion, and mirroring the WebSocket URL into the
+  selected source), Main startup, and the theme toggle.
+- roastery.batches: batch document assembly and disassembly,
+  save_current_batch (Insert plus Series/InsertBatch), the
+  SelectById read, edit form prefill and submit (edit and
+  create), delete with confirm state, table selection and
+  refresh, View as Background, and the RoastLog seed migration.
+
+The Gateway Scripting Project is set to Roastery, so tag event
+scripts can import the library; the BeanTempF event script is
+the one line call roastery.core.on_bean_temp(...). Every
+component handler, view startup script, and form handler in the
+views is a one line library call or a single framework call
+(navigate, closePopup). Startup scripts that prefill a form are
+one assignment of a library call result to the form's data
+property.
+
+Traps found while building this:
+
+- Named query resources are version 2: query.sql plus a
+  resource.json whose attributes are typed JSON. Parameter
+  types use the ParameterType constant "Parameter" (there is
+  no "Value"); omit cacheUnit entirely (the deserializer calls
+  TimeUnits.valueOf on it and "SECONDS" throws). Parameter
+  data types are the DataType ints (Int4=2, Float8=5, String=7,
+  DateTime=8, Text=10). Update queries return the update count;
+  a Query type INSERT ... RETURNING id returns the id as a
+  dataset. The jsonb document cell comes back from SelectById
+  as a unicode JSON string; system.util.jsonDecode parses it.
+- A script library package has no code.py at its root; modules
+  are subfolders with their own code.py and resource.json. A
+  root code.py makes the subpackages unimportable.
+- The gatewayScriptingProject system property key is lowercase
+  g; the PascalCase spelling is silently dropped.
+- A database connection password secret stored by reference is
+  created through the encryption endpoint: POST the raw
+  plaintext to /data/api/v1/encryption/encrypt and store the
+  returned JWE as a nested JSON object in the secret config.
+  Storing the JWE as a string fails ("Not a JSON Object"). The
+  SecretConfig.Type values are only Embedded and Referenced.
+- Component message handlers live on a component's top level
+  "scripts" key as messageHandlers entries (messageType,
+  script, sessionScope, pageScope, viewScope). The served
+  project payload strips component scripts (and binding
+  configs), so served-versus-authored comparisons must
+  normalize them away; the handlers are verified functionally
+  instead (the create and edit saves visibly refresh the
+  table through the message).
+- system.perspective.openPopup takes its options as one
+  positional dict (title, modal, showCloseIcon, overlayDismiss,
+  viewportBound, position); keyword arguments do not work.
+  self.view.root is not a valid path in component scripts;
+  resolve components with getChild from the view or the panel
+  root, and note getChild returns None rather than raising
+  when the child is not found.
+- Dataset tags created over REST (and zero row datasets built
+  with system.dataset.toDataSet) get String typed columns, so
+  every cell round trips as text ('0.0', timestamps as
+  'yyyy-MM-dd HH:mm:ss.SSS' strings). The library builds empty
+  datasets from a typed seed row that is then deleted, so the
+  columns keep real types (Double, Date, Integer), replaces an
+  empty dataset on first append (healing a legacy string typed
+  value), and coerces numeric and timestamp cells on read
+  regardless. Never write a dataset tag value through the REST
+  tags/write endpoint as a JSON object; it stores a Document
+  and poisons the tag. A JSON string of the dataset works.
+- Perspective tables are virtualized divs, not table elements.
+  A row click must land on the cell content div; clicking the
+  row container does nothing, and Playwright hit testing
+  reports ancestors as intercepting even when the layout is
+  fine. Batch numbers render with a thousands separator
+  (2,001), which text based test selectors must expect.
+- An embedded view whose flex position is grow 1 with basis
+  0px collapses to zero height inside a content sized parent;
+  Main's embeds and the Batches shell use basis auto and size
+  to their content.
+
+### Style classes and the advanced stylesheet
+
+Styling is organized as 63 Perspective style classes in the
+project (roast- prefix: roast-app, roast-content, roast-card
+and roast-card-sm, roast-header, roast-title and
+roast-title-sm, roast-section-title, roast-caption, roast-value
+family, roast-clock, roast-chip, roast-pill and roast-mode-pill,
+roast-banner, roast-note family, roast-btn with the size and
+color variants roast-btn-sm, roast-btn-ghost, roast-btn-primary,
+roast-btn-green, roast-btn-purple, roast-btn-event,
+roast-btn-charge, roast-btn-blue, roast-btn-sc, roast-btn-drop,
+roast-btn-cool, roast-btn-reset and roast-btn-step, roast-input,
+roast-checkbox, roast-table and roast-table-header, the phase
+segment classes roast-seg with roast-seg-drying,
+roast-seg-maillard, roast-seg-development and roast-seg-text,
+roast-event-name, roast-event-time and roast-event-time,
+roast-form-caption, roast-section-div, roast-scroll,
+roast-status, roast-alarm-cap, roast-accent-bar and
+roast-accent-text, roast-stepper-value, roast-unit, roast-full,
+and the roast-gap-8 through roast-gap-14 spacing helpers),
+applied uniformly through style.classes. The advanced
+stylesheet holds only what classes cannot reach: hover and
+active brightness on .psc-roast-btn, the focus outline on
+.psc-roast-input, and scrollbar styling on .psc-roast-scroll
+(DOM selectors need the .psc- prefix). Colors stay on the v2
+neutral palette of built in CSS variables, so both session
+themes work; there is no brown.
+
+Remaining inline styles are data driven values a class cannot
+express, each bound, not static: the state and mode pill
+background colors (expression and map results), the alarm
+banner and delete confirm row display toggles, the phase
+segment widths, the event name color, the tile accent bar color
+(a view parameter), the config status label color, the two XY
+charts' transparent backgroundColor (a chart property), and the
+form component's own internal widget styles.
+
+### Roaster source abstraction
+
+The temperature feed is transport flexible. The RoastBatch UDT
+gained two things (the 81 v2 members are unchanged in name and
+type; the only member change is BeanTempF's value source):
+
+- ActiveSource, a String memory member ('Simulated',
+  'WebSocket', 'Mqtt'), editable from the Roast Setup popup.
+- Sources, a folder of nested RoasterSource UDT instances, one
+  per transport. RoasterSource has Kind, BeanTempF, Address,
+  WsUrl, BrokerUrl, Topic, and Connected members. Simulated's
+  BeanTempF is the RoasterSim OPC tag; WebSocket and Mqtt have
+  memory BeanTempF slots with their addresses in place
+  (WsUrl ws://sr800.local:8080; BrokerUrl mqtt://localhost:1883
+  and Topic roastery/sr800/temp).
+
+The canonical CurrentBatch/BeanTempF is now an expression tag
+that selects the active source instance's BeanTempF, so Main,
+history, the RoR derivation, and the batch save never know
+which transport is live. How a transport gets populated: an
+engine (the Pico WebSocket client, or an MQTT bridge through
+the Cirrus Link modules or a library client; neither is built
+in this pass) writes the live temperature into that source
+instance's BeanTempF member slot, and the console follows when
+ActiveSource names it. Switching was verified live: with
+ActiveSource set to WebSocket the canonical tag read the
+WebSocket slot value, and switching back restored the simulator
+value.
+
+### Feature checks (informational, nothing built on them)
+
+Event Streams: yes, included and functional in Maker
+2027.2.0-beta1. The EventStream module is installed; the
+project resource type is (com.inductiveautomation.eventstream,
+event-streams); a probe stream in a scratch project reached
+state RUNNING with the ignition.supplied source and the
+ignition.logger handler. Beta source ids: ignition.supplied,
+ignition.tagEvent, ignition.file, ignition.gatewayEvent,
+ignition.lastEvent, ignition.sparkplugB. Handler ids:
+ignition.logger, ignition.tag, ignition.script, ignition.http,
+ignition.gatewayEvent, ignition.gatewayMessage, plus a
+database handler class. Encoders: ignition.jsonObject,
+ignition.string, ignition.byteArray, ignition.pyDictionary,
+ignition.passThrough. A null handler config faults the handler
+stage (a config gap, not a license block). The settled design
+stays named queries plus the library; event streams are a
+roadmap option only.
+
+SQLBridge transaction groups: the SQL Bridge module is
+installed and runs on Maker; the per project runner starts and
+transaction groups are project resources of type
+(com.inductiveautomation.sqlbridge, transaction-groups) with a
+JSON config (group type keys standard, block, historical). The
+gateway watches the type and loads groups live, and exposes a
+diagnostics route at /services/transaction-groups. Hand
+authoring a valid group config JSON by reverse engineering did
+not succeed in three attempts (all failures were format
+errors, never license or trial errors), so groups are
+creatable through the Designer, which is the normal authoring
+route. Eric's direction is to use transaction groups for the
+data logging in the next UX pass; nothing in v3 builds on
+them.
+
+### Lab infrastructure
+
+Postgres 16 runs on the lab VM as a system cluster on
+localhost:5432, database db, user ignition; the lab password
+lives only in the lab notes file, never in this repository
+(the repo gateway config keeps the referenced secret form).
+Restart after a VM reboot: pg_ctlcluster 16 main start. The
+gateway database connection named db mirrors the repo gateway
+config with host localhost, status VALID, and the SQL historian
+provider named db is created from the same config.
+
+### Verification and end state (v3)
+
+verify_roastery_v3.py reports ALL 45 CHECKS PASS in a live
+session: both themes, style classes present in the rendered
+DOM, SQL historian receiving BeanTempF history, a short roast
+(Charge, Dry End, FC Start, fan stepper, Drop), curve samples
+recorded, the config form round trip, Finish and Save Batch
+writing the batch row, its JSONB document, and 4 series rows;
+the Batches page listing the batch; edit through the popup
+(Farm and WeightOut changed, persisted, and shown again on
+reopen through SelectById); a scratch batch created through
+the popup, listed after the refresh message, then deleted with
+confirm and gone from both the database and the table;
+background set from the database batch with its overlay rows;
+reset to clean Idle; and the mobile pass with no horizontal
+overflow and no quality overlays anywhere.
+validate_roastery_artisan.py PASS (twelve views served deep
+equal, library and all seven named queries present, 63 style
+classes and the stylesheet on disk, zero Roastery warnings in
+the validation window) and ChartLab validation PASS on the same
+gateway. Screenshots: roastery-v3-dark-desktop.png,
+roastery-v3-light-desktop.png, roastery-v3-batches.png,
+roastery-v3-batch-edit.png, roastery-v3-dark-mobile.png, and
+roastery-v3-background.png (lab showcase/shots only). One
+cosmetic beta artifact: the BatchEdit popup chrome renders the
+openPopup options dict as a text strip above the popup in this
+beta; the popup itself is correct. Maker gateway RUNNING,
+batch at clean Idle, Postgres running with the batches table
+holding the seven seeded batches plus the click test batch
+2001 (8 rows).

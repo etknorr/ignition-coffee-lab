@@ -16,12 +16,7 @@
     "props": {
       "direction": "column",
       "style": {
-        "backgroundColor": "var(--container)",
-        "border": "1px solid var(--border)",
-        "borderRadius": "16px",
-        "boxShadow": "var(--boxShadow2)",
-        "padding": "16px 18px",
-        "gap": "9px"
+        "classes": "roast-card roast-gap-10"
       }
     },
     "children": [
@@ -44,11 +39,7 @@
             "props": {
               "text": "Batch Metadata",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "var(--callToAction)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.08em"
+                "classes": "roast-section-title"
               }
             }
           },
@@ -60,14 +51,7 @@
             "props": {
               "text": "Edit",
               "style": {
-                "fontSize": "12px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "backgroundColor": "#0c7bb3",
-                "borderRadius": "8px",
-                "padding": "6px 16px",
-                "cursor": "pointer",
-                "border": "none"
+                "classes": "roast-btn roast-btn-sm roast-btn-primary"
               }
             },
             "events": {
@@ -105,7 +89,7 @@
           "direction": "row",
           "wrap": "wrap",
           "style": {
-            "gap": "12px"
+            "classes": "roast-gap-12"
           }
         },
         "children": [
@@ -117,7 +101,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "gap": "2px"
+                "classes": "roast-gap-8"
               }
             },
             "children": [
@@ -129,11 +113,7 @@
                 "props": {
                   "text": "Bean",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "var(--neutral-60)",
-                    "textTransform": "uppercase",
-                    "letterSpacing": "0.1em"
+                    "classes": "roast-caption"
                   }
                 }
               },
@@ -145,9 +125,7 @@
                 "props": {
                   "text": "",
                   "style": {
-                    "fontSize": "14px",
-                    "fontWeight": "600",
-                    "color": "var(--label)"
+                    "classes": "roast-value"
                   }
                 },
                 "propConfig": {
@@ -179,7 +157,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "gap": "2px"
+                "classes": "roast-gap-8"
               }
             },
             "children": [
@@ -191,11 +169,7 @@
                 "props": {
                   "text": "Origin",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "var(--neutral-60)",
-                    "textTransform": "uppercase",
-                    "letterSpacing": "0.1em"
+                    "classes": "roast-caption"
                   }
                 }
               },
@@ -207,9 +181,7 @@
                 "props": {
                   "text": "",
                   "style": {
-                    "fontSize": "14px",
-                    "fontWeight": "600",
-                    "color": "var(--label)"
+                    "classes": "roast-value"
                   }
                 },
                 "propConfig": {
@@ -244,7 +216,7 @@
           "direction": "row",
           "wrap": "wrap",
           "style": {
-            "gap": "12px"
+            "classes": "roast-gap-12"
           }
         },
         "children": [
@@ -256,7 +228,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "gap": "2px"
+                "classes": "roast-gap-8"
               }
             },
             "children": [
@@ -268,11 +240,7 @@
                 "props": {
                   "text": "Region",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "var(--neutral-60)",
-                    "textTransform": "uppercase",
-                    "letterSpacing": "0.1em"
+                    "classes": "roast-caption"
                   }
                 }
               },
@@ -284,9 +252,7 @@
                 "props": {
                   "text": "",
                   "style": {
-                    "fontSize": "14px",
-                    "fontWeight": "600",
-                    "color": "var(--label)"
+                    "classes": "roast-value"
                   }
                 },
                 "propConfig": {
@@ -318,7 +284,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "gap": "2px"
+                "classes": "roast-gap-8"
               }
             },
             "children": [
@@ -330,11 +296,7 @@
                 "props": {
                   "text": "Farm",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "var(--neutral-60)",
-                    "textTransform": "uppercase",
-                    "letterSpacing": "0.1em"
+                    "classes": "roast-caption"
                   }
                 }
               },
@@ -346,9 +308,7 @@
                 "props": {
                   "text": "",
                   "style": {
-                    "fontSize": "14px",
-                    "fontWeight": "600",
-                    "color": "var(--label)"
+                    "classes": "roast-value"
                   }
                 },
                 "propConfig": {
@@ -383,7 +343,7 @@
           "direction": "row",
           "wrap": "wrap",
           "style": {
-            "gap": "12px"
+            "classes": "roast-gap-12"
           }
         },
         "children": [
@@ -395,7 +355,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "gap": "2px"
+                "classes": "roast-gap-8"
               }
             },
             "children": [
@@ -407,11 +367,7 @@
                 "props": {
                   "text": "Altitude",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "var(--neutral-60)",
-                    "textTransform": "uppercase",
-                    "letterSpacing": "0.1em"
+                    "classes": "roast-caption"
                   }
                 }
               },
@@ -423,9 +379,7 @@
                 "props": {
                   "text": "",
                   "style": {
-                    "fontSize": "14px",
-                    "fontWeight": "600",
-                    "color": "var(--label)"
+                    "classes": "roast-value"
                   }
                 },
                 "propConfig": {
@@ -457,7 +411,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "gap": "2px"
+                "classes": "roast-gap-8"
               }
             },
             "children": [
@@ -469,11 +423,7 @@
                 "props": {
                   "text": "Variety",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "var(--neutral-60)",
-                    "textTransform": "uppercase",
-                    "letterSpacing": "0.1em"
+                    "classes": "roast-caption"
                   }
                 }
               },
@@ -485,9 +435,7 @@
                 "props": {
                   "text": "",
                   "style": {
-                    "fontSize": "14px",
-                    "fontWeight": "600",
-                    "color": "var(--label)"
+                    "classes": "roast-value"
                   }
                 },
                 "propConfig": {
@@ -522,7 +470,7 @@
           "direction": "row",
           "wrap": "wrap",
           "style": {
-            "gap": "12px"
+            "classes": "roast-gap-12"
           }
         },
         "children": [
@@ -534,7 +482,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "gap": "2px"
+                "classes": "roast-gap-8"
               }
             },
             "children": [
@@ -546,11 +494,7 @@
                 "props": {
                   "text": "Process",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "var(--neutral-60)",
-                    "textTransform": "uppercase",
-                    "letterSpacing": "0.1em"
+                    "classes": "roast-caption"
                   }
                 }
               },
@@ -562,9 +506,7 @@
                 "props": {
                   "text": "",
                   "style": {
-                    "fontSize": "14px",
-                    "fontWeight": "600",
-                    "color": "var(--label)"
+                    "classes": "roast-value"
                   }
                 },
                 "propConfig": {
@@ -596,7 +538,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "gap": "2px"
+                "classes": "roast-gap-8"
               }
             },
             "children": [
@@ -608,11 +550,7 @@
                 "props": {
                   "text": "Harvest",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "var(--neutral-60)",
-                    "textTransform": "uppercase",
-                    "letterSpacing": "0.1em"
+                    "classes": "roast-caption"
                   }
                 }
               },
@@ -624,9 +562,7 @@
                 "props": {
                   "text": "",
                   "style": {
-                    "fontSize": "14px",
-                    "fontWeight": "600",
-                    "color": "var(--label)"
+                    "classes": "roast-value"
                   }
                 },
                 "propConfig": {
@@ -668,7 +604,7 @@
           "direction": "row",
           "wrap": "wrap",
           "style": {
-            "gap": "12px"
+            "classes": "roast-gap-12"
           }
         },
         "children": [
@@ -680,7 +616,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "gap": "2px"
+                "classes": "roast-gap-8"
               }
             },
             "children": [
@@ -692,11 +628,7 @@
                 "props": {
                   "text": "Moisture",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "var(--neutral-60)",
-                    "textTransform": "uppercase",
-                    "letterSpacing": "0.1em"
+                    "classes": "roast-caption"
                   }
                 }
               },
@@ -708,9 +640,7 @@
                 "props": {
                   "text": "",
                   "style": {
-                    "fontSize": "14px",
-                    "fontWeight": "600",
-                    "color": "var(--label)"
+                    "classes": "roast-value"
                   }
                 },
                 "propConfig": {
@@ -749,7 +679,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "gap": "2px"
+                "classes": "roast-gap-8"
               }
             },
             "children": [
@@ -761,11 +691,7 @@
                 "props": {
                   "text": "Density",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "var(--neutral-60)",
-                    "textTransform": "uppercase",
-                    "letterSpacing": "0.1em"
+                    "classes": "roast-caption"
                   }
                 }
               },
@@ -777,9 +703,7 @@
                 "props": {
                   "text": "",
                   "style": {
-                    "fontSize": "14px",
-                    "fontWeight": "600",
-                    "color": "var(--label)"
+                    "classes": "roast-value"
                   }
                 },
                 "propConfig": {
@@ -821,7 +745,7 @@
           "direction": "row",
           "wrap": "wrap",
           "style": {
-            "gap": "12px"
+            "classes": "roast-gap-12"
           }
         },
         "children": [
@@ -833,7 +757,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "gap": "2px"
+                "classes": "roast-gap-8"
               }
             },
             "children": [
@@ -845,11 +769,7 @@
                 "props": {
                   "text": "Charge",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "var(--neutral-60)",
-                    "textTransform": "uppercase",
-                    "letterSpacing": "0.1em"
+                    "classes": "roast-caption"
                   }
                 }
               },
@@ -861,9 +781,7 @@
                 "props": {
                   "text": "",
                   "style": {
-                    "fontSize": "14px",
-                    "fontWeight": "600",
-                    "color": "var(--label)"
+                    "classes": "roast-value"
                   }
                 },
                 "propConfig": {
@@ -902,7 +820,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "gap": "2px"
+                "classes": "roast-gap-8"
               }
             },
             "children": [
@@ -914,11 +832,7 @@
                 "props": {
                   "text": "Operator",
                   "style": {
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "color": "var(--neutral-60)",
-                    "textTransform": "uppercase",
-                    "letterSpacing": "0.1em"
+                    "classes": "roast-caption"
                   }
                 }
               },
@@ -930,9 +844,7 @@
                 "props": {
                   "text": "",
                   "style": {
-                    "fontSize": "14px",
-                    "fontWeight": "600",
-                    "color": "var(--label)"
+                    "classes": "roast-value"
                   }
                 },
                 "propConfig": {
@@ -966,8 +878,7 @@
         "props": {
           "text": "Moisture in %, density in g/L, charge in g",
           "style": {
-            "fontSize": "11px",
-            "color": "var(--neutral-60)"
+            "classes": "roast-note-sm"
           }
         }
       }

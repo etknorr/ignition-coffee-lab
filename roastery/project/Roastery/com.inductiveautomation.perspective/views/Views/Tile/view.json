@@ -4,7 +4,7 @@
     "title": "Stat",
     "valueText": "0.0",
     "unit": "",
-    "accent": "var(--callToAction)"
+    "accent": "#0c7bb3"
   },
   "propConfig": {
     "params.title": {
@@ -34,12 +34,7 @@
     "props": {
       "direction": "column",
       "style": {
-        "backgroundColor": "var(--container)",
-        "border": "1px solid var(--border)",
-        "borderRadius": "16px",
-        "boxShadow": "var(--boxShadow2)",
-        "padding": "12px 16px",
-        "gap": "5px"
+        "classes": "roast-card-sm roast-gap-8"
       }
     },
     "children": [
@@ -51,9 +46,7 @@
         "props": {
           "direction": "row",
           "style": {
-            "height": "3px",
-            "borderRadius": "2px",
-            "backgroundColor": "var(--callToAction)"
+            "classes": "roast-accent-bar"
           }
         },
         "children": [],
@@ -81,11 +74,7 @@
         "props": {
           "text": "Stat",
           "style": {
-            "fontSize": "11px",
-            "fontWeight": "700",
-            "color": "var(--neutral-60)",
-            "textTransform": "uppercase",
-            "letterSpacing": "0.1em"
+            "classes": "roast-caption"
           }
         },
         "propConfig": {
@@ -108,7 +97,7 @@
           "direction": "row",
           "alignItems": "baseline",
           "style": {
-            "gap": "6px"
+            "classes": "roast-gap-8"
           }
         },
         "children": [
@@ -120,10 +109,7 @@
             "props": {
               "text": "0.0",
               "style": {
-                "fontSize": "30px",
-                "fontWeight": "700",
-                "color": "var(--label)",
-                "lineHeight": "1.05"
+                "classes": "roast-value-lg"
               }
             },
             "propConfig": {
@@ -145,9 +131,7 @@
             "props": {
               "text": "",
               "style": {
-                "fontSize": "12px",
-                "fontWeight": "600",
-                "color": "var(--neutral-70)"
+                "classes": "roast-unit"
               }
             },
             "propConfig": {

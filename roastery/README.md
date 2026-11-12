@@ -18,9 +18,14 @@ Perspective project, the tag and UDT setup, and the view builder.
 2. Create an API key through the gateway webpage and save it as
    `apitoken-2027-maker.txt` next to the scripts (format and two
    setup gotchas are in [Standing it up](#standing-it-up)).
-3. From `scripts/`, run `setup_maker_stack.py`, then
-   `setup_roastery_artisan_tags.py`.
-4. Copy `project/Roastery` into the gateway at `data/projects/`,
+3. Have Postgres running and create the batch tables: from
+   `scripts/`, run `setup_roastery_db.py` (connection details
+   come from its environment variables).
+4. From `scripts/`, run `setup_maker_stack.py`, then
+   `setup_roastery_v3_tags.py` (v3 tag model; the v2
+   `setup_roastery_artisan_tags.py` is kept for history).
+   Set the gateway's Gateway Scripting Project to Roastery.
+5. Copy `project/Roastery` into the gateway at `data/projects/`,
    scan projects, and open the Roastery client.
 
 ## What it does
@@ -44,9 +49,21 @@ Perspective project, the tag and UDT setup, and the view builder.
   batch metadata form built on the Perspective Form component
   (ia.input.form), including weight out after Drop, the target
   designer points, and alarm thresholds.
-- A roast log page with saved batches (metadata, phase times,
-  DTR, weight loss, roast degree, and the saved curve), where any
-  past roast can be selected as the background profile.
+- A Batches page with full database CRUD for previous batches.
+  Batches live in Postgres and are reached only through named
+  queries defined in the project (no embedded SQL anywhere):
+  relational columns for listing and sorting, the complete
+  batch document in a JSONB column, and the roast curve in a
+  separate series table keyed by batch number. The page lists
+  batches newest first and supports edit (a Form popup over the
+  stored document) and delete with a confirm step, and any past
+  roast can be selected as the background profile, drawn from
+  its series rows.
+- Transport flexible temperature feed: nested source UDTs
+  (simulated OPC, WebSocket, MQTT) under the batch with an
+  ActiveSource selector; the console, history, and batch save
+  read one canonical temperature tag regardless of which
+  transport is live.
 - A deviation tile showing live bean temperature minus the
   target curve temperature at the current elapsed time.
 - Lite alarms surfaced as a banner on the main view.
@@ -73,9 +90,16 @@ those levels and nothing else.
 ## Repository layout
 
 - `project/Roastery/`: the Perspective project exactly as it
-  runs on the Maker gateway (project.json, page config, and the
-  ten views: Main, Config, Log, Tile, EventCell, EventsStrip,
-  PhasesBar, Controls, MetaCard, Summary).
+  runs on the Maker gateway (project.json, page config, the
+  twelve views: Main, Config, Batches, BatchesPanel, BatchEdit,
+  Tile, EventCell, EventsStrip, PhasesBar, Controls, MetaCard,
+  Summary, the `roastery` scripting library, the named queries
+  under `ignition/named-query/Roastery/`, and the Perspective
+  style classes plus the advanced stylesheet). All application
+  Python lives in the project library (packages `roastery.core`
+  and `roastery.batches`); view and tag scripts are one line
+  calls into it. Styling is organized as `roast-` style classes
+  with the advanced stylesheet holding only global rules.
 - `scripts/`: the Python that builds and reproduces the
   environment.
   - `api27m.py`: small helper for the gateway REST API. It reads
@@ -89,9 +113,22 @@ those levels and nothing else.
     UDT (81 members) and the `Roastery/CurrentBatch` instance,
     including history on the probe tags and the RoR derivation
     event script.
-  - `build_roastery_artisan.py`: generates the project view
-    files. On a fresh gateway you can equally copy
-    `project/Roastery` into the gateway and scan it; see below.
+  - `build_roastery_v3.py`: generates the whole v3 project:
+    views, the `roastery` script library, the named queries,
+    the style classes, and the advanced stylesheet. On a fresh
+    gateway you can equally copy `project/Roastery` into the
+    gateway and scan it; see below. (`build_roastery_artisan.py`
+    is the v2 builder, kept for history.)
+  - `setup_roastery_v3_tags.py`: creates the v3 tag model: the
+    RoastBatch UDT with the source abstraction (ActiveSource
+    plus nested RoasterSource instances), history for the probe
+    tags on the SQL historian, and the thin BeanTempF event
+    script that calls the library.
+  - `setup_roastery_db.py`: idempotent DDL for the Postgres
+    batches and batch_series tables.
+  - `verify_roastery_v3.py`: the live session click test for
+    the v3 flows (roast, save to the database, Batches page
+    CRUD, background from a database batch).
   - `validate_roastery_artisan.py`: checks that the served
     views match the authored files, starts every view in a live
     session, and scans the gateway log for project warnings.
@@ -122,15 +159,16 @@ the Roast Setup popup:
 
 ## Development
 
-The views are generated code. Edit `build_roastery_artisan.py`,
+The project is generated code. Edit `build_roastery_v3.py`,
 run it, rescan projects on the gateway, and re-run
-`validate_roastery_artisan.py`. The tag model lives in
-`setup_roastery_artisan_tags.py` and is applied through the
-gateway REST API, so a fresh gateway reaches the same state by
-running the scripts in order. Project files under
-`project/Roastery/` are the builder's output, committed so the
-project can be installed by copying, without running the
-builder.
+`validate_roastery_artisan.py` and `verify_roastery_v3.py`.
+The tag model lives in `setup_roastery_v3_tags.py` and is
+applied through the gateway REST API, and the database schema
+lives in `setup_roastery_db.py`, so a fresh environment
+reaches the same state by running the scripts in order.
+Project files under `project/Roastery/` are the builder's
+output, committed so the project can be installed by copying,
+without running the builder.
 
 ## Standing it up
 
@@ -188,7 +226,13 @@ folder at the root of this repository.
 - The gateway runs in trial mode until a free Maker license
   key from an Inductive Automation account is applied.
   Everything above works in trial.
-- Test roasts in the log from the lab verification were short
-  click-through roasts (about 18 seconds) used to prove the
-  event, phase, save, and background flows; their computed
-  statistics are not meaningful roast data.
+- Test roasts in the batch history from the lab verification
+  were short click-through roasts (about 15 to 20 seconds)
+  used to prove the event, phase, save, edit, delete, and
+  background flows; their computed statistics are not
+  meaningful roast data. The seven oldest rows were migrated
+  from the v2 dataset tag log and renumbered 1042 to 1048.
+- Tag history runs on the SQL historian (Postgres). On this
+  beta the SQL historian sink is not idempotent across gateway
+  restarts when its tables already exist; the recovery is in
+  the build note in `docs/`.

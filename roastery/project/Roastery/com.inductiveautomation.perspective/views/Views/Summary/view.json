@@ -18,12 +18,7 @@
     "props": {
       "direction": "column",
       "style": {
-        "backgroundColor": "var(--container)",
-        "border": "1px solid var(--border)",
-        "borderRadius": "16px",
-        "boxShadow": "var(--boxShadow2)",
-        "padding": "16px 18px",
-        "gap": "8px"
+        "classes": "roast-card roast-gap-8"
       }
     },
     "children": [
@@ -35,11 +30,7 @@
         "props": {
           "text": "Roast Summary",
           "style": {
-            "fontSize": "13px",
-            "fontWeight": "700",
-            "color": "var(--callToAction)",
-            "textTransform": "uppercase",
-            "letterSpacing": "0.08em"
+            "classes": "roast-section-title"
           }
         }
       },
@@ -53,7 +44,7 @@
           "justify": "space-between",
           "alignItems": "baseline",
           "style": {
-            "gap": "10px"
+            "classes": "roast-gap-10"
           }
         },
         "children": [
@@ -65,11 +56,7 @@
             "props": {
               "text": "Total time",
               "style": {
-                "fontSize": "11px",
-                "fontWeight": "700",
-                "color": "var(--neutral-60)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.1em"
+                "classes": "roast-caption"
               }
             },
             "position": {
@@ -86,10 +73,7 @@
             "props": {
               "text": "",
               "style": {
-                "fontSize": "14px",
-                "fontWeight": "700",
-                "color": "var(--label)",
-                "textAlign": "right"
+                "classes": "roast-value-right"
               }
             },
             "propConfig": {
@@ -115,7 +99,7 @@
           "justify": "space-between",
           "alignItems": "baseline",
           "style": {
-            "gap": "10px"
+            "classes": "roast-gap-10"
           }
         },
         "children": [
@@ -127,11 +111,7 @@
             "props": {
               "text": "Drying",
               "style": {
-                "fontSize": "11px",
-                "fontWeight": "700",
-                "color": "var(--neutral-60)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.1em"
+                "classes": "roast-caption"
               }
             },
             "position": {
@@ -148,10 +128,7 @@
             "props": {
               "text": "",
               "style": {
-                "fontSize": "14px",
-                "fontWeight": "700",
-                "color": "var(--label)",
-                "textAlign": "right"
+                "classes": "roast-value-right"
               }
             },
             "propConfig": {
@@ -177,7 +154,7 @@
           "justify": "space-between",
           "alignItems": "baseline",
           "style": {
-            "gap": "10px"
+            "classes": "roast-gap-10"
           }
         },
         "children": [
@@ -189,11 +166,7 @@
             "props": {
               "text": "Maillard",
               "style": {
-                "fontSize": "11px",
-                "fontWeight": "700",
-                "color": "var(--neutral-60)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.1em"
+                "classes": "roast-caption"
               }
             },
             "position": {
@@ -210,10 +183,7 @@
             "props": {
               "text": "",
               "style": {
-                "fontSize": "14px",
-                "fontWeight": "700",
-                "color": "var(--label)",
-                "textAlign": "right"
+                "classes": "roast-value-right"
               }
             },
             "propConfig": {
@@ -239,7 +209,7 @@
           "justify": "space-between",
           "alignItems": "baseline",
           "style": {
-            "gap": "10px"
+            "classes": "roast-gap-10"
           }
         },
         "children": [
@@ -251,11 +221,7 @@
             "props": {
               "text": "Development",
               "style": {
-                "fontSize": "11px",
-                "fontWeight": "700",
-                "color": "var(--neutral-60)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.1em"
+                "classes": "roast-caption"
               }
             },
             "position": {
@@ -272,10 +238,7 @@
             "props": {
               "text": "",
               "style": {
-                "fontSize": "14px",
-                "fontWeight": "700",
-                "color": "var(--label)",
-                "textAlign": "right"
+                "classes": "roast-value-right"
               }
             },
             "propConfig": {
@@ -301,7 +264,7 @@
           "justify": "space-between",
           "alignItems": "baseline",
           "style": {
-            "gap": "10px"
+            "classes": "roast-gap-10"
           }
         },
         "children": [
@@ -313,11 +276,7 @@
             "props": {
               "text": "Dev ratio (DTR)",
               "style": {
-                "fontSize": "11px",
-                "fontWeight": "700",
-                "color": "var(--neutral-60)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.1em"
+                "classes": "roast-caption"
               }
             },
             "position": {
@@ -334,10 +293,7 @@
             "props": {
               "text": "",
               "style": {
-                "fontSize": "14px",
-                "fontWeight": "700",
-                "color": "var(--label)",
-                "textAlign": "right"
+                "classes": "roast-value-right"
               }
             },
             "propConfig": {
@@ -363,7 +319,7 @@
           "justify": "space-between",
           "alignItems": "baseline",
           "style": {
-            "gap": "10px"
+            "classes": "roast-gap-10"
           }
         },
         "children": [
@@ -375,11 +331,7 @@
             "props": {
               "text": "Drop temp",
               "style": {
-                "fontSize": "11px",
-                "fontWeight": "700",
-                "color": "var(--neutral-60)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.1em"
+                "classes": "roast-caption"
               }
             },
             "position": {
@@ -396,10 +348,7 @@
             "props": {
               "text": "",
               "style": {
-                "fontSize": "14px",
-                "fontWeight": "700",
-                "color": "var(--label)",
-                "textAlign": "right"
+                "classes": "roast-value-right"
               }
             },
             "propConfig": {
@@ -425,7 +374,7 @@
           "justify": "space-between",
           "alignItems": "baseline",
           "style": {
-            "gap": "10px"
+            "classes": "roast-gap-10"
           }
         },
         "children": [
@@ -437,11 +386,7 @@
             "props": {
               "text": "Roast degree",
               "style": {
-                "fontSize": "11px",
-                "fontWeight": "700",
-                "color": "var(--neutral-60)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.1em"
+                "classes": "roast-caption"
               }
             },
             "position": {
@@ -458,10 +403,7 @@
             "props": {
               "text": "",
               "style": {
-                "fontSize": "14px",
-                "fontWeight": "700",
-                "color": "var(--label)",
-                "textAlign": "right"
+                "classes": "roast-value-right"
               }
             },
             "propConfig": {
@@ -487,7 +429,7 @@
           "justify": "space-between",
           "alignItems": "baseline",
           "style": {
-            "gap": "10px"
+            "classes": "roast-gap-10"
           }
         },
         "children": [
@@ -499,11 +441,7 @@
             "props": {
               "text": "Weight out",
               "style": {
-                "fontSize": "11px",
-                "fontWeight": "700",
-                "color": "var(--neutral-60)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.1em"
+                "classes": "roast-caption"
               }
             },
             "position": {
@@ -520,10 +458,7 @@
             "props": {
               "text": "",
               "style": {
-                "fontSize": "14px",
-                "fontWeight": "700",
-                "color": "var(--label)",
-                "textAlign": "right"
+                "classes": "roast-value-right"
               }
             },
             "propConfig": {
@@ -549,7 +484,7 @@
           "justify": "space-between",
           "alignItems": "baseline",
           "style": {
-            "gap": "10px"
+            "classes": "roast-gap-10"
           }
         },
         "children": [
@@ -561,11 +496,7 @@
             "props": {
               "text": "Weight loss",
               "style": {
-                "fontSize": "11px",
-                "fontWeight": "700",
-                "color": "var(--neutral-60)",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.1em"
+                "classes": "roast-caption"
               }
             },
             "position": {
@@ -582,10 +513,7 @@
             "props": {
               "text": "",
               "style": {
-                "fontSize": "14px",
-                "fontWeight": "700",
-                "color": "var(--label)",
-                "textAlign": "right"
+                "classes": "roast-value-right"
               }
             },
             "propConfig": {
@@ -609,7 +537,7 @@
         "props": {
           "direction": "column",
           "style": {
-            "gap": "6px"
+            "classes": "roast-gap-8"
           }
         },
         "children": [
@@ -619,16 +547,9 @@
               "name": "SaveButton"
             },
             "props": {
-              "text": "Save to Roast Log",
+              "text": "Save Batch",
               "style": {
-                "fontSize": "13px",
-                "fontWeight": "700",
-                "color": "#ffffff",
-                "borderRadius": "10px",
-                "padding": "9px 18px",
-                "cursor": "pointer",
-                "border": "none",
-                "backgroundColor": "#16a34a"
+                "classes": "roast-btn roast-btn-green"
               }
             },
             "propConfig": {
@@ -647,7 +568,7 @@
                   "scope": "G",
                   "type": "script",
                   "config": {
-                    "script": "\tB = '[default]Roastery/CurrentBatch'\n\tnames = ['BatchNumber', 'BeanName', 'Origin', 'ChargeWeightG', 'DropTempF', 'DropElapsedSec', 'DryEndElapsedSec', 'FirstCrackStartElapsedSec', 'WeightOutG', 'StartTime', 'DropTime', 'ChargeTempF']\n\tq = system.tag.readBlocking([B + '/' + n for n in names])\n\td = {}\n\tfor i in range(len(names)):\n\t\td[names[i]] = q[i].value\n\ttotal = d['DropElapsedSec']\n\tdry = d['DryEndElapsedSec']\n\tfc = d['FirstCrackStartElapsedSec']\n\tmai = fc - dry if (fc >= 0 and dry >= 0) else -1\n\tdev = total - fc if (total >= 0 and fc >= 0) else -1\n\tdtr = (dev * 100.0 / total) if (total > 0 and dev >= 0) else 0.0\n\tloss = ((d['ChargeWeightG'] - d['WeightOutG']) * 100.0 / d['ChargeWeightG']) if (d['WeightOutG'] and d['WeightOutG'] > 0 and d['ChargeWeightG'] > 0) else 0.0\n\tdt = d['DropTempF']\n\tlevel = 'Cinnamon' if dt < 390 else 'New England' if dt < 396 else 'American' if dt < 401 else 'City' if dt < 406 else 'City+' if dt < 411 else 'Full City' if dt < 416 else 'Full City+' if dt < 421 else 'Vienna' if dt < 426 else 'French' if dt < 436 else 'Italian'\n\tcurve = []\n\tauc = 0.0\n\tif d['StartTime'] is not None and d['DropTime'] is not None:\n\t\thist = system.tag.queryTagHistory([B + '/BeanTempF'], d['StartTime'], d['DropTime'], returnSize=90, aggregationMode='Average', returnFormat='Wide')\n\t\tprevT = None\n\t\tprevV = None\n\t\tfor r in range(hist.getRowCount()):\n\t\t\tts = hist.getValueAt(r, 0)\n\t\t\tv = hist.getValueAt(r, 1)\n\t\t\tif ts is None or v is None:\n\t\t\t\tcontinue\n\t\t\tsec = (ts.getTime() - d['StartTime'].getTime()) / 1000.0\n\t\t\tcurve.append([round(sec, 1), round(float(v), 1)])\n\t\t\tif prevT is not None:\n\t\t\t\tauc += ((float(v) + prevV) / 2.0 - d['ChargeTempF']) * (sec - prevT) / 60.0\n\t\t\tprevT = sec\n\t\t\tprevV = float(v)\n\timport json\n\trow = [d['BatchNumber'], system.date.now(), d['BeanName'], d['Origin'], float(d['ChargeWeightG']), float(dt), float(total), float(dry), float(mai), float(dev), float(dtr), float(loss), float(auc), level, json.dumps(curve)]\n\tlogPath = '[default]Roastery/RoastLog'\n\tlog = system.tag.readBlocking([logPath])[0].value\n\tif log is None:\n\t\tlog = system.dataset.toDataSet(['batch', 'roastDate', 'bean', 'origin', 'chargeG', 'dropTempF', 'totalSec', 'drySec', 'maillardSec', 'devSec', 'dtrPct', 'weightLossPct', 'auc', 'level', 'curveJson'], [])\n\tlog = system.dataset.addRow(log, row)\n\tsystem.tag.writeBlocking([logPath], [log])\n\tself.view.custom.saveNote = 'Saved batch ' + str(d['BatchNumber']) + ' to the roast log.'\n"
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.save_current_batch(self)\n"
                   }
                 }
               }
@@ -661,8 +582,7 @@
             "props": {
               "text": "",
               "style": {
-                "fontSize": "12px",
-                "color": "var(--success)"
+                "classes": "roast-note-success"
               }
             },
             "propConfig": {
