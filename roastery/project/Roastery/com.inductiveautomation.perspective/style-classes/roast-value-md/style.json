@@ -4,7 +4,8 @@
       "fontSize": "20px",
       "fontWeight": "700",
       "color": "var(--label)",
-      "lineHeight": "1.1"
+      "lineHeight": "1.1",
+      "fontVariantNumeric": "tabular-nums"
     }
   }
 }

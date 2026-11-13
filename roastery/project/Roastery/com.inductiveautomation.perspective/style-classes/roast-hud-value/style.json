@@ -1,10 +1,13 @@
 {
   "base": {
     "style": {
-      "fontSize": "17px",
+      "fontSize": "16px",
       "fontWeight": "700",
       "color": "var(--label)",
-      "fontFamily": "monospace"
+      "fontFamily": "monospace",
+      "whiteSpace": "nowrap",
+      "overflow": "hidden",
+      "textOverflow": "ellipsis"
     }
   }
 }

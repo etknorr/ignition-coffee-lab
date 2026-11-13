@@ -3,8 +3,8 @@
     "style": {
       "backgroundColor": "var(--containerNested)",
       "border": "1px solid var(--border)",
-      "borderRadius": "12px",
-      "padding": "9px 6px",
+      "borderRadius": "6px",
+      "padding": "8px 6px",
       "gap": "2px"
     }
   }

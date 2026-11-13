@@ -3,8 +3,8 @@
     "style": {
       "fontSize": "12px",
       "fontWeight": "700",
-      "borderRadius": "8px",
-      "padding": "6px 14px",
+      "borderRadius": "4px",
+      "padding": "6px 12px",
       "cursor": "pointer"
     }
   }

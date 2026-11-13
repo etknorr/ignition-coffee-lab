@@ -109,7 +109,7 @@
                     "binding": {
                       "type": "expr",
                       "config": {
-                        "expression": "'DRYING  ' + if({[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/DryEndElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/DryEndElapsedSec} % 60, '00') + ' - ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, {[default]Roastery/CurrentBatch/DryEndElapsedSec} * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec} * 100.0 / ({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), '0') + '%', 'target ' + numberFormat(floor({[default]Roastery/CurrentBatch/PhaseDryTargetSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/PhaseDryTargetSec} % 60, '00'))"
+                        "expression": "'DRYING  ' + if({[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/DryEndElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/DryEndElapsedSec} % 60, '00') + ' - ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0, {[default]Roastery/CurrentBatch/DryEndElapsedSec} * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec} * 100.0 / if(({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec}) > 0, ({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec}), 1)), '0') + '%', 'target ' + numberFormat(floor({[default]Roastery/CurrentBatch/PhaseDryTargetSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/PhaseDryTargetSec} % 60, '00'))"
                       }
                     }
                   }
@@ -121,7 +121,7 @@
                 "binding": {
                   "type": "expr",
                   "config": {
-                    "expression": "numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, {[default]Roastery/CurrentBatch/DryEndElapsedSec} * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec} * 100.0 / ({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), '0.0') + '%'"
+                    "expression": "numberFormat({[default]Roastery/CurrentBatch/PhaseDryTargetSec} * 100.0 / if(({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec}) > 0, ({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec}), 1), '0.0') + '%'"
                   }
                 }
               }
@@ -157,7 +157,7 @@
                     "binding": {
                       "type": "expr",
                       "config": {
-                        "expression": "'MAILLARD  ' + if({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, numberFormat(floor(({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) / 60), '00') + ':' + numberFormat(({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) % 60, '00') + ' - ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} * 100.0 / ({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), '0') + '%', 'target ' + numberFormat(floor({[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} % 60, '00'))"
+                        "expression": "'MAILLARD  ' + if({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, numberFormat(floor(({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) / 60), '00') + ':' + numberFormat(({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) % 60, '00') + ' - ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0, ({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} * 100.0 / if(({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec}) > 0, ({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec}), 1)), '0') + '%', 'target ' + numberFormat(floor({[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} % 60, '00'))"
                       }
                     }
                   }
@@ -169,7 +169,7 @@
                 "binding": {
                   "type": "expr",
                   "config": {
-                    "expression": "numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} * 100.0 / ({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), '0.0') + '%'"
+                    "expression": "numberFormat({[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} * 100.0 / if(({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec}) > 0, ({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec}), 1), '0.0') + '%'"
                   }
                 }
               }
@@ -205,7 +205,7 @@
                     "binding": {
                       "type": "expr",
                       "config": {
-                        "expression": "'DEVELOPMENT  ' + if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, numberFormat(floor(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) / 60), '00') + ':' + numberFormat(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) % 60, '00') + ' - ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, {[default]Roastery/CurrentBatch/PhaseDevTargetSec} * 100.0 / ({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), '0') + '%', 'target ' + numberFormat(floor({[default]Roastery/CurrentBatch/PhaseDevTargetSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/PhaseDevTargetSec} % 60, '00'))"
+                        "expression": "'DEVELOPMENT  ' + if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, numberFormat(floor(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) / 60), '00') + ':' + numberFormat(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) % 60, '00') + ' - ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0, ({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, {[default]Roastery/CurrentBatch/PhaseDevTargetSec} * 100.0 / if(({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec}) > 0, ({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec}), 1)), '0') + '%', 'target ' + numberFormat(floor({[default]Roastery/CurrentBatch/PhaseDevTargetSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/PhaseDevTargetSec} % 60, '00'))"
                       }
                     }
                   }
@@ -217,7 +217,7 @@
                 "binding": {
                   "type": "expr",
                   "config": {
-                    "expression": "numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, {[default]Roastery/CurrentBatch/PhaseDevTargetSec} * 100.0 / ({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), '0.0') + '%'"
+                    "expression": "numberFormat({[default]Roastery/CurrentBatch/PhaseDevTargetSec} * 100.0 / if(({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec}) > 0, ({[default]Roastery/CurrentBatch/PhaseDryTargetSec} + {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec} + {[default]Roastery/CurrentBatch/PhaseDevTargetSec}), 1), '0.0') + '%'"
                   }
                 }
               }

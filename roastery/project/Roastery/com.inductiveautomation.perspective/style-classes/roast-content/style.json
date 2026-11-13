@@ -2,7 +2,7 @@
   "base": {
     "style": {
       "padding": "16px 20px",
-      "gap": "14px"
+      "gap": "12px"
     }
   }
 }

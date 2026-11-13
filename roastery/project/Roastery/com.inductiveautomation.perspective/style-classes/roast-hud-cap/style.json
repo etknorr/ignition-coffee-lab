@@ -1,7 +1,7 @@
 {
   "base": {
     "style": {
-      "fontSize": "9px",
+      "fontSize": "10px",
       "fontWeight": "700",
       "color": "var(--neutral-60)",
       "textTransform": "uppercase",

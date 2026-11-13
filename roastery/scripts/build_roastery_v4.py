@@ -2184,23 +2184,23 @@ STYLE_CLASSES = {
         'gap': '10px'},
     'roast-title': {'fontSize': '21px', 'fontWeight': '700',
                     'color': 'var(--label)'},
-    'roast-title-sm': {'fontSize': '19px', 'fontWeight': '700',
+    'roast-title-sm': {'fontSize': '20px', 'fontWeight': '700',
                        'color': 'var(--label)'},
     'roast-subtitle': {'fontSize': '12px', 'color': 'var(--neutral-70)'},
     'roast-card': {'backgroundColor': 'var(--container)',
                    'border': '1px solid var(--border)',
-                   'borderRadius': '16px',
+                   'borderRadius': '8px',
                    'boxShadow': 'var(--boxShadow2)',
-                   'padding': '16px 18px'},
+                   'padding': '16px'},
     'roast-card-sm': {'backgroundColor': 'var(--container)',
                       'border': '1px solid var(--border)',
-                      'borderRadius': '16px',
+                      'borderRadius': '8px',
                       'boxShadow': 'var(--boxShadow2)',
                       'padding': '12px 16px', 'minWidth': '0px',
                       'overflow': 'hidden'},
     'roast-cell': {'backgroundColor': 'var(--containerNested)',
                    'border': '1px solid var(--border)',
-                   'borderRadius': '12px', 'padding': '9px 6px',
+                   'borderRadius': '6px', 'padding': '8px 6px',
                    'gap': '2px'},
     'roast-section-title': {'fontSize': '13px', 'fontWeight': '700',
                             'color': 'var(--callToAction)',
@@ -2215,9 +2215,11 @@ STYLE_CLASSES = {
     'roast-value-strong': {'fontSize': '14px', 'fontWeight': '700',
                            'color': 'var(--label)'},
     'roast-value-lg': {'fontSize': '30px', 'fontWeight': '700',
-                       'color': 'var(--label)', 'lineHeight': '1.05'},
+                       'color': 'var(--label)', 'lineHeight': '1.05',
+                       'fontVariantNumeric': 'tabular-nums'},
     'roast-value-md': {'fontSize': '20px', 'fontWeight': '700',
-                       'color': 'var(--label)', 'lineHeight': '1.1'},
+                       'color': 'var(--label)', 'lineHeight': '1.1',
+                       'fontVariantNumeric': 'tabular-nums'},
     'roast-clock': {'fontSize': '27px', 'fontWeight': '700',
                     'color': 'var(--label)', 'fontFamily': 'monospace'},
     'roast-chip': {'fontSize': '13px', 'fontWeight': '600',
@@ -2236,16 +2238,15 @@ STYLE_CLASSES = {
                            'color': 'var(--success)',
                            'minHeight': '18px'},
     'roast-banner': {'backgroundColor': '#991b1b',
-                     'padding': '9px 22px',
-                     'boxShadow': '0 0 18px rgba(239, 68, 68, 0.35)'},
+                     'padding': '8px 16px', 'minHeight': '37px'},
     'roast-banner-text': {'fontSize': '14px', 'fontWeight': '700',
                           'color': '#ffffff'},
     'roast-btn': {'fontSize': '14px', 'fontWeight': '700',
-                  'color': '#ffffff', 'borderRadius': '10px',
+                  'color': '#ffffff', 'borderRadius': '4px',
                   'padding': '10px 18px', 'cursor': 'pointer',
                   'border': 'none'},
     'roast-btn-sm': {'fontSize': '12px', 'fontWeight': '700',
-                     'borderRadius': '8px', 'padding': '6px 14px',
+                     'borderRadius': '4px', 'padding': '6px 12px',
                      'cursor': 'pointer'},
     'roast-btn-ghost': {'backgroundColor': 'transparent',
                         'color': 'var(--label)',
@@ -2261,16 +2262,16 @@ STYLE_CLASSES = {
     'roast-btn-drop': {'backgroundColor': '#334155'},
     'roast-btn-cool': {'backgroundColor': '#0284c7'},
     'roast-btn-reset': {'backgroundColor': '#6b7280'},
-    'roast-btn-step': {'fontSize': '17px', 'padding': '6px 14px'},
+    'roast-btn-step': {'fontSize': '16px', 'padding': '6px 14px'},
     'roast-input': {'border': '1px solid var(--border)',
-                    'borderRadius': '8px', 'padding': '8px 10px',
+                    'borderRadius': '4px', 'padding': '8px 10px',
                     'fontSize': '14px', 'color': 'var(--label)',
                     'backgroundColor': 'var(--input)'},
     'roast-checkbox': {'color': 'var(--label)'},
     'roast-table': {'fontSize': '13px', 'color': 'var(--label)',
                     'backgroundColor': 'var(--container)'},
     'roast-accent-bar': {'height': '3px', 'borderRadius': '2px'},
-    'roast-seg': {'borderRadius': '8px', 'padding': '7px 4px',
+    'roast-seg': {'borderRadius': '4px', 'padding': '8px 4px',
                   'minWidth': '86px'},
     'roast-seg-drying': {'backgroundColor': '#0284c7'},
     'roast-seg-maillard': {'backgroundColor': '#2563eb'},
@@ -2292,11 +2293,11 @@ STYLE_CLASSES = {
                            'textTransform': 'uppercase',
                            'letterSpacing': '0.06em'},
     'roast-section-div': {'borderTop': '1px solid var(--border)',
-                          'paddingTop': '13px', 'gap': '9px'},
+                          'paddingTop': '12px', 'gap': '8px'},
     'roast-scroll': {'backgroundColor': 'var(--containerRoot)',
-                     'padding': '20px 22px', 'gap': '15px',
+                     'padding': '20px', 'gap': '16px',
                      'height': '100%', 'overflowY': 'auto'},
-    'roast-content': {'padding': '16px 20px', 'gap': '14px'},
+    'roast-content': {'padding': '16px 20px', 'gap': '12px'},
     'roast-status': {'fontSize': '12px', 'fontWeight': '700'},
     'roast-alarm-cap': {'fontSize': '13px', 'fontWeight': '700',
                         'color': 'var(--label)', 'minWidth': '130px'},
@@ -2313,29 +2314,39 @@ STYLE_CLASSES = {
     'roast-gap-8': {'gap': '8px'},
     'roast-gap-10': {'gap': '10px'},
     'roast-gap-12': {'gap': '12px'},
-    'roast-gap-14': {'gap': '14px'},
     'roast-tabbar': {'backgroundColor': 'var(--container)',
                      'borderTop': '1px solid var(--border)',
                      'padding': '6px 100px 6px 10px', 'gap': '8px'},
     'roast-tab-btn': {'fontSize': '15px', 'fontWeight': '700',
-                      'borderRadius': '10px', 'padding': '10px 8px',
+                      'borderRadius': '4px', 'padding': '10px 8px',
                       'cursor': 'pointer', 'color': 'var(--label)',
                       'backgroundColor': 'transparent',
                       'border': '1px solid transparent'},
     'roast-hud': {'backgroundColor': 'var(--container)',
                   'borderBottom': '1px solid var(--border)',
-                  'padding': '5px 12px', 'gap': '12px'},
-    'roast-hud-value': {'fontSize': '17px', 'fontWeight': '700',
+                  'padding': '5px 10px', 'gap': '10px'},
+    'roast-hud-field': {'borderLeft': '1px solid var(--border)',
+                        'paddingLeft': '8px', 'minWidth': '0px'},
+    'roast-hud-value': {'fontSize': '16px', 'fontWeight': '700',
                         'color': 'var(--label)',
-                        'fontFamily': 'monospace'},
-    'roast-hud-cap': {'fontSize': '9px', 'fontWeight': '700',
+                        'fontFamily': 'monospace',
+                        'whiteSpace': 'nowrap', 'overflow': 'hidden',
+                        'textOverflow': 'ellipsis'},
+    'roast-hud-value-phase': {'fontSize': '14px',
+                        'fontWeight': '700',
+                        'color': 'var(--label)',
+                        'fontFamily': 'monospace',
+                        'whiteSpace': 'nowrap', 'overflow': 'hidden',
+                        'textOverflow': 'ellipsis',
+                        'width': '100%'},
+    'roast-hud-cap': {'fontSize': '10px', 'fontWeight': '700',
                       'color': 'var(--neutral-60)',
                       'textTransform': 'uppercase',
                       'letterSpacing': '0.08em'},
     'roast-controldock': {'backgroundColor': 'var(--container)',
                           'borderTop': '1px solid var(--border)',
                           'padding': '8px 10px', 'gap': '8px',
-                          'boxShadow': '0 -6px 18px rgba(0,0,0,0.18)'},
+                          'boxShadow': '0 -4px 12px rgba(0,0,0,0.12)'},
     'roast-btn-lg': {'fontSize': '15px', 'padding': '13px 8px',
                      'minHeight': '52px'},
     'roast-btn-step-lg': {'fontSize': '21px', 'padding': '8px 16px',
@@ -2373,7 +2384,7 @@ STYLESHEET_CSS = """/* Roastery advanced stylesheet.
 /* Slim scrollbar for the popup scroll areas. */
 .psc-roast-scroll::-webkit-scrollbar { width: 10px; }
 .psc-roast-scroll::-webkit-scrollbar-thumb {
-  background: var(--neutral-60); border-radius: 6px; }
+  background: var(--neutral-60); border-radius: 4px; }
 
 /* ---- v4 shell rules ------------------------------------------
    The shared top dock is the mobile HUD: hide it on desktop
@@ -2403,10 +2414,16 @@ STYLESHEET_CSS = """/* Roastery advanced stylesheet.
    clipping 'Settings' to 'Setting'. Smaller type, tighter
    padding, a narrower theme button and less nub clearance. */
 @media (max-width: 560px) {
-  .psc-roast-tabbar { padding: 6px 62px 6px 6px; gap: 6px; }
+  /* Perspective emits style class props as element styles, so
+     these overrides need !important to win the cascade (proven
+     live: without it the padding and font size rules silently
+     lost to the class definitions). */
+  .psc-roast-tabbar { padding: 6px 60px 6px 6px !important;
+    gap: 6px !important; }
   .psc-roast-tabbar > * { min-width: 0; }
-  .psc-roast-tabbar > *:first-child { flex: 0 0 56px !important; }
-  .psc-roast-tab-btn { font-size: 13px; padding: 8px 2px;
+  .psc-roast-tabbar > *:first-child { flex: 0 0 46px !important; }
+  .psc-roast-tab-btn { font-size: 12px !important;
+    padding: 8px 1px !important;
     white-space: nowrap; overflow: hidden; }
 }
 """
@@ -2573,6 +2590,7 @@ def tile_view():
                   prop_config={'props.text': {'binding': prop_binding(
                       'view.params.title')}})
     value = label('ValueLabel', '0.0', 'roast-value-lg',
+                  position={'grow': 1, 'shrink': 1, 'basis': '0px'},
                   prop_config={'props.text': {'binding': prop_binding(
                       'view.params.valueText')},
                       'props.style.classes': {'binding': prop_binding(
@@ -2689,13 +2707,14 @@ def events_strip_view():
 # ================================================================ PhasesBar
 
 def phases_bar_view():
-    """Phase bar. Segment widths come from the actual event times
-    once the roast is dropped; before that (and as the target
-    labels) they come from the Settings phase duration targets
-    (PhaseDryTargetSec, PhaseMaillardTargetSec, PhaseDevTargetSec),
-    so adjusting a target in Settings visibly rebalances the bar.
-    The DTR label shows the actual DTR after drop, else the
-    DTRTargetPct target."""
+    """Phase bar. Segment widths are always the Settings phase
+    duration targets (PhaseDryTargetSec, PhaseMaillardTargetSec,
+    PhaseDevTargetSec) as proportions, so adjusting a target in
+    Settings visibly rebalances the bar, and the geometry never
+    moves during a roast (stability pass; the widths used to
+    recompute to actual shares at Drop). Segment text carries
+    the actual durations and shares. The DTR label shows the
+    actual DTR after drop, else the DTRTargetPct target."""
     dry_e = ref(T('DryEndElapsedSec'))
     fc_e = ref(T('FirstCrackStartElapsedSec'))
     drop_e = ref(T('DropElapsedSec'))
@@ -2703,12 +2722,21 @@ def phases_bar_view():
     tm = ref(T('PhaseMaillardTargetSec'))
     tv = ref(T('PhaseDevTargetSec'))
     tt = f"({td} + {tm} + {tv})"
-    dry_w = (f"if({drop_e} >= 0, {dry_e} * 100.0 / {drop_e}, "
-             f"{td} * 100.0 / {tt})")
-    mai_w = (f"if({drop_e} >= 0, ({fc_e} - {dry_e}) * 100.0 / {drop_e}, "
-             f"{tm} * 100.0 / {tt})")
-    dev_w = (f"if({drop_e} >= 0, ({drop_e} - {fc_e}) * 100.0 / {drop_e}, "
-             f"{tv} * 100.0 / {tt})")
+    # Stability pass: segment widths are ALWAYS the target
+    # proportions. They used to recompute to the actual phase
+    # shares at Drop, visibly rebalancing the whole bar at the
+    # exact moment Eric is watching it (Maillard collapsed to
+    # 8px in a no-FC test drop). The actuals live in the segment
+    # text; the geometry is the plan.
+    tt_safe = f"if({tt} > 0, {tt}, 1)"
+    dry_w = f"{td} * 100.0 / {tt_safe}"
+    mai_w = f"{tm} * 100.0 / {tt_safe}"
+    dev_w = f"{tv} * 100.0 / {tt_safe}"
+    dry_pct = f"if({drop_e} > 0, {dry_e} * 100.0 / {drop_e}, {dry_w})"
+    mai_pct = (f"if({drop_e} > 0, ({fc_e} - {dry_e}) * 100.0 / "
+               f"{drop_e}, {mai_w})")
+    dev_pct = (f"if({drop_e} > 0, ({drop_e} - {fc_e}) * 100.0 / "
+               f"{drop_e}, {dev_w})")
 
     def seg(name, caption, color_class, width_expr, text_expr):
         txt = label(name + 'Text', caption, 'roast-seg-text',
@@ -2722,14 +2750,14 @@ def phases_bar_view():
                         expr_binding(f"numberFormat({width_expr}, '0.0') + '%'")}})
 
     dry_t = (f"'DRYING  ' + if({dry_e} >= 0, {mmss_int(dry_e)} + ' - ' + "
-             f"numberFormat({dry_w}, '0') + '%', 'target ' + {mmss_int(td)})")
+             f"numberFormat({dry_pct}, '0') + '%', 'target ' + {mmss_int(td)})")
     mai_t = (f"'MAILLARD  ' + if({fc_e} >= 0, "
              f"{mmss_int(f'({fc_e} - {dry_e})')} + ' - ' + "
-             f"numberFormat({mai_w}, '0') + '%', 'target ' + "
+             f"numberFormat({mai_pct}, '0') + '%', 'target ' + "
              f"{mmss_int(tm)})")
     dev_t = (f"'DEVELOPMENT  ' + if({drop_e} >= 0, "
              f"{mmss_int(f'({drop_e} - {fc_e})')} + ' - ' + "
-             f"numberFormat({dev_w}, '0') + '%', 'target ' + "
+             f"numberFormat({dev_pct}, '0') + '%', 'target ' + "
              f"{mmss_int(tv)})")
     bar = flex('Bar', 'row', [
         seg('DrySeg', 'DRYING', 'roast-seg-drying', dry_w, dry_t),
@@ -2867,7 +2895,7 @@ def controls_view():
         stepper_big('FanStepper', 'Fan', 'FanLevel', 'roast-btn-blue'),
         stepper_big('HeatStepper', 'Heat', 'HeatLevel',
                     'roast-btn-charge')],
-        wrap='wrap', classes='roast-gap-14')
+        wrap='wrap', classes='roast-gap-12')
     actions = flex('ActionRow', 'row', [
         ev_btn('CoolButton', 'Cool', 'roast-btn-cool',
                f"{st} = 'Dropped'", 'roastery.core.cool()'),
@@ -3562,12 +3590,17 @@ ALARM_ACTIVE = (
     f"{ELAPSED_SEC} >= ({ref(T('TargetFCSec'))} - {ref(T('AlarmFCWindowSec'))}) && "
     f"{ELAPSED_SEC} <= ({ref(T('TargetFCSec'))} + {ref(T('AlarmFCWindowSec'))}))")
 
+_FC_WATCH = (
+    f"({ref(T('AlarmFCWatchEnabled'))} && {ref(T('State'))} = 'Roasting' && {ref(T('FirstCrackStartElapsedSec'))} < 0 && "
+    f"{ELAPSED_SEC} >= ({ref(T('TargetFCSec'))} - {ref(T('AlarmFCWindowSec'))}) && "
+    f"{ELAPSED_SEC} <= ({ref(T('TargetFCSec'))} + {ref(T('AlarmFCWindowSec'))}))")
+
 ALARM_TEXT = (
     f"if({ref(T('AlarmHighTempEnabled'))} && {ref(T('BeanTempF'))} >= {ref(T('AlarmHighTempF'))}, "
     f"{ref(T('AlarmHighTempMsg'))} + ' -- now ' + numberFormat({ref(T('BeanTempF'))}, '0') + ' F', "
     f"if({ref(T('AlarmDropEnabled'))} && {ref(T('State'))} = 'Roasting' && {ref(T('BeanTempF'))} >= {ref(T('TargetDropTempF'))} - {ref(T('AlarmDropDeltaF'))}, "
     f"'Drop approaching -- target ' + numberFormat({ref(T('TargetDropTempF'))}, '0') + ' F', "
-    f"'First crack watch -- listen for cracks'))")
+    f"if({_FC_WATCH}, 'First crack watch -- listen for cracks', '')))")
 
 DEVIATION_EXPR = (
     f"if({ref(T('State'))} != 'Roasting', '--', "
@@ -3584,7 +3617,12 @@ PHASE_EXPR = (
 
 
 def state_pill(name):
+    # Fixed 88px box (stability pass): the pill used to size to
+    # its text (Idle 52px, Roasting 81px), shoving every element
+    # after it sideways at each state change.
     return label(name, 'Idle', 'roast-pill',
+                 style={'width': '88px', 'minWidth': '88px',
+                        'maxWidth': '88px', 'flexShrink': '0'},
                  prop_config={
                      'props.text': {'binding': tag_binding(T('State'))},
                      'props.style.backgroundColor': {'binding': {
@@ -3609,15 +3647,20 @@ def state_pill(name):
 
 
 def alarm_banner(name='AlarmBanner'):
+    # Reserved slot (stability pass): the banner used to mount
+    # and unmount via display flex/none, shoving the whole page
+    # down when an alarm fired mid roast. It now always occupies
+    # its 37px slot; only the background and text change.
     return flex(name, 'row', [
         label(name + 'Text', '', 'roast-banner-text',
               prop_config={'props.text': {'binding': prop_binding(
                   'view.custom.alarmText')}})],
         align='center',
-        position={'grow': 0, 'shrink': 0, 'basis': 'auto'},
+        position={'grow': 0, 'shrink': 0, 'basis': '38px'},
         classes='roast-banner',
-        prop_config={'props.style.display': {'binding': expr_binding(
-            f"if({ALARM_ACTIVE}, 'flex', 'none')")}})
+        prop_config={'props.style.backgroundColor': {'binding':
+            expr_binding(
+                f"if({ALARM_ACTIVE}, '#991b1b', 'rgba(0,0,0,0)')")}})
 
 
 # ---------------------------------------------------------------- TabBar
@@ -3664,24 +3707,39 @@ def hud_view():
     the advanced stylesheet): the heads up roast readout that
     stays visible while the page scrolls under it."""
 
-    def field(name, cap, value_binding, cap_binding=None):
+    def field(name, cap, value_binding, cap_binding=None, grow=0,
+              basis='auto', value_class='roast-hud-value'):
         cap_pc = {'props.text': {'binding': cap_binding}} if cap_binding \
             else None
         c = label(name + 'Cap', cap, 'roast-hud-cap',
                   prop_config=cap_pc)
-        v = label(name + 'Val', '', 'roast-hud-value',
+        v = label(name + 'Val', '', value_class,
+                  style={'width': '100%'},
                   prop_config={'props.text': {'binding': value_binding}})
-        return flex(name, 'column', [c, v], classes='',
-                    position={'grow': 0, 'shrink': 0, 'basis': 'auto'})
+        return flex(name, 'column', [c, v], classes='roast-hud-field',
+                    position={'grow': grow, 'shrink': 0,
+                              'basis': basis})
 
-    bean = field('Bean', 'BEAN F', fmt_tag(T('BeanTempF'), '0.0'))
-    ror = field('Ror', 'ROR', fmt_tag(T('RateOfRiseF'), '0.0'))
+    # Fixed field boxes (stability pass): content sized groups
+    # used to breathe as digits changed (the clock value box
+    # measured 60px and 62px for the same five characters across
+    # a state change). Widths fit the widest realistic reading
+    # plus the caption above each value, and every value label
+    # is capped at its group width so text can never push the
+    # row (a forced 'Development' label measured 26px past the
+    # 360px edge before the cap).
+    bean = field('Bean', 'BEAN F', fmt_tag(T('BeanTempF'), '0.0'),
+                 basis='52px')
+    ror = field('Ror', 'ROR', fmt_tag(T('RateOfRiseF'), '0.0'),
+                basis='48px')
     clock = field('Clock', 'ROAST TIME', prop_binding('view.custom.clockText'),
-                  cap_binding=prop_binding('view.custom.clockCaption'))
-    phase = field('Phase', 'PHASE', prop_binding('view.custom.phaseText'))
+                  cap_binding=prop_binding('view.custom.clockCaption'),
+                  basis='60px')
+    phase = field('Phase', 'PHASE', prop_binding('view.custom.phaseText'),
+                  grow=1, value_class='roast-hud-value-phase')
     root = flex('root', 'row',
                 [state_pill('HudState'), bean, ror, clock, phase],
-                align='center', justify='space-between',
+                align='center', justify='flex-start',
                 classes='roast-hud')
     return {'custom': {'clockText': '00:00', 'clockCaption': 'ROAST TIME',
                        'phaseText': 'Pre-charge'},
@@ -3845,9 +3903,15 @@ def roast_page_view():
     title_block = flex('TitleBlock', 'column', [title, sub],
                        classes='roast-gap-8')
     batch_chip = label('BatchChip', '', 'roast-chip',
+                       position={'grow': 0, 'shrink': 1,
+                                 'basis': 'auto'},
+                       style={'minWidth': '0px'},
                        prop_config={'props.text': {'binding': expr_binding(
                            f"'Batch ' + {ref(T('BatchNumber'))} + ' - ' + {ref(T('BeanName'))}")}})
     ws_pill = label('WsPill', 'SR800', 'roast-pill',
+                    style={'width': '170px', 'minWidth': '170px',
+                           'maxWidth': '170px', 'flexShrink': '0',
+                           'textAlign': 'center'},
                     prop_config={
                         'props.text': {'binding': expr_binding(
                             f"if({ref(T('BeanTempF'))} > 0, {ref(T('ActiveSource'))} + ' CONNECTED', {ref(T('ActiveSource'))} + ' OFFLINE')")},
@@ -3873,7 +3937,7 @@ def roast_page_view():
     main_col = flex('MainCol', 'column',
                     [_chart_card('560px'), _strip_embed(),
                      _phases_embed(), _tiles_row()],
-                    classes='roast-gap-14',
+                    classes='roast-gap-12',
                     position={'grow': 1, 'shrink': 1, 'basis': '0px'})
     rail_col = flex('RailCol', 'column', [
         embed('ControlsEmbed', 'Views/Controls', {},
@@ -3882,10 +3946,10 @@ def roast_page_view():
               {'grow': 0, 'shrink': 0, 'basis': 'auto'}),
         embed('MetaCardEmbed', 'Views/MetaCard', {},
               {'grow': 0, 'shrink': 0, 'basis': 'auto'})],
-        classes='roast-gap-14',
+        classes='roast-gap-12',
         position={'grow': 0, 'shrink': 0, 'basis': '400px'})
     content_row = flex('ContentRow', 'row', [main_col, rail_col],
-                       classes='roast-content roast-gap-14',
+                       classes='roast-content roast-gap-12',
                        position={'grow': 0, 'shrink': 0, 'basis': 'auto'})
     large = flex('LargeRoot', 'column',
                  [header, alarm_banner(), content_row],
@@ -3911,7 +3975,7 @@ def roast_page_view():
               {'grow': 0, 'shrink': 0, 'basis': 'auto'}),
         embed('MetaCardEmbedM', 'Views/MetaCard', {},
               {'grow': 0, 'shrink': 0, 'basis': 'auto'})],
-        classes='roast-content roast-gap-14 roast-scrollcol',
+        classes='roast-content roast-gap-12 roast-scrollcol',
         position={'grow': 1, 'shrink': 1, 'basis': '0px'})
     small = flex('SmallRoot', 'column', [
         alarm_banner('AlarmBannerM'), scroll_col,
@@ -4150,7 +4214,7 @@ def settings_page_view():
         sections.append(embed(name + 'Embed', 'Views/' + name, {},
                               {'grow': 0, 'shrink': 0, 'basis': 'auto'}))
     content = flex('Content', 'column', sections,
-                   classes='roast-content roast-gap-14')
+                   classes='roast-content roast-gap-12')
     root = flex('root', 'column', [content], classes='roast-app')
     return {'custom': {}, 'params': {}, 'propConfig': {},
             'props': {'defaultSize': {'width': 1100, 'height': 1400}},
@@ -4183,7 +4247,7 @@ def log_page_view():
     panel = embed('BatchesPanelEmbed', 'Views/BatchesPanel', {},
                   {'grow': 0, 'shrink': 0, 'basis': 'auto'})
     content = flex('Content', 'column', [head, panel],
-                   classes='roast-content roast-gap-14')
+                   classes='roast-content roast-gap-12')
     root = flex('root', 'column', [content], classes='roast-app')
     return {'custom': {}, 'params': {}, 'propConfig': {},
             'props': {'defaultSize': {'width': 1440, 'height': 760}},
@@ -4329,7 +4393,7 @@ def batch_detail_view():
         classes='roast-card roast-gap-10',
         position={'grow': 0, 'shrink': 0, 'basis': '300px'})
     mid_row = flex('MidRow', 'row', [events_card, summary_card],
-                   wrap='wrap', classes='roast-gap-14',
+                   wrap='wrap', classes='roast-gap-12',
                    position={'grow': 0, 'shrink': 0,
                              'basis': '314px'})
     press_card = flex('PressCard', 'column', [
@@ -4351,7 +4415,7 @@ def batch_detail_view():
             "if({view.custom.hasPresses}, 'flex', 'none')")}})
     content = flex('Content', 'column',
                    [head, chart_card, mid_row, meta_card, press_card],
-                   classes='roast-content roast-gap-14')
+                   classes='roast-content roast-gap-12')
     root = flex('root', 'column', [content], classes='roast-app',
                 scripts={'messageHandlers': [{
                     'messageType': 'roastery-detail-refresh',

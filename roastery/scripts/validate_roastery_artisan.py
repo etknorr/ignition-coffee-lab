@@ -103,6 +103,28 @@ def main():
     res_checks['stylesheet_on_disk'] = os.path.exists(os.path.join(
         PROJ_DIR, 'com.inductiveautomation.perspective', 'stylesheet',
         'stylesheet.css'))
+    # Design tokens (v4.2): every border radius in the style
+    # classes and the advanced stylesheet must come from the
+    # token scale (2 micro, 4 interactive, 6 small containers,
+    # 8 cards, 999 pills only). Eric flagged the inconsistent
+    # bubbly rounding (16/12/10px) as amateur.
+    import re as _re
+    RADIUS_OK = {'0px', '2px', '4px', '6px', '8px', '999px', '50%'}
+    bad_radius = []
+    for d in have:
+        txt = open(os.path.join(sc_root, d, 'style.json')).read()
+        for val in _re.findall(r'"borderRadius":\s*"([^"]+)"', txt):
+            if val not in RADIUS_OK:
+                bad_radius.append((d, val))
+    css_path = os.path.join(
+        PROJ_DIR, 'com.inductiveautomation.perspective', 'stylesheet',
+        'stylesheet.css')
+    if os.path.exists(css_path):
+        for val in _re.findall(r'border-radius:\s*([^;]+);',
+                               open(css_path).read()):
+            if val.strip() not in RADIUS_OK:
+                bad_radius.append(('stylesheet', val.strip()))
+    res_checks['radius_offenders'] = bad_radius
     report['resources'] = res_checks
     for rel in VIEWS:
         want = load_file_view(rel)
@@ -174,7 +196,8 @@ def main():
           and report['resources']['library_batches']
           and len(report['resources']['named_queries']) == 10
           and report['resources']['roast_card_on_disk']
-          and report['resources']['stylesheet_on_disk'])
+          and report['resources']['stylesheet_on_disk']
+          and report['resources']['radius_offenders'] == [])
     print('VALIDATION', 'PASS' if ok else 'CHECK REPORT')
 
 if __name__ == '__main__':

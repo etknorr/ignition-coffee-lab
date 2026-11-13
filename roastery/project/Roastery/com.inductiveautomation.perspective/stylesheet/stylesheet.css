@@ -14,7 +14,7 @@
 /* Slim scrollbar for the popup scroll areas. */
 .psc-roast-scroll::-webkit-scrollbar { width: 10px; }
 .psc-roast-scroll::-webkit-scrollbar-thumb {
-  background: var(--neutral-60); border-radius: 6px; }
+  background: var(--neutral-60); border-radius: 4px; }
 
 /* ---- v4 shell rules ------------------------------------------
    The shared top dock is the mobile HUD: hide it on desktop
@@ -44,9 +44,15 @@
    clipping 'Settings' to 'Setting'. Smaller type, tighter
    padding, a narrower theme button and less nub clearance. */
 @media (max-width: 560px) {
-  .psc-roast-tabbar { padding: 6px 62px 6px 6px; gap: 6px; }
+  /* Perspective emits style class props as element styles, so
+     these overrides need !important to win the cascade (proven
+     live: without it the padding and font size rules silently
+     lost to the class definitions). */
+  .psc-roast-tabbar { padding: 6px 60px 6px 6px !important;
+    gap: 6px !important; }
   .psc-roast-tabbar > * { min-width: 0; }
-  .psc-roast-tabbar > *:first-child { flex: 0 0 56px !important; }
-  .psc-roast-tab-btn { font-size: 13px; padding: 8px 2px;
+  .psc-roast-tabbar > *:first-child { flex: 0 0 46px !important; }
+  .psc-roast-tab-btn { font-size: 12px !important;
+    padding: 8px 1px !important;
     white-space: nowrap; overflow: hidden; }
 }

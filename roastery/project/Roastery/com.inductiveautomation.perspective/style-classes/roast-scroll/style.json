@@ -2,8 +2,8 @@
   "base": {
     "style": {
       "backgroundColor": "var(--containerRoot)",
-      "padding": "20px 22px",
-      "gap": "15px",
+      "padding": "20px",
+      "gap": "16px",
       "height": "100%",
       "overflowY": "auto"
     }

@@ -241,6 +241,77 @@ def main():
         }""")
         check('no app element overflows a 360px phone',
               worst <= 361, worst)
+        # HUD readability and tab label fit at 360px (parent
+        # review of the first v4.1 shot: values read as one blob
+        # and the Settings label clipped). Measure, do not
+        # eyeball: value to value gaps and per button text fit.
+        hud_gaps = mob360.evaluate("""() => {
+          const els = [...document.querySelectorAll(
+            '.psc-roast-hud-value, .psc-roast-hud-value-phase')]
+            .map(e => e.getBoundingClientRect())
+            .filter(r => r.width > 0)
+            .sort((a, b) => a.x - b.x);
+          const gaps = [];
+          for (let i = 1; i < els.length; i++)
+            gaps.push(Math.round(els[i].x - els[i - 1].right));
+          return gaps;
+        }""")
+        check('HUD values are separated at 360px',
+              len(hud_gaps) >= 3 and min(hud_gaps) >= 8, hud_gaps)
+        tab_fit = mob360.evaluate("""() => {
+          const bad = [];
+          document.querySelectorAll('.psc-roast-tab-btn')
+            .forEach(el => {
+              if (el.scrollWidth > el.clientWidth + 1)
+                bad.push((el.innerText || '').trim() + ':' +
+                         el.scrollWidth + '>' + el.clientWidth);
+            });
+          return bad;
+        }""")
+        check('tab labels fully fit at 360px', tab_fit == [], tab_fit)
+        # ---- v4.2: layout stability ------------------------------
+        # Nothing may change position during a roast except the
+        # values themselves and the chart drawing. Capture the
+        # geometry of the state carrying elements twice, six
+        # seconds apart, mid roast, and require zero drift.
+        STAB_JS = """() => {
+          const all = (sel) => [...document.querySelectorAll(sel)]
+            .map(el => { const r = el.getBoundingClientRect();
+              return [Math.round(r.x), Math.round(r.y),
+                      Math.round(r.width), Math.round(r.height)]; })
+            .filter(b => b[2] > 0);
+          const one = (sel) => {
+            const el = document.querySelector(sel);
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return [Math.round(r.x), Math.round(r.y),
+                    Math.round(r.width), Math.round(r.height)];
+          };
+          return {pills: all('.psc-roast-pill'),
+                  hudVals: all('.psc-roast-hud-value'),
+                  phases: all('.psc-roast-seg'),
+                  tiles: all('.psc-roast-cell'),
+                  banner: one('.psc-roast-banner'),
+                  tabbar: one('.psc-roast-tabbar')};
+        }"""
+        stab1_d = desk.evaluate(STAB_JS)
+        stab1_m = mob360.evaluate(STAB_JS)
+        mob360.wait_for_timeout(6000)
+        stab2_d = desk.evaluate(STAB_JS)
+        stab2_m = mob360.evaluate(STAB_JS)
+        check('desktop layout is stable mid roast',
+              stab1_d == stab2_d,
+              (stab1_d, stab2_d) if stab1_d != stab2_d else 'frozen')
+        check('mobile layout is stable mid roast',
+              stab1_m == stab2_m,
+              (stab1_m, stab2_m) if stab1_m != stab2_m else 'frozen')
+        check('state pill has a fixed 88px box',
+              any(p[2] == 88 for p in stab1_m['pills']),
+              stab1_m['pills'])
+        check('alarm banner slot is reserved (38px, empty or not)',
+              stab1_d['banner'] is not None
+              and stab1_d['banner'][3] == 38,
+              stab1_d['banner'])
         desk.screenshot(path=os.path.join(
             SHOTS, 'roastery-v4-roast-desktop.png'))
         mob.screenshot(path=os.path.join(

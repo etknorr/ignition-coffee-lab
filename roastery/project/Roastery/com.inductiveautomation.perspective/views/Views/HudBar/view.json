@@ -44,7 +44,7 @@
     },
     "props": {
       "direction": "row",
-      "justify": "space-between",
+      "justify": "flex-start",
       "alignItems": "center",
       "style": {
         "classes": "roast-hud"
@@ -59,7 +59,11 @@
         "props": {
           "text": "Idle",
           "style": {
-            "classes": "roast-pill"
+            "classes": "roast-pill",
+            "width": "88px",
+            "minWidth": "88px",
+            "maxWidth": "88px",
+            "flexShrink": "0"
           }
         },
         "propConfig": {
@@ -122,7 +126,10 @@
           "name": "Bean"
         },
         "props": {
-          "direction": "column"
+          "direction": "column",
+          "style": {
+            "classes": "roast-hud-field"
+          }
         },
         "children": [
           {
@@ -145,7 +152,8 @@
             "props": {
               "text": "",
               "style": {
-                "classes": "roast-hud-value"
+                "classes": "roast-hud-value",
+                "width": "100%"
               }
             },
             "propConfig": {
@@ -173,7 +181,7 @@
         "position": {
           "grow": 0,
           "shrink": 0,
-          "basis": "auto"
+          "basis": "52px"
         }
       },
       {
@@ -182,7 +190,10 @@
           "name": "Ror"
         },
         "props": {
-          "direction": "column"
+          "direction": "column",
+          "style": {
+            "classes": "roast-hud-field"
+          }
         },
         "children": [
           {
@@ -205,7 +216,8 @@
             "props": {
               "text": "",
               "style": {
-                "classes": "roast-hud-value"
+                "classes": "roast-hud-value",
+                "width": "100%"
               }
             },
             "propConfig": {
@@ -233,7 +245,7 @@
         "position": {
           "grow": 0,
           "shrink": 0,
-          "basis": "auto"
+          "basis": "48px"
         }
       },
       {
@@ -242,7 +254,10 @@
           "name": "Clock"
         },
         "props": {
-          "direction": "column"
+          "direction": "column",
+          "style": {
+            "classes": "roast-hud-field"
+          }
         },
         "children": [
           {
@@ -275,7 +290,8 @@
             "props": {
               "text": "",
               "style": {
-                "classes": "roast-hud-value"
+                "classes": "roast-hud-value",
+                "width": "100%"
               }
             },
             "propConfig": {
@@ -293,7 +309,7 @@
         "position": {
           "grow": 0,
           "shrink": 0,
-          "basis": "auto"
+          "basis": "60px"
         }
       },
       {
@@ -302,7 +318,10 @@
           "name": "Phase"
         },
         "props": {
-          "direction": "column"
+          "direction": "column",
+          "style": {
+            "classes": "roast-hud-field"
+          }
         },
         "children": [
           {
@@ -325,7 +344,8 @@
             "props": {
               "text": "",
               "style": {
-                "classes": "roast-hud-value"
+                "classes": "roast-hud-value-phase",
+                "width": "100%"
               }
             },
             "propConfig": {
@@ -341,7 +361,7 @@
           }
         ],
         "position": {
-          "grow": 0,
+          "grow": 1,
           "shrink": 0,
           "basis": "auto"
         }

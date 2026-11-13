@@ -28,7 +28,7 @@
         "props": {
           "direction": "column",
           "style": {
-            "classes": "roast-content roast-gap-14"
+            "classes": "roast-content roast-gap-12"
           }
         },
         "children": [

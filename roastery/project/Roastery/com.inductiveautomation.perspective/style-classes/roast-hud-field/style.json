@@ -1,0 +1,9 @@
+{
+  "base": {
+    "style": {
+      "borderLeft": "1px solid var(--border)",
+      "paddingLeft": "8px",
+      "minWidth": "0px"
+    }
+  }
+}

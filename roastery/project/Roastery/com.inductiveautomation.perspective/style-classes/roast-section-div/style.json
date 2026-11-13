@@ -2,8 +2,8 @@
   "base": {
     "style": {
       "borderTop": "1px solid var(--border)",
-      "paddingTop": "13px",
-      "gap": "9px"
+      "paddingTop": "12px",
+      "gap": "8px"
     }
   }
 }

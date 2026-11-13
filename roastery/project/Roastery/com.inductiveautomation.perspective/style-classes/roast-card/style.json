@@ -3,9 +3,9 @@
     "style": {
       "backgroundColor": "var(--container)",
       "border": "1px solid var(--border)",
-      "borderRadius": "16px",
+      "borderRadius": "8px",
       "boxShadow": "var(--boxShadow2)",
-      "padding": "16px 18px"
+      "padding": "16px"
     }
   }
 }

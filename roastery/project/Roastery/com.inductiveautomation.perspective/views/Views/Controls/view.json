@@ -639,7 +639,7 @@
           "direction": "row",
           "wrap": "wrap",
           "style": {
-            "classes": "roast-gap-14"
+            "classes": "roast-gap-12"
           }
         },
         "children": [

@@ -1249,3 +1249,108 @@ workspace batch number was 1042, which collides with the
 generated database fixture of the same number, so a library
 save would have been refused by the duplicate guard; the roast
 itself ran on the simulator source.
+
+### Polish pass (2026-11-12, parent review of the 360px shot)
+
+Two nits from reviewing the suite's mid roast 360px
+screenshot, both fixed and now guarded by suite checks:
+
+- HUD values read as one blob ("241.725.000:57 Development").
+  The field groups sat 5px apart with 17px values. Each group
+  now carries a left divider border and padding (new
+  roast-hud-field class), the row is flex-start with a 10px
+  gap, and values are 15px with ellipsis truncation; measured
+  value to value gaps at 360px are 10px each, and the suite
+  asserts at least 8px.
+- The Settings tab label clipped ("Setting"). Root cause
+  found by computed style inspection: Perspective emits style
+  class properties as element styles, so the advanced
+  stylesheet's tab bar rules lost the cascade and never
+  applied (the bar still had its class padding of 100px right
+  and 15px button text; only the one !important flex rule had
+  ever taken effect). The media query rules now carry
+  !important: bar padding 6px 60px (the 60px right side keeps
+  the Log tab clear of the Maker session nub, which a 38px
+  padding let it slide under), 12px tab labels. Measured at
+  360px: tabs 75px wide, every label's scrollWidth equals its
+  clientWidth, Log ends at x=300 with the nub clear. The suite
+  asserts per button text fit at 360px.
+
+Suite total is now 52 checks, all passing.
+
+## V4.2: layout stability and design tokens (2026-11-12)
+
+Two more rounds of Eric's live feedback: "things that move
+that shouldn't" and "a lot of rounded corners that look
+weird... professional UI UX design". Both were measured
+before fixing (a Playwright harness records bounding boxes
+across Idle -> Roasting -> Dropped and twice mid roast).
+
+### Stability: what moved, and the fix
+
+Mid roast itself was already frozen. Every movement happened
+at state transitions, from content sized boxes:
+
+- The state pill sized to its text (Idle 52px, Roasting
+  81px) and shoved everything after it (all four HUD values
+  jumped +29px at Charge; the desktop header pills shifted).
+  The pill is now a fixed 88px box; the source pill beside it
+  is fixed at 170px; the batch chip shrinks with an ellipsis
+  instead of running under the pills.
+- The phase bar recomputed segment widths to the ACTUAL
+  phase shares at Drop (Maillard collapsed to 8px in a
+  no-FC test drop). Widths are now always the Settings
+  target proportions; actual durations and shares live in
+  the segment text.
+- The alarm banner mounted and unmounted (display flex /
+  none), pushing the page when an alarm fired. It now
+  reserves a 38px slot permanently (flex basis, because the
+  flex layout drops minHeight from style classes); only its
+  background and text change. Proven live: firing the high
+  temp alarm turned the slot red with the chart card's Y
+  coordinate unchanged. Reserving the slot also exposed a
+  latent bug: ALARM_TEXT defaulted to the first crack watch
+  message whenever no alarm was active; its final branch is
+  now the empty string, with the watch message behind the
+  same conditions as ALARM_ACTIVE.
+- HUD fields breathed (the clock value box measured 60px
+  and 62px for the same five characters). Fields are fixed
+  boxes (Bean 52px, RoR 48px, Clock 60px, Phase grows) and
+  every value label is capped at its group width; the phase
+  value uses 14px type so 'Development' fits at 360px
+  (a forced label measured 26px past the edge before).
+- Tile value labels shrink wrapped their text ('--' 20px,
+  '+9.2 F' 84px). They now stretch across the tile, and the
+  big readouts use tabular numbers.
+
+The verify suite asserts all of it: geometry captured twice
+mid roast on desktop and 360px must be identical, the state
+pill must be 88px, and the banner slot must be 38px. Suite
+total is now 56 checks, all passing.
+
+### Design tokens
+
+Radius scale, applied to every style class and the advanced
+stylesheet (was 16/12/10/8px mixed, the bubbly look Eric
+flagged):
+
+- 2px: micro elements (accent bars)
+- 4px: interactive (buttons, inputs, tab buttons, phase
+  segments)
+- 6px: small containers (event cells, tiles' inner cells)
+- 8px: cards and panels
+- 999px: pills only, where the pill IS the shape (state
+  pill, source pill)
+
+Nested corners follow the scale (an 8px card with 12-16px
+padding holds 4px elements). validate_roastery_artisan.py
+now fails if any radius outside the token set appears in a
+style class or the stylesheet. Spacing sits on a 4pt rhythm
+(gaps 8/12/16; the 9/14/15px values were normalized, and
+roast-gap-14 folded into roast-gap-12). One elevation
+language: cards take the theme border plus boxShadow2; the
+control dock's heavy blur shadow became a subtle
+0 -4px 12px; the alarm banner lost its red glow and is flat.
+Type scale: 10px captions in the HUD, 11/12/13/14 body and
+labels, 16 HUD values and stepper glyphs, 20 medium
+readouts, 30 tile values.

@@ -3,7 +3,7 @@
     "style": {
       "fontSize": "15px",
       "fontWeight": "700",
-      "borderRadius": "10px",
+      "borderRadius": "4px",
       "padding": "10px 8px",
       "cursor": "pointer",
       "color": "var(--label)",
