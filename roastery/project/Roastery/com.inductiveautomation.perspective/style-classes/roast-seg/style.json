@@ -1,9 +1,8 @@
 {
   "base": {
     "style": {
-      "borderRadius": "4px",
-      "padding": "8px 4px",
-      "minWidth": "86px"
+      "borderRadius": "var(--roast-radius-interactive)",
+      "padding": "8px 4px"
     }
   }
 }

@@ -233,7 +233,8 @@ LIVE_DS = '[default]Roastery/LiveCurveDS'
 # fan and heat are Double in the chart dataset, matching the
 # EventsLog doubles the v4 strip chart read; the stored
 # CurveSamples keep Integer levels.
-LIVE_COLS = ['t_stamp', 'bean', 'ror', 'fan', 'heat']
+LIVE_COLS = ['t_stamp', 'bean', 'ror', 'fan', 'heat',
+             'bg', 'bgRor', 'plan']
 SELECTED_TAG = '[default]Roastery/SelectedBatchNumber'
 NQ_EVENTS_INSERT = 'Roastery/Events/InsertPress'
 
@@ -301,7 +302,11 @@ def empty_curve_dataset():
 
 
 def empty_live_dataset():
-    return typed_empty_dataset(LIVE_COLS, [None, 0.0, 0.0, 0.0, 0.0])
+    # The seed row fixes the column types; it must carry one
+    # value per LIVE_COLS entry (growing the columns without
+    # growing the seed made charge() abort here, v4.4).
+    return typed_empty_dataset(
+        LIVE_COLS, [None, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
 
 def empty_log_dataset():
@@ -802,12 +807,11 @@ def marks_dataset(evs):
     return system.dataset.toDataSet(MARK_COLS, rows)
 
 
-def build_marks():
-    """Rebuild EventMarksDS from the stamped event tags, as a
-    column-per-event marker dataset (marks_dataset). The chart
-    draws one named series per event column, so the legend labels
-    the vertical lines."""
-    from java.util import Date
+def _live_events():
+    """The current roast's stamped events as (elapsed sec,
+    label) pairs, charge first: the single source both marker
+    representations read (the EventMarksDS dataset and the
+    canvas charts' reference lines)."""
     members = ['StartTime', 'State']
     for stem, _lbl in MARK_EVENTS[1:]:
         members.append(stem + 'ElapsedSec')
@@ -815,10 +819,8 @@ def build_marks():
         members += ['CustomEvent%dElapsedSec' % i,
                     'CustomEvent%dName' % i]
     vals = read_members(members)
-    rows = []
-    start = vals['StartTime']
     evs = []
-    if start is not None and vals['State'] != 'Idle':
+    if vals['StartTime'] is not None and vals['State'] != 'Idle':
         evs = [(0, 'CHARGE')]
         for stem, lbl in MARK_EVENTS[1:]:
             e = vals[stem + 'ElapsedSec']
@@ -829,8 +831,86 @@ def build_marks():
             if e is not None and e >= 0:
                 nm = vals['CustomEvent%dName' % i] or 'CUSTOM'
                 evs.append((int(e), nm.upper()))
-    ds = marks_dataset(evs)
+    return evs
+
+
+def build_marks():
+    """Rebuild EventMarksDS from the stamped event tags, as a
+    column-per-event marker dataset (marks_dataset). Kept as
+    the marker record of the roast (the verification suite
+    asserts it); the canvas charts render the same events from
+    event_reference_lines instead."""
+    ds = marks_dataset(_live_events())
     system.tag.writeBlocking([MARKS_DS], [ds])
+
+
+def _ref_items(evs, top_gap=120.0, mid_gap=45.0, mid_top_gap=45.0):
+    """Canvas chart reference line items for (elapsed sec,
+    label) events: native ECharts markLines through the
+    component's series referenceLines. Labels sit at the top
+    of the plot (position 'end', proven in the 2026-11-13
+    probe round) unless the collision policy in the loop
+    moves or drops them. Values are epoch milliseconds on the
+    elapsed time axis, clamped to the axis minimum of
+    1000 ms: the axis starts 1 s in so its first tick reads
+    00:01 instead of the year 1970 (the epoch boundary tick
+    gets a year format from ECharts), and a line at 0 would
+    fall outside the plot."""
+    items = []
+    last_top = None
+    last_mid = None
+    for sec, lbl in sorted(evs, key=lambda e: float(e[0])):
+        sec = float(sec)
+        # Label collision policy (Eric, 2026-11-13, no overlap
+        # pass): labels ride the top of the plot ('end') only
+        # when they stand at least 120 s clear of the previous
+        # top label. (An audit roast with FC Start 100 s after
+        # Charge still merged the two top labels on the phone
+        # chart, where 100 s is only about 30px.) A closer event
+        # drops its label to the middle of the line when the
+        # middle slot is also clear (45 s from the last middle
+        # label and from the top one); anything tighter renders
+        # the line with no label at all rather than print
+        # unreadable stacked text. The event strip under the
+        # chart always carries the name.
+        if last_top is None or sec - last_top >= top_gap:
+            pos, vis = 'end', True
+            last_top = sec
+        elif (sec - last_top >= mid_top_gap
+                and (last_mid is None or sec - last_mid >= mid_gap)):
+            pos, vis = 'middle', True
+            last_mid = sec
+        else:
+            pos, vis = 'end', False
+        items.append({
+            'value': max(1000, int(sec * 1000)),
+            'orientation': 'vertical',
+            'label': {'visible': vis, 'position': pos,
+                      'text': lbl, 'color': '#f59e0b',
+                      'fontSize': 11, 'elementStyle': {}},
+            'line': {'color': '#f59e0b', 'width': 1.5,
+                     'type': 'dashed', 'opacity': 0.9}})
+    return items
+
+
+def event_reference_lines():
+    """Reference line items for the live chart's bean series,
+    bound through a script transform triggered by the
+    EventMarksDS tag (rewritten on every press)."""
+    return _ref_items(_live_events())
+
+
+def event_reference_lines_compact():
+    """Phone variant of the marker labels (no overlap pass):
+    the phone chart squeezes a whole roast into about 215px,
+    so two labels in the same band need roughly 150 s of
+    separation not to touch. The compact policy spaces top
+    labels 150 s apart and middle labels 150 s apart; an
+    event that fits neither band keeps its line and drops
+    its label. The events strip directly under the phone
+    chart names every event, so nothing is lost."""
+    return _ref_items(_live_events(), top_gap=150.0,
+                      mid_gap=150.0, mid_top_gap=30.0)
 
 
 def append_curve_sample(elapsed, t_stamp, temp, ror, fan, heat):
@@ -881,12 +961,46 @@ def build_live_curve():
     points = curve_points()
     pts = [(float(p['t']), p['bt']) for p in points]
     rors = compute_ror_series(pts, ror_params(), offline=False)
-    rows = []
+    # The canvas line chart reads ONE wide dataset (v4.4
+    # migration): the ghost and target overlays merge into the
+    # same rows by timestamp union, each column null where its
+    # source has no point. The chart series set connectNulls,
+    # so the merge nulls never break a line; they are not data
+    # gaps. Columns bg, bgRor and plan come from the overlay
+    # datasets build_overlays maintains.
+    merged = {}
+
+    def put(ms, col, val):
+        row = merged.get(ms)
+        if row is None:
+            row = {}
+            merged[ms] = row
+        row[col] = val
+
     for p, (_t, r) in zip(points, rors):
-        rows.append([Date(long(p['t'] * 1000)), p['bt'], r,
-                     float(p['fan']) if p['fan'] is not None else None,
-                     float(p['heat']) if p['heat'] is not None
-                     else None])
+        ms = long(p['t'] * 1000)
+        put(ms, 'bean', p['bt'])
+        put(ms, 'ror', r)
+        put(ms, 'fan', float(p['fan']) if p['fan'] is not None
+            else None)
+        put(ms, 'heat', float(p['heat']) if p['heat'] is not None
+            else None)
+    for path, col in ((BACKGROUND_DS, 'bg'), (BGROR_DS, 'bgRor'),
+                      (TARGET_DS, 'plan')):
+        ds = system.tag.readBlocking([path])[0].value
+        if ds is None:
+            continue
+        for i in range(ds.rowCount):
+            t = ds.getValueAt(i, 't_stamp')
+            v = ds.getValueAt(i, col)
+            if t is not None and v is not None:
+                put(long(t.getTime()), col, float(v))
+    rows = []
+    for ms in sorted(merged):
+        m = merged[ms]
+        rows.append([Date(ms), m.get('bean'), m.get('ror'),
+                     m.get('fan'), m.get('heat'), m.get('bg'),
+                     m.get('bgRor'), m.get('plan')])
     system.tag.writeBlocking(
         [LIVE_DS], [system.dataset.toDataSet(LIVE_COLS, rows)])
 
@@ -1106,6 +1220,9 @@ def build_overlays():
     system.tag.writeBlocking(
         [BGROR_DS],
         [system.dataset.toDataSet(['t_stamp', 'bgRor'], bg_ror_rows)])
+    # The live chart dataset merges the overlays in (v4.4);
+    # refresh it so a ghost or target change lands at once.
+    build_live_curve()
 
 
 
@@ -1872,6 +1989,31 @@ def stage_detail(batch_number):
     return True
 
 
+def detail_reference_lines():
+    """Reference line items for the staged batch's events, from
+    the DetailDocJson document stage_detail wrote (custom event
+    names intact). Bound on the detail chart's bean series
+    through a script transform triggered by DetailMarksDS."""
+    raw = system.tag.readBlocking([DETAIL_JSON])[0].value
+    if not raw:
+        return []
+    doc = system.util.jsonDecode(raw)
+    events = doc.get('events') or {}
+    evs = []
+    for key, lbl in (('charge', 'CHARGE'), ('dryEnd', 'DRY END'),
+                     ('fcStart', 'FC START'), ('fcEnd', 'FC END'),
+                     ('scStart', 'SC START'), ('scEnd', 'SC END'),
+                     ('drop', 'DROP')):
+        e = events.get(key)
+        if e and e.get('t') is not None:
+            evs.append((float(e['t']), lbl))
+    for c in events.get('custom') or []:
+        if c.get('t') is not None:
+            evs.append((float(c['t']),
+                        (c.get('name') or 'CUSTOM').upper()))
+    return core._ref_items(evs)
+
+
 def open_detail(self):
     """Batches panel Details button: stage the selected batch and
     navigate to the detail page."""
@@ -2188,19 +2330,17 @@ STYLE_CLASSES = {
                        'color': 'var(--label)'},
     'roast-subtitle': {'fontSize': '12px', 'color': 'var(--neutral-70)'},
     'roast-card': {'backgroundColor': 'var(--container)',
-                   'border': '1px solid var(--border)',
-                   'borderRadius': '8px',
+                   'borderRadius': 'var(--roast-radius-card)',
                    'boxShadow': 'var(--boxShadow2)',
                    'padding': '16px'},
     'roast-card-sm': {'backgroundColor': 'var(--container)',
-                      'border': '1px solid var(--border)',
-                      'borderRadius': '8px',
+                      'borderRadius': 'var(--roast-radius-card)',
                       'boxShadow': 'var(--boxShadow2)',
-                      'padding': '12px 16px', 'minWidth': '0px',
+                      'padding': '12px 16px',
                       'overflow': 'hidden'},
     'roast-cell': {'backgroundColor': 'var(--containerNested)',
-                   'border': '1px solid var(--border)',
-                   'borderRadius': '6px', 'padding': '8px 6px',
+                   'borderRadius': 'var(--roast-radius-small)',
+                   'padding': '8px 6px',
                    'gap': '2px'},
     'roast-section-title': {'fontSize': '13px', 'fontWeight': '700',
                             'color': 'var(--callToAction)',
@@ -2223,12 +2363,14 @@ STYLE_CLASSES = {
     'roast-clock': {'fontSize': '27px', 'fontWeight': '700',
                     'color': 'var(--label)', 'fontFamily': 'monospace'},
     'roast-chip': {'fontSize': '13px', 'fontWeight': '600',
-                   'color': 'var(--label)', 'maxWidth': '100%',
+                   'color': 'var(--label)',
                    'whiteSpace': 'nowrap', 'overflow': 'hidden',
                    'textOverflow': 'ellipsis'},
     'roast-pill': {'fontSize': '12px', 'fontWeight': '700',
                    'color': '#ffffff', 'padding': '4px 14px',
                    'borderRadius': '999px', 'textAlign': 'center'},
+    'roast-chart': {'backgroundColor': 'transparent'},
+    'roast-hidden': {'display': 'none'},
     'roast-mode-pill': {'fontSize': '11px', 'fontWeight': '700',
                         'color': '#ffffff', 'padding': '3px 12px',
                         'borderRadius': '999px'},
@@ -2238,24 +2380,23 @@ STYLE_CLASSES = {
                            'color': 'var(--success)',
                            'minHeight': '18px'},
     'roast-banner': {'backgroundColor': '#991b1b',
-                     'padding': '8px 16px', 'minHeight': '37px'},
+                     'padding': '8px 16px'},
     'roast-banner-text': {'fontSize': '14px', 'fontWeight': '700',
                           'color': '#ffffff'},
     'roast-btn': {'fontSize': '14px', 'fontWeight': '700',
-                  'color': '#ffffff', 'borderRadius': '4px',
-                  'padding': '10px 18px', 'cursor': 'pointer',
-                  'border': 'none'},
+                  'color': '#ffffff',
+                  'borderRadius': 'var(--roast-radius-interactive)',
+                  'padding': '10px 18px', 'cursor': 'pointer'},
     'roast-btn-sm': {'fontSize': '12px', 'fontWeight': '700',
-                     'borderRadius': '4px', 'padding': '6px 12px',
+                     'borderRadius': 'var(--roast-radius-interactive)',
+                     'padding': '6px 12px',
                      'cursor': 'pointer'},
     'roast-btn-ghost': {'backgroundColor': 'transparent',
-                        'color': 'var(--label)',
-                        'border': '1px solid var(--border)'},
+                        'color': 'var(--label)'},
     'roast-btn-primary': {'backgroundColor': '#0c7bb3'},
     'roast-btn-green': {'backgroundColor': '#16a34a'},
     'roast-btn-purple': {'backgroundColor': '#7c3aed'},
-    'roast-btn-event': {'fontSize': '13px', 'padding': '10px 6px',
-                        'width': '100%'},
+    'roast-btn-event': {'fontSize': '13px', 'padding': '10px 6px'},
     'roast-btn-charge': {'backgroundColor': '#dc2626'},
     'roast-btn-blue': {'backgroundColor': '#0c7bb3'},
     'roast-btn-sc': {'backgroundColor': '#2563eb'},
@@ -2263,27 +2404,32 @@ STYLE_CLASSES = {
     'roast-btn-cool': {'backgroundColor': '#0284c7'},
     'roast-btn-reset': {'backgroundColor': '#6b7280'},
     'roast-btn-step': {'fontSize': '16px', 'padding': '6px 14px'},
-    'roast-input': {'border': '1px solid var(--border)',
-                    'borderRadius': '4px', 'padding': '8px 10px',
+    'roast-input': {'borderRadius': 'var(--roast-radius-interactive)',
+                    'padding': '8px 10px',
                     'fontSize': '14px', 'color': 'var(--label)',
                     'backgroundColor': 'var(--input)'},
     'roast-checkbox': {'color': 'var(--label)'},
     'roast-table': {'fontSize': '13px', 'color': 'var(--label)',
                     'backgroundColor': 'var(--container)'},
-    'roast-accent-bar': {'height': '3px', 'borderRadius': '2px'},
-    'roast-seg': {'borderRadius': '4px', 'padding': '8px 4px',
-                  'minWidth': '86px'},
+    'roast-accent-bar': {
+        'borderRadius': 'var(--roast-radius-micro)'},
+    'roast-seg': {'borderRadius': 'var(--roast-radius-interactive)',
+                  'padding': '8px 4px'},
     'roast-seg-drying': {'backgroundColor': '#0284c7'},
     'roast-seg-maillard': {'backgroundColor': '#2563eb'},
     'roast-seg-development': {'backgroundColor': '#1e40af'},
     'roast-seg-text': {'fontSize': '12px', 'fontWeight': '700',
                        'color': '#ffffff', 'textAlign': 'center',
                        'whiteSpace': 'nowrap', 'overflow': 'hidden'},
+    'roast-seg-detail': {'fontSize': '11px', 'fontWeight': '400',
+                         'color': 'rgba(255,255,255,0.88)',
+                         'textAlign': 'center',
+                         'whiteSpace': 'nowrap', 'overflow': 'hidden'},
     'roast-event-name': {'fontSize': '11px', 'fontWeight': '700',
                          'textTransform': 'uppercase',
                          'letterSpacing': '0.08em',
                          'textAlign': 'center'},
-    'roast-event-time': {'fontSize': '17px', 'fontWeight': '700',
+    'roast-event-time': {'fontSize': '16px', 'fontWeight': '700',
                          'color': 'var(--label)', 'textAlign': 'center'},
     'roast-event-temp': {'fontSize': '12px', 'fontWeight': '600',
                          'color': 'var(--neutral-70)',
@@ -2292,20 +2438,19 @@ STYLE_CLASSES = {
                            'color': 'var(--neutral-70)',
                            'textTransform': 'uppercase',
                            'letterSpacing': '0.06em'},
-    'roast-section-div': {'borderTop': '1px solid var(--border)',
-                          'paddingTop': '12px', 'gap': '8px'},
+    'roast-section-div': {'paddingTop': '12px', 'gap': '8px'},
     'roast-scroll': {'backgroundColor': 'var(--containerRoot)',
                      'padding': '20px', 'gap': '16px',
                      'height': '100%', 'overflowY': 'auto'},
     'roast-content': {'padding': '16px 20px', 'gap': '12px'},
     'roast-status': {'fontSize': '12px', 'fontWeight': '700'},
     'roast-alarm-cap': {'fontSize': '13px', 'fontWeight': '700',
-                        'color': 'var(--label)', 'minWidth': '130px'},
+                        'color': 'var(--label)'},
     'roast-accent-text': {'fontSize': '13px', 'fontWeight': '700',
                           'color': 'var(--callToAction)'},
     'roast-stepper-value': {'fontSize': '26px', 'fontWeight': '700',
                             'color': 'var(--label)',
-                            'textAlign': 'center', 'minWidth': '44px'},
+                            'textAlign': 'center'},
     'roast-unit': {'fontSize': '12px', 'fontWeight': '600',
                    'color': 'var(--neutral-70)'},
     'roast-value-right': {'fontSize': '14px', 'fontWeight': '700',
@@ -2315,37 +2460,32 @@ STYLE_CLASSES = {
     'roast-gap-10': {'gap': '10px'},
     'roast-gap-12': {'gap': '12px'},
     'roast-tabbar': {'backgroundColor': 'var(--container)',
-                     'borderTop': '1px solid var(--border)',
                      'padding': '6px 100px 6px 10px', 'gap': '8px'},
     'roast-tab-btn': {'fontSize': '15px', 'fontWeight': '700',
-                      'borderRadius': '4px', 'padding': '10px 8px',
+                      'borderRadius': 'var(--roast-radius-interactive)',
+                      'padding': '10px 8px',
                       'cursor': 'pointer', 'color': 'var(--label)',
-                      'backgroundColor': 'transparent',
-                      'border': '1px solid transparent'},
+                      'backgroundColor': 'transparent'},
     'roast-hud': {'backgroundColor': 'var(--container)',
-                  'borderBottom': '1px solid var(--border)',
                   'padding': '5px 10px', 'gap': '10px'},
-    'roast-hud-field': {'borderLeft': '1px solid var(--border)',
-                        'paddingLeft': '8px', 'minWidth': '0px'},
+    'roast-hud-field': {'paddingLeft': '8px'},
     'roast-hud-value': {'fontSize': '16px', 'fontWeight': '700',
                         'color': 'var(--label)',
                         'fontFamily': 'monospace',
                         'whiteSpace': 'nowrap', 'overflow': 'hidden',
                         'textOverflow': 'ellipsis'},
-    'roast-hud-value-phase': {'fontSize': '14px',
+    'roast-hud-value-phase': {'fontSize': '13px',
                         'fontWeight': '700',
                         'color': 'var(--label)',
                         'fontFamily': 'monospace',
                         'whiteSpace': 'nowrap', 'overflow': 'hidden',
-                        'textOverflow': 'ellipsis',
-                        'width': '100%'},
+                        'textOverflow': 'ellipsis'},
     'roast-hud-cap': {'fontSize': '10px', 'fontWeight': '700',
                       'color': 'var(--neutral-60)',
                       'textTransform': 'uppercase',
                       'letterSpacing': '0.08em'},
     'roast-controldock': {'backgroundColor': 'var(--container)',
-                          'borderTop': '1px solid var(--border)',
-                          'padding': '8px 10px', 'gap': '8px',
+                               'padding': '8px 10px', 'gap': '8px',
                           'boxShadow': '0 -4px 12px rgba(0,0,0,0.12)'},
     'roast-btn-lg': {'fontSize': '15px', 'padding': '13px 8px',
                      'minHeight': '52px'},
@@ -2374,6 +2514,52 @@ STYLESHEET_CSS = """/* Roastery advanced stylesheet.
    built in session theme CSS variables; nothing here hard codes a
    surface color, so dark and light sessions both hold. */
 
+/* Design tokens (v4.2 style system audit). The radius scale is
+   defined ONCE here; style classes reference the variables, so
+   a global radius change is a one line edit in this file. */
+:root {
+  --roast-radius-micro: 2px;
+  --roast-radius-interactive: 4px;
+  --roast-radius-small: 6px;
+  --roast-radius-card: 8px;
+}
+
+/* Borders. The style class compiler in this build drops
+   border properties from class definitions (proven by the
+   compiled rules: every border key vanished and computed
+   borders measured 0px), so borders live here, keyed to the
+   same class names. One border color everywhere: the theme
+   border variable. */
+.psc-roast-card, .psc-roast-card-sm, .psc-roast-cell {
+  border: 1px solid var(--border); }
+.psc-roast-input { border: 1px solid var(--border); }
+.psc-roast-btn-ghost { border: 1px solid var(--border); }
+.psc-roast-tabbar { border-top: 1px solid var(--border); }
+.psc-roast-controldock { border-top: 1px solid var(--border); }
+.psc-roast-hud { border-bottom: 1px solid var(--border); }
+.psc-roast-hud-field { border-left: 1px solid var(--border); }
+.psc-roast-section-div { border-top: 1px solid var(--border); }
+
+/* Display. The compiler drops display from class definitions
+   too (proven 2026-11-13: .psc-roast-hidden compiled to an
+   empty rule and the delete confirm row it was meant to hide
+   rendered unconditionally), so the hidden utility lives
+   here, keyed to the same class name. */
+.psc-roast-hidden { display: none !important; }
+
+/* Phase bar segments size by percentage widths that must sum
+   to the bar. Two sizing traps, both proven at 360px on
+   2026-11-13: content-box sizing added the segments' padding
+   (24px) on top of the percentages, and a flex item's
+   automatic minimum size (its content, here the single word
+   DEVELOPMENT at about 88px) refused to shrink to a 67px
+   target share, so the Development segment ran off the card
+   with its centered name clipped on both sides. Border-box
+   plus an explicit min-width of 0 keeps the percentages
+   honest; the segment text classes clip inside the segment. */
+.psc-roast-seg { box-sizing: border-box; min-width: 0;
+  overflow: hidden; }
+
 /* Button feedback that a static style class cannot express. */
 .psc-roast-btn:hover { filter: brightness(1.15); }
 .psc-roast-btn:active { filter: brightness(0.9); }
@@ -2384,7 +2570,8 @@ STYLESHEET_CSS = """/* Roastery advanced stylesheet.
 /* Slim scrollbar for the popup scroll areas. */
 .psc-roast-scroll::-webkit-scrollbar { width: 10px; }
 .psc-roast-scroll::-webkit-scrollbar-thumb {
-  background: var(--neutral-60); border-radius: 4px; }
+  background: var(--neutral-60);
+  border-radius: var(--roast-radius-interactive); }
 
 /* ---- v4 shell rules ------------------------------------------
    The shared top dock is the mobile HUD: hide it on desktop
@@ -2739,31 +2926,56 @@ def phases_bar_view():
                f"{drop_e}, {dev_w})")
 
     def seg(name, caption, color_class, width_expr, text_expr):
-        txt = label(name + 'Text', caption, 'roast-seg-text',
-                    prop_config={'props.text': {'binding': expr_binding(
-                        text_expr)}})
+        # Two stacked lines (no overlap pass, 2026-11-13): the
+        # name on its own line, the time and share beneath it.
+        # The old single line ('DEVELOPMENT 01:05 - 43%') needs
+        # about 150px; a target proportion segment at 360px is
+        # about 108px, so the name truncated ('DEVELOPI...').
+        # Stacked, the widest line is the name at 12px (about
+        # 80px) and every segment reads at every width.
+        nm = label(name + 'Text', caption, 'roast-seg-text')
+        dt = label(name + 'Detail', '', 'roast-seg-detail',
+                   prop_config={'props.text': {'binding': expr_binding(
+                       text_expr)}})
+        inner = flex(name + 'Stack', 'column', [nm, dt],
+                     align='center', justify='center')
         # Segment width is a binding driven layout value: the one
         # inline style a class cannot express (documented exception).
-        return flex(name, 'row', [txt], justify='center', align='center',
+        return flex(name, 'row', [inner], justify='center',
+                    align='center',
                     classes='roast-seg ' + color_class,
                     prop_config={'props.style.width': {'binding':
                         expr_binding(f"numberFormat({width_expr}, '0.0') + '%'")}})
 
-    dry_t = (f"'DRYING  ' + if({dry_e} >= 0, {mmss_int(dry_e)} + ' - ' + "
+    dry_t = (f"if({dry_e} >= 0, {mmss_int(dry_e)} + ' · ' + "
              f"numberFormat({dry_pct}, '0') + '%', 'target ' + {mmss_int(td)})")
-    mai_t = (f"'MAILLARD  ' + if({fc_e} >= 0, "
-             f"{mmss_int(f'({fc_e} - {dry_e})')} + ' - ' + "
+    mai_t = (f"if({fc_e} >= 0, "
+             f"{mmss_int(f'({fc_e} - {dry_e})')} + ' · ' + "
              f"numberFormat({mai_pct}, '0') + '%', 'target ' + "
              f"{mmss_int(tm)})")
-    dev_t = (f"'DEVELOPMENT  ' + if({drop_e} >= 0, "
-             f"{mmss_int(f'({drop_e} - {fc_e})')} + ' - ' + "
+    dev_t = (f"if({drop_e} >= 0, "
+             f"{mmss_int(f'({drop_e} - {fc_e})')} + ' · ' + "
              f"numberFormat({dev_pct}, '0') + '%', 'target ' + "
              f"{mmss_int(tv)})")
+    # No gap between segments (no overlap pass, 2026-11-13):
+    # the widths are percentages summing to 100, so the old
+    # 8px gaps pushed the bar 16px past its card and the
+    # Development segment clipped at the right edge on the
+    # phone. The bar is contiguous, Artisan style; the segment
+    # colors and corner radius carry the separation.
     bar = flex('Bar', 'row', [
         seg('DrySeg', 'DRYING', 'roast-seg-drying', dry_w, dry_t),
         seg('MaiSeg', 'MAILLARD', 'roast-seg-maillard', mai_w, mai_t),
-        seg('DevSeg', 'DEVELOPMENT', 'roast-seg-development', dev_w, dev_t)],
-        classes='roast-gap-8 roast-full')
+        # The third caption is DEV, not DEVELOPMENT (no overlap
+        # pass): at target proportions the development segment
+        # is about 68px wide on a phone and the full word needs
+        # about 88px at 12px, so it clipped mid word no matter
+        # how the box was sized. DEV is the working abbreviation
+        # (same root as DTR beside the bar); the full word
+        # lives in the HUD phase field, the summary, and
+        # Settings, where it has room.
+        seg('DevSeg', 'DEV', 'roast-seg-development', dev_w, dev_t)],
+        classes='roast-full')
     heading = label('Heading', 'Phases', 'roast-section-title')
     dtr = label('DtrLabel', 'DTR', 'roast-accent-text',
                 prop_config={'props.text': {'binding': expr_binding(
@@ -2824,6 +3036,7 @@ def primary_event_buttons(prefix, big=False):
 def stepper_big(name, caption, member, color_class):
     """Fan / Heat stepper with 52px touch targets (dock + rail)."""
     val = label(name + 'Value', '5', 'roast-stepper-value',
+                position={'grow': 0, 'shrink': 0, 'basis': '44px'},
                 prop_config={'props.text': {'binding': fmt_tag(
                     T(member), '0')}})
     minus = button(name + 'Minus', '-',
@@ -3031,186 +3244,364 @@ def summary_view():
             'props': {'defaultSize': {'width': 380, 'height': 430}},
             'root': root}
 
-# ================================================================ charts (XY)
+# ================================================================ charts (canvas)
 
-def _xy_templates():
-    schema = json.load(open(os.path.join(SCHEMAS, 'ia.chart.xy.json')))
-    ex = schema['schema']['properties']
-    return (copy.deepcopy(ex['series']['example'][0]),
-            copy.deepcopy(ex['xAxes']['example'][0]),
-            copy.deepcopy(ex['yAxes']['example'][0]))
+# v4.4: every chart in the project is a 2027 canvas line chart
+# (ia.canvas-charts.line, ECharts based). Eric, 2026-11-13:
+# "All of them must be new echarts", after the classic XY roast
+# curve failed to follow dark mode. The base tree below is the
+# harness validated minimal prop tree for the component
+# (CompLab project on the 2027 gateway; knowledge/notes/
+# canvas-charts-2027.md), animation sanitized the way ChartLab
+# standardized.
+#
+# Theming rules, proven in the 2026-11-13 probe round:
+# - Colors that must follow the theme stay EMPTY (''). The
+#   canvas wrapper resolves empty colors from the session
+#   theme: axis labels, titles, gridlines and legend all
+#   rendered correctly in dark AND light with '' everywhere.
+# - CSS var() strings do NOT resolve: the wrapper passes them
+#   to the canvas literally, an invalid fill, so text renders
+#   black (invisible on dark). Never put var() in a chart prop.
+# - Series colors are literal hex by design: they must read
+#   identically in both themes (amber bean, sky RoR).
+# - appearance.backgroundColor '' = transparent surface over
+#   the card, both themes.
+CANVAS_LINE_BASE = {'appearance': {'animation': {'enabled': True,
+                              'entry': {'delay': 0,
+                                        'duration': 1000,
+                                        'easing': 'cubicOut'},
+                              'transition': {'delay': 0,
+                                             'duration': 300,
+                                             'easing': 'cubicOut'}},
+                'backgroundColor': '',
+                'colorPalette': []},
+ 'axisPointer': {'enabled': True,
+                 'label': {'backgroundColor': '',
+                           'color': '',
+                           'elementStyle': {},
+                           'fontSize': '',
+                           'visible': False},
+                 'type': 'line'},
+ 'data': [],
+ 'legend': {'color': '',
+            'elementStyle': {},
+            'fontSize': '',
+            'interactive': True,
+            'orientation': 'horizontal',
+            'position': 'bottom',
+            'visible': True},
+ 'liveData': False,
+ 'series': [{'advanced': {'connectNulls': False,
+                          'step': '',
+                          'tooltip': {'enabled': True,
+                                      'formatter': {'template': '',
+                                                    'type': 'value',
+                                                    'value': ''}},
+                          'yAxis': 0},
+             'dataLabels': {'color': '',
+                            'elementStyle': {},
+                            'fontSize': '',
+                            'format': '{value}',
+                            'position': 'top',
+                            'visible': False},
+             'label': 'Power',
+             'line': {'type': 'solid', 'width': 2},
+             'points': {'fillColor': '',
+                        'outlineColor': 'transparent',
+                        'outlineWidth': 0,
+                        'shape': 'circle',
+                        'size': 4,
+                        'visible': False},
+             'referenceLines': {'animation': {'enabled': True,
+                                              'entry': {'delay': 0,
+                                                        'duration': 1000,
+                                                        'easing': 'cubicOut'},
+                                              'transition': {'delay': 0,
+                                                             'duration': 300,
+                                                             'easing': 'cubicOut'}},
+                                'endpoints': {'points': [{'shape': 'circle',
+                                                          'size': 4}],
+                                              'visible': True},
+                                'items': []},
+             'smooth': False,
+             'value': 'value',
+             'visible': True}],
+ 'stackGroups': [],
+ 'title': {'color': '',
+           'elementStyle': {},
+           'fontSize': '',
+           'gap': 5,
+           'position': 'top-left',
+           'subtitle': {'color': '',
+                        'elementStyle': {},
+                        'fontSize': '',
+                        'text': ''},
+           'text': '',
+           'visible': True},
+ 'tooltip': {'enabled': True,
+             'formatter': {'template': '',
+                           'type': 'value',
+                           'value': '{value}'},
+             'trigger': 'axis'},
+ 'visualMap': {'dimension': 'y',
+               'enabled': False,
+               'legend': {'color': '',
+                          'elementStyle': {},
+                          'fontSize': '',
+                          'interactive': True,
+                          'orientation': 'horizontal',
+                          'position': 'bottom',
+                          'visible': True},
+               'outOfRange': {},
+               'pieces': []},
+ 'xAxis': {'advanced': {'axisPointer': {'enabled': 'auto',
+                                        'label': {'backgroundColor': '',
+                                                  'color': '',
+                                                  'elementStyle': {},
+                                                  'fontSize': '',
+                                                  'visible': 'auto'},
+                                        'type': 'auto'}},
+           'axisLine': {'color': '', 'visible': True, 'width': 1},
+           'boundaryGap': True,
+           'field': 'timestamp',
+           'gridLines': {'color': '', 'visible': False, 'width': 1},
+           'labels': {'color': '',
+                      'elementStyle': {},
+                      'fontSize': '',
+                      'overflow': 'none',
+                      'position': 'bottom',
+                      'rotation': 0,
+                      'visible': True},
+           'max': 'auto',
+           'min': 'auto',
+           'position': 'bottom',
+           'ticks': {'displayInside': False,
+                     'majorSplit': 'auto',
+                     'minorSplit': 0,
+                     'visible': True},
+           'title': {'color': '',
+                     'elementStyle': {},
+                     'fontSize': '',
+                     'gap': 15,
+                     'position': 'middle',
+                     'rotation': 0,
+                     'text': '',
+                     'visible': True},
+           'type': 'time',
+           'visible': True},
+ 'yAxis': [{'advanced': {'axisPointer': {'enabled': 'auto',
+                                         'label': {'backgroundColor': '',
+                                                   'color': '',
+                                                   'elementStyle': {},
+                                                   'fontSize': '',
+                                                   'visible': 'auto'},
+                                         'type': 'auto'}},
+            'axisLine': {'visible': True},
+            'boundaryGap': True,
+            'gridLines': {'visible': False},
+            'labels': {'color': '',
+                       'elementStyle': {},
+                       'fontSize': '',
+                       'overflow': 'none',
+                       'rotation': 0,
+                       'visible': True,
+                       'width': None},
+            'max': 'auto',
+            'min': 'auto',
+            'ticks': {'displayInside': False,
+                      'majorSplit': 'auto',
+                      'minorSplit': 0,
+                      'visible': True},
+            'title': {'color': '',
+                      'elementStyle': {},
+                      'fontSize': '',
+                      'gap': 15,
+                      'position': 'middle',
+                      'rotation': 0,
+                      'text': '',
+                      'visible': True},
+            'visible': True}],
+ 'zoom': {'axis': 'x',
+          'backgroundColor': '',
+          'enabled': False,
+          'height': 30,
+          'type': 'slider',
+          'width': 30,
+          'xPosition': 'bottom',
+          'yPosition': 'right'}}
 
-def _elapsed_axis(xaxis_tpl):
-    """The v4.1 elapsed axis: a date axis fed epoch based values
-    (Date(0) + elapsed seconds), formatted mm:ss. Every chart
-    dataset in the project is anchored to the roast's own zero
-    (roastery.core.build_live_curve, marks_dataset, build_overlays,
-    batches.stage_detail), never to wall clock, so a roast reads
-    the same an hour later as it did live, Artisan style. The v4
-    axis was wall clock tag history: its mostRecent 30 MIN window
-    dropped the bean and RoR lines entirely once a roast was
-    older than the window, and the axis labelled itself with the
-    date (the date.format default 'M/d')."""
-    xaxis = copy.deepcopy(xaxis_tpl)
-    xaxis['name'] = 'time'
-    xaxis['render'] = 'date'
-    xaxis['label'] = {'enabled': True, 'text': 'Elapsed (mm:ss)',
-                      'color': ''}
-    xaxis['date']['format'] = 'mm:ss'
-    return xaxis
+SANE_ANIM = {'enabled': True,
+             'entry': {'duration': 900, 'easing': 'cubicOut',
+                       'delay': 0},
+             'transition': {'duration': 300,
+                            'easing': 'cubicOut', 'delay': 0}}
 
 
-def marks_series_list(source='marks'):
-    """Event marker lines for an XY chart: one line series per
-    event over the library's column-per-event marker dataset
-    (roastery.core.marks_dataset). Each series is named for its
-    event, so the legend labels the lines (bullet labels do not
-    render text on XY line series in this build; proven live).
-    Lines are dashed amber, top to bottom of the temp axis, with
-    connect off so the gap rows break them."""
-    series_tpl, _xa, _ya = _xy_templates()
-    out = []
-    for col, name in (('charge', 'CHARGE'), ('dryEnd', 'DRY END'),
-                      ('fcStart', 'FC START'), ('fcEnd', 'FC END'),
-                      ('scStart', 'SC START'), ('scEnd', 'SC END'),
-                      ('drop', 'DROP'), ('notes', 'NOTES')):
-        s = copy.deepcopy(series_tpl)
-        s['name'] = name
-        s['label'] = {'text': name}
-        s['data'] = {'source': source, 'x': 't_stamp', 'y': col}
-        s['xAxis'] = 'time'
-        s['yAxis'] = 'temp'
-        s['render'] = 'line'
-        ap = s['line']['appearance']
-        ap['stroke']['color'] = '#f59e0b'
-        ap['stroke']['width'] = 1.5
-        ap['stroke']['opacity'] = 0.9
-        ap['stroke']['dashArray'] = '4 3'
-        if 'connect' in ap:
-            ap['connect'] = False
-        ap['bullets'][0]['enabled'] = False
-        out.append(s)
-    return out
+def _canvas_props():
+    p = copy.deepcopy(CANVAS_LINE_BASE)
+    p['appearance']['animation'] = copy.deepcopy(SANE_ANIM)
+    p['appearance']['backgroundColor'] = ''
+    p['title']['visible'] = False
+    p['legend'].update({'visible': True, 'position': 'bottom',
+                        'color': '', 'fontSize': 12})
+    return p
 
 
-def main_chart(legend_on=True):
-    series_tpl, xaxis_tpl, yaxis_tpl = _xy_templates()
+def _canvas_series(value, label, color, axis, width=2, dash=None,
+                   step=None):
+    s = copy.deepcopy(CANVAS_LINE_BASE['series'][0])
+    s['value'] = value
+    s['label'] = label
+    s['smooth'] = True
+    s['line'].update({'type': dash or 'solid', 'width': width,
+                      'color': color})
+    s['points']['visible'] = False
+    s['advanced']['yAxis'] = axis
+    # The live dataset is a timestamp UNION of samples and
+    # overlays (roastery.core.build_live_curve), so a series
+    # has nulls at other sources' timestamps; connectNulls
+    # keeps those merge artifacts from breaking the line.
+    s['advanced']['connectNulls'] = True
+    if step:
+        s['advanced']['step'] = step
+    return s
 
-    def series(name, source, y, axis, color, width, render='line',
-               dash=None, opacity=1.0, fill_opacity=0.0):
-        s = copy.deepcopy(series_tpl)
-        s['name'] = name
-        s['label'] = {'text': name}
-        s['data'] = {'source': source, 'x': 't_stamp', 'y': y}
-        s['xAxis'] = 'time'
-        s['yAxis'] = axis
-        s['render'] = render
-        key = 'stepLine' if render == 'step line' else 'line'
-        s[key]['appearance']['stroke']['color'] = color
-        s[key]['appearance']['stroke']['width'] = width
-        s[key]['appearance']['stroke']['opacity'] = opacity
-        if dash:
-            s[key]['appearance']['stroke']['dashArray'] = dash
-        if fill_opacity:
-            s[key]['appearance']['fill']['color'] = color
-            s[key]['appearance']['fill']['opacity'] = fill_opacity
-        s[key]['appearance']['bullets'][0]['enabled'] = False
-        return s
 
-    xaxis = _elapsed_axis(xaxis_tpl)
+def _canvas_xaxis(title_text=None, split=22, rotate=0):
+    """The elapsed axis (v4.1 semantics on the new component):
+    a time axis fed epoch based values (Date(0) + elapsed
+    seconds) from the recorded samples, never wall clock, so a
+    roast reads the same an hour later as it did live. Min is
+    1000 ms: at exactly 0 the first tick is the epoch year
+    boundary and ECharts labels it '1970'; 1 s in, the first
+    tick reads 00:01 (probe proven, 2026-11-13). Reference
+    line values clamp to the same minimum in the library.
 
-    temp_axis = copy.deepcopy(yaxis_tpl)
-    temp_axis['name'] = 'temp'
-    temp_axis['render'] = 'value'
-    temp_axis['label'] = {'enabled': True, 'text': 'Bean Temp (deg F)',
-                          'color': ''}
-    temp_axis['value']['range'] = {'min': 150, 'max': 460,
-                                  'useStrict': True}
-    ror_axis = copy.deepcopy(yaxis_tpl)
-    ror_axis['name'] = 'ror'
-    ror_axis['render'] = 'value'
-    ror_axis['label'] = {'enabled': True,
-                         'text': 'Rate of Rise (deg F/min)', 'color': ''}
-    ror_axis['value']['range'] = {'min': 0, 'max': 40, 'useStrict': True}
-    ror_axis['appearance']['opposite'] = True
+    Label discipline (Eric, 2026-11-13, no overlap pass): the
+    tick density is set explicitly through ticks.majorSplit
+    (the component's splitNumber analog), never left to render
+    at sample density. At a typical 660 s span, split 11 lands
+    near 60 s steps; 30 s steps (split 22) were tried on the
+    desktop main chart and the labels merged into each other,
+    so 60 s is the standard everywhere, with the phone labels
+    also tilted 35 degrees. Eric's floor: no finer than about
+    15 s."""
+    xa = copy.deepcopy(CANVAS_LINE_BASE['xAxis'])
+    xa['type'] = 'time'
+    xa['field'] = 't_stamp'
+    xa['min'] = 1000
+    xa['ticks']['majorSplit'] = split
+    xa['labels']['rotation'] = rotate
+    if title_text:
+        xa['title'].update({'visible': True, 'text': title_text,
+                            'color': '', 'fontSize': 11})
+    else:
+        xa['title']['visible'] = False
+    return xa
 
+
+def _canvas_yaxis(minv, maxv, title_text, position=None,
+                  grid=True, split='auto'):
+    ya = copy.deepcopy(CANVAS_LINE_BASE['yAxis'][0])
+    ya['min'] = minv
+    ya['max'] = maxv
+    if position:
+        ya['position'] = position
+    ya['title'].update({'visible': True, 'text': title_text,
+                        'color': '', 'fontSize': 11})
+    ya['gridLines'] = {'visible': grid, 'color': '', 'width': 1}
+    ya['ticks']['majorSplit'] = split
+    return ya
+
+
+def _refline_binding(trigger_tag, lib_call):
+    """Bind a series' referenceLines.items: the trigger is the
+    marks dataset tag (rewritten whenever the marker record
+    changes) and the script transform asks the library for the
+    current items, so custom event names survive (the marks
+    dataset itself lumps customs into one column)."""
+    b = tag_binding(trigger_tag)
+    b['transforms'] = [{'type': 'script',
+                        'code': '\treturn %s\n' % lib_call}]
+    return {'binding': b}
+
+
+def main_chart(legend_on=True, mobile=False):
+    p = _canvas_props()
+    p['legend']['visible'] = legend_on
+    p['data'] = []
+    p['xAxis'] = _canvas_xaxis('Elapsed (mm:ss)',
+                               split=11,
+                               rotate=35 if mobile else 0)
+    p['yAxis'] = [_canvas_yaxis(150, 460, 'Bean Temp (deg F)',
+                                split=6),
+                  _canvas_yaxis(0, 40, 'Rate of Rise (deg F/min)',
+                                position='right', grid=False,
+                                split=4)]
+    if mobile:
+        # At 360px the two rotated axis titles plus their label
+        # columns eat most of the card width and the grid
+        # collapses to a sliver (proven live, v4.4). The units
+        # already live in the tiles and the HUD, so the mobile
+        # instance drops the axis titles and shrinks the labels.
+        for ax in p['yAxis']:
+            ax['title']['visible'] = False
+            ax['labels']['fontSize'] = 11
+            ax['labels']['gap'] = 2
+        p['xAxis']['labels']['fontSize'] = 11
+    p['series'] = [
+        _canvas_series('bg', 'Background', '#64748b', 0, width=2),
+        _canvas_series('bgRor', 'Background RoR', '#64748b', 1,
+                       width=2),
+        _canvas_series('plan', 'Target', '#94a3b8', 0, width=2,
+                       dash='dashed'),
+        _canvas_series('bean', 'Bean Temp', AMBER, 0, width=3),
+        _canvas_series('ror', 'Rate of Rise', SKY, 1, width=2)]
+    p['appearance']['colorPalette'] = ['#64748b', '#64748b',
+                                       '#94a3b8', AMBER, SKY]
+    p['style'] = {'classes': 'roast-chart'}
     return {
-        'type': 'ia.chart.xy', 'meta': {'name': 'RoastChart'},
-        'props': {
-            'dataSources': {'trend': [], 'plan': [], 'bg': [],
-                            'bgRor': [], 'marks': []},
-            'xAxes': [xaxis], 'yAxes': [temp_axis, ror_axis],
-            'series': [
-                series('Background', 'bg', 'bg', 'temp', '#64748b', 2,
-                       opacity=0.5),
-                series('Background RoR', 'bgRor', 'bgRor', 'ror',
-                       '#64748b', 2, opacity=0.4),
-                series('Target', 'plan', 'plan', 'temp', '#94a3b8', 2,
-                       dash='7 5', opacity=0.85),
-                series('Bean Temp', 'trend', 'bean', 'temp', AMBER, 3,
-                       fill_opacity=0.13),
-                series('Rate of Rise', 'trend', 'ror', 'ror', SKY, 2)] +
-                marks_series_list('marks'),
-            'legend': {'enabled': legend_on, 'position': 'bottom'},
-            # Chart surface transparency is an amCharts prop, not a
-            # style class concern (documented exception).
-            'style': {'backgroundColor': 'transparent'}},
+        'type': 'ia.canvas-charts.line',
+        'meta': {'name': 'RoastChart'},
+        'props': p,
         'propConfig': {
-            'props.dataSources.trend': {'binding': tag_binding(
+            'props.data': {'binding': tag_binding(
                 '[default]Roastery/LiveCurveDS')},
-            'props.dataSources.plan': {'binding': tag_binding(
-                '[default]Roastery/TargetProfileDS')},
-            'props.dataSources.bg': {'binding': tag_binding(
-                '[default]Roastery/BackgroundDS')},
-            'props.dataSources.bgRor': {'binding': tag_binding(
-                '[default]Roastery/BackgroundRorDS')},
-            'props.dataSources.marks': {'binding': tag_binding(
-                '[default]Roastery/EventMarksDS')}},
+            'props.series[3].referenceLines.items':
+                _refline_binding(
+                    '[default]Roastery/EventMarksDS',
+                    'roastery.core.event_reference_lines_compact()'
+                    if mobile else
+                    'roastery.core.event_reference_lines()')},
         'position': {'grow': 1, 'shrink': 1, 'basis': '0px'}}
 
 
-def trace_chart():
-    series_tpl, xaxis_tpl, yaxis_tpl = _xy_templates()
-
-    def series(name, y, color):
-        s = copy.deepcopy(series_tpl)
-        s['name'] = name
-        s['label'] = {'text': name}
-        s['data'] = {'source': 'live', 'x': 't_stamp', 'y': y}
-        s['xAxis'] = 'time'
-        s['yAxis'] = 'level'
-        s['render'] = 'step line'
-        s['stepLine']['appearance']['stroke']['color'] = color
-        s['stepLine']['appearance']['stroke']['width'] = 2
-        s['stepLine']['appearance']['connect'] = True
-        s['stepLine']['appearance']['bullets'][0]['enabled'] = False
-        return s
-
-    # Same elapsed axis as the main chart (v4.1): the strip used
-    # to read the wall clock EventsLog, so its axis showed dates
-    # and its steps bunched at the left of a day scale axis. The
-    # samples in LiveCurveDS carry fan and heat per temperature
-    # change on the elapsed timeline. Legend sits at the bottom:
-    # at phone widths a right side legend clipped ('H...' for
-    # Heat in Eric's screenshot).
-    xaxis = _elapsed_axis(xaxis_tpl)
-    xaxis['label'] = {'enabled': False, 'text': '', 'color': ''}
-    lvl = copy.deepcopy(yaxis_tpl)
-    lvl['name'] = 'level'
-    lvl['render'] = 'value'
-    lvl['label'] = {'enabled': True, 'text': 'Level', 'color': ''}
-    lvl['value']['range'] = {'min': 0, 'max': 10, 'useStrict': True}
+def trace_chart(mobile=False):
+    # Fan / Heat levels on the same elapsed timeline and the
+    # same dataset as the main chart (fan and heat ride along
+    # per temperature change). Step rendering at the change
+    # point: a level holds until the next sample replaces it.
+    # Legend at the bottom: at phone widths a right side legend
+    # clipped ('H...' for Heat in Eric's v4.1 screenshot).
+    p = _canvas_props()
+    p['data'] = []
+    p['xAxis'] = _canvas_xaxis(split=11,
+                               rotate=35 if mobile else 0)
+    p['yAxis'] = [_canvas_yaxis(0, 10, 'Level', split=5)]
+    p['series'] = [
+        _canvas_series('fan', 'Fan', AMBER, 0, width=2,
+                       step='start'),
+        _canvas_series('heat', 'Heat', RED, 0, width=2,
+                       step='start')]
+    p['appearance']['colorPalette'] = [AMBER, RED]
+    p['style'] = {'classes': 'roast-chart'}
     return {
-        'type': 'ia.chart.xy', 'meta': {'name': 'TraceChart'},
-        'props': {
-            'dataSources': {'live': []},
-            'xAxes': [xaxis], 'yAxes': [lvl],
-            'series': [series('Fan', 'fan', AMBER),
-                       series('Heat', 'heat', RED)],
-            'legend': {'enabled': True, 'position': 'bottom'},
-            'style': {'backgroundColor': 'transparent'}},
-        'propConfig': {'props.dataSources.live': {'binding':
-                       tag_binding('[default]Roastery/LiveCurveDS')}},
+        'type': 'ia.canvas-charts.line',
+        'meta': {'name': 'TraceChart'},
+        'props': p,
+        'propConfig': {'props.data': {'binding': tag_binding(
+            '[default]Roastery/LiveCurveDS')}},
         'position': {'grow': 1, 'shrink': 1, 'basis': '0px'}}
 
 # ================================================================ Config (popup)
@@ -3275,20 +3666,27 @@ def batches_panel_view():
     actions (Details, Edit via the slide over dock, Use as Ghost,
     Delete behind a confirm). All logic lives in roastery.batches;
     the table reads through the SelectAll named query only."""
+    # Column widths slimmed (no overlap pass, 2026-11-13): the
+    # old set totaled 710px and the Bean column ran off the
+    # card edge at 360px. The date drops its year in the list
+    # (the detail view carries the full date) and every column
+    # is sized to its content; the set totals about 580px.
     cols = [
         {'field': 'batch_number', 'header': {'title': 'Batch'},
-         'width': 70},
+         'width': 60},
         {'field': 'roast_start', 'header': {'title': 'Date'},
-         'width': 150, 'render': 'date',
-         'dateFormat': 'YYYY-MM-DD h:mm a'},
-        {'field': 'bean_name', 'header': {'title': 'Bean'}, 'width': 150},
+         'width': 132, 'render': 'date',
+         'dateFormat': 'MM-DD h:mm a'},
+        {'field': 'bean_name', 'header': {'title': 'Bean'},
+         'width': 120},
         {'field': 'drop_temp_f', 'header': {'title': 'Drop (F)'},
-         'width': 80},
+         'width': 66},
         {'field': 'total_sec', 'header': {'title': 'Total (s)'},
-         'width': 80},
-        {'field': 'dtr_pct', 'header': {'title': 'DTR %'}, 'width': 70},
+         'width': 62},
+        {'field': 'dtr_pct', 'header': {'title': 'DTR %'},
+         'width': 56},
         {'field': 'roast_degree', 'header': {'title': 'Degree'},
-         'width': 110},
+         'width': 84},
         {'field': 'id', 'header': {'title': 'ID'}, 'width': 50,
          'visible': False},
     ]
@@ -3362,9 +3760,11 @@ def batches_panel_view():
                        [confirm_lbl, confirm_btn, cancel_btn],
                        justify='space-between', align='center',
                        classes='roast-banner roast-gap-12',
-                       prop_config={'props.style.display': {'binding':
+                       prop_config={'props.style.classes': {'binding':
                            expr_binding(
-                               "if({view.custom.confirmDelete}, 'flex', 'none')")}})
+                               "if({view.custom.confirmDelete}, "
+                               "'roast-banner roast-gap-12', "
+                               "'roast-banner roast-gap-12 roast-hidden')")}})
     root = flex('root', 'column', [table, confirm_row, foot],
                 classes='roast-card roast-gap-12',
                 scripts={'messageHandlers': [{
@@ -3619,10 +4019,14 @@ PHASE_EXPR = (
 def state_pill(name):
     # Fixed 88px box (stability pass): the pill used to size to
     # its text (Idle 52px, Roasting 81px), shoving every element
-    # after it sideways at each state change.
+    # after it sideways at each state change. The size rides
+    # the flex position channel: this build's style class
+    # compiler strips width/minWidth/maxWidth/flexShrink from
+    # class definitions (proven: the compiled rule came back
+    # empty), so box sizing is layout, expressed via position,
+    # while every visual property stays in the class.
     return label(name, 'Idle', 'roast-pill',
-                 style={'width': '88px', 'minWidth': '88px',
-                        'maxWidth': '88px', 'flexShrink': '0'},
+                 position={'grow': 0, 'shrink': 0, 'basis': '88px'},
                  prop_config={
                      'props.text': {'binding': tag_binding(T('State'))},
                      'props.style.backgroundColor': {'binding': {
@@ -3714,7 +4118,6 @@ def hud_view():
         c = label(name + 'Cap', cap, 'roast-hud-cap',
                   prop_config=cap_pc)
         v = label(name + 'Val', '', value_class,
-                  style={'width': '100%'},
                   prop_config={'props.text': {'binding': value_binding}})
         return flex(name, 'column', [c, v], classes='roast-hud-field',
                     position={'grow': grow, 'shrink': 0,
@@ -3728,9 +4131,15 @@ def hud_view():
     # is capped at its group width so text can never push the
     # row (a forced 'Development' label measured 26px past the
     # 360px edge before the cap).
-    bean = field('Bean', 'BEAN F', fmt_tag(T('BeanTempF'), '0.0'),
+    # HUD values are whole numbers (no overlap pass, 2026-11-13):
+    # at 16px monospace a one decimal reading ('288.4') needs
+    # 48px, but the Bean field box holds 44px after its padding,
+    # so the last digit clipped in Eric's hands. The HUD is the
+    # glance layer; the tiles on the same screen keep the 0.0
+    # precision. Whole numbers fit every field with margin.
+    bean = field('Bean', 'BEAN F', fmt_tag(T('BeanTempF'), '0'),
                  basis='52px')
-    ror = field('Ror', 'ROR', fmt_tag(T('RateOfRiseF'), '0.0'),
+    ror = field('Ror', 'ROR', fmt_tag(T('RateOfRiseF'), '0'),
                 basis='48px')
     clock = field('Clock', 'ROAST TIME', prop_binding('view.custom.clockText'),
                   cap_binding=prop_binding('view.custom.clockCaption'),
@@ -3776,8 +4185,8 @@ def controldock_view():
 
 # ---------------------------------------------------------------- Roast page
 
-def _chart_card(basis, legend_on=True, trace_basis='150px',
-                head_stack=False, include_trace=True):
+def _chart_card(basis, legend_on=True, trace_basis='250px',
+                head_stack=False, include_trace=True, mobile=False):
     chart_title = label('ChartTitle', 'Roast Curve', 'roast-value-strong')
     bg_chip = label('BgChip', '', 'roast-note',
                     prop_config={'props.text': {'binding': expr_binding(
@@ -3793,7 +4202,8 @@ def _chart_card(basis, legend_on=True, trace_basis='150px',
                           justify='space-between', align='center',
                           position={'grow': 0, 'shrink': 0,
                                     'basis': '24px'})
-    children = [chart_head, main_chart(legend_on=legend_on)]
+    children = [chart_head,
+                main_chart(legend_on=legend_on, mobile=mobile)]
     if include_trace:
         trace_cap = label('TraceCaption', 'Fan / Heat Levels',
                           'roast-caption',
@@ -3808,22 +4218,27 @@ def _chart_card(basis, legend_on=True, trace_basis='150px',
                 position={'grow': 0, 'shrink': 0, 'basis': basis})
 
 
-def _trace_card(basis='205px'):
+def _trace_card(basis='280px'):
     """The Fan / Heat levels strip as its own card (mobile layout,
     v4.1 declutter): inside the chart card it squeezed the main
     chart and its right side legend clipped at phone widths. On
     its own it gets a bottom legend and room to read.
 
     Height is load bearing, here and in the desktop card's
-    trace_basis: below roughly 120px of chart height the XY
-    chart collapses its value axis entirely (series clamp to
-    the top edge, only the maximum tick label survives). Proven
-    live with an isolated probe at 108px (broken) vs 198px
-    (correct) on identical config and data."""
+    trace_basis. The classic XY chart collapsed its value axis
+    below roughly 120px. The v4.4 canvas line chart is hungrier:
+    its wrapper reserves roughly 150px of fixed layout (title,
+    axes, legend) before the grid, so the grid collapses to a
+    sliver below about 240px of component height regardless of
+    config (proven live: 150px collapsed even with legend,
+    labels and titles all off, 200px half collapsed, 250px
+    clean, and the main chart config collapses at 150px too).
+    250px desktop and 280px here keep a readable grid."""
     cap = label('TraceCardCap', 'Fan / Heat Levels', 'roast-caption',
                 position={'grow': 0, 'shrink': 0, 'basis': '16px'})
     return flex('TraceCard', 'column', [
-        cap, flex('TraceWrapM', 'row', [trace_chart()],
+        cap, flex('TraceWrapM', 'row',
+                  [trace_chart(mobile=True)],
                   position={'grow': 1, 'shrink': 1, 'basis': '0px'})],
         classes='roast-card roast-gap-8',
         position={'grow': 0, 'shrink': 0, 'basis': basis})
@@ -3905,13 +4320,11 @@ def roast_page_view():
     batch_chip = label('BatchChip', '', 'roast-chip',
                        position={'grow': 0, 'shrink': 1,
                                  'basis': 'auto'},
-                       style={'minWidth': '0px'},
                        prop_config={'props.text': {'binding': expr_binding(
                            f"'Batch ' + {ref(T('BatchNumber'))} + ' - ' + {ref(T('BeanName'))}")}})
     ws_pill = label('WsPill', 'SR800', 'roast-pill',
-                    style={'width': '170px', 'minWidth': '170px',
-                           'maxWidth': '170px', 'flexShrink': '0',
-                           'textAlign': 'center'},
+                    position={'grow': 0, 'shrink': 0,
+                              'basis': '170px'},
                     prop_config={
                         'props.text': {'binding': expr_binding(
                             f"if({ref(T('BeanTempF'))} > 0, {ref(T('ActiveSource'))} + ' CONNECTED', {ref(T('ActiveSource'))} + ' OFFLINE')")},
@@ -3935,7 +4348,8 @@ def roast_page_view():
                   position={'grow': 0, 'shrink': 0, 'basis': 'auto'},
                   classes='roast-header')
     main_col = flex('MainCol', 'column',
-                    [_chart_card('560px'), _strip_embed(),
+                    [_chart_card('660px', trace_basis='250px'),
+                     _strip_embed(),
                      _phases_embed(), _tiles_row()],
                     classes='roast-gap-12',
                     position={'grow': 1, 'shrink': 1, 'basis': '0px'})
@@ -3964,7 +4378,8 @@ def roast_page_view():
                            f"'Batch ' + {ref(T('BatchNumber'))} + ' - ' + {ref(T('BeanName'))}")}})
     scroll_col = flex('ScrollCol', 'column', [
         batch_line, _chart_card('430px', legend_on=False,
-                                head_stack=True, include_trace=False),
+                                head_stack=True, include_trace=False,
+                                mobile=True),
         _tiles_row(mobile=True),
         _trace_card(),
         _strip_embed(),
@@ -4239,11 +4654,17 @@ def log_page_view():
                            'roast-btn roast-btn-sm roast-btn-primary',
                            events=lib_event(
                                'roastery.batches.open_editor(self, create=True)'))
+    # Basis is auto, not a fixed 72px (no overlap pass,
+    # 2026-11-13): at 360px the fixed height capped the row
+    # while the subtitle needed three lines, so the buttons
+    # painted over the text. Auto height plus wrap lets the
+    # buttons drop under the text block on narrow screens and
+    # sit beside it on wide ones.
     head = flex('HeadRow', 'row', [head_col, new_roast_btn,
                                    new_batch_btn],
                 justify='flex-end', align='center', wrap='wrap',
                 classes='roast-gap-12',
-                position={'grow': 0, 'shrink': 0, 'basis': '72px'})
+                position={'grow': 0, 'shrink': 0, 'basis': 'auto'})
     panel = embed('BatchesPanelEmbed', 'Views/BatchesPanel', {},
                   {'grow': 0, 'shrink': 0, 'basis': 'auto'})
     content = flex('Content', 'column', [head, panel],
@@ -4255,55 +4676,44 @@ def log_page_view():
 
 
 def detail_chart():
-    series_tpl, xaxis_tpl, yaxis_tpl = _xy_templates()
-
-    def series(name, y, axis, color, width, fill_opacity=0.0):
-        s = copy.deepcopy(series_tpl)
-        s['name'] = name
-        s['label'] = {'text': name}
-        s['data'] = {'source': 'detail', 'x': 't_stamp', 'y': y}
-        s['xAxis'] = 'time'
-        s['yAxis'] = axis
-        s['render'] = 'line'
-        s['line']['appearance']['stroke']['color'] = color
-        s['line']['appearance']['stroke']['width'] = width
-        if fill_opacity:
-            s['line']['appearance']['fill']['color'] = color
-            s['line']['appearance']['fill']['opacity'] = fill_opacity
-        s['line']['appearance']['bullets'][0]['enabled'] = False
-        return s
-
-    xaxis = _elapsed_axis(xaxis_tpl)
-    temp_axis = copy.deepcopy(yaxis_tpl)
-    temp_axis['name'] = 'temp'
-    temp_axis['render'] = 'value'
-    temp_axis['label'] = {'enabled': True, 'text': 'Bean Temp (deg F)',
-                          'color': ''}
-    temp_axis['value']['range'] = {'min': 150, 'max': 460,
-                                  'useStrict': True}
-    ror_axis = copy.deepcopy(yaxis_tpl)
-    ror_axis['name'] = 'ror'
-    ror_axis['render'] = 'value'
-    ror_axis['label'] = {'enabled': True,
-                         'text': 'Rate of Rise (deg F/min)', 'color': ''}
-    ror_axis['value']['range'] = {'min': 0, 'max': 40, 'useStrict': True}
-    ror_axis['appearance']['opposite'] = True
+    p = _canvas_props()
+    p['data'] = []
+    p['xAxis'] = _canvas_xaxis('Elapsed (mm:ss)', split=11,
+                               rotate=30)
+    p['yAxis'] = [_canvas_yaxis(150, 460, 'Bean Temp (deg F)',
+                                split=6),
+                  _canvas_yaxis(0, 40, 'Rate of Rise (deg F/min)',
+                                position='right', grid=False,
+                                split=4)]
+    # The detail page is a single layout at every width, and
+    # at phone width the two axis titles plus their label
+    # columns crush the plot into a sliver and the titles
+    # themselves clip at the card edges (proven at 360px,
+    # 2026-11-13). The titles stay off at all widths here:
+    # the legend names both series and the events timeline
+    # and summary carry the units. Same slimming as the phone
+    # main chart.
+    for ax in p['yAxis']:
+        ax['title']['visible'] = False
+        ax['labels']['fontSize'] = 11
+        ax['labels']['gap'] = 2
+    p['xAxis']['labels']['fontSize'] = 11
+    p['series'] = [
+        _canvas_series('bt', 'Bean Temp', AMBER, 0, width=3),
+        _canvas_series('ror', 'Rate of Rise', SKY, 1, width=2)]
+    p['appearance']['colorPalette'] = [AMBER, SKY]
+    p['style'] = {'classes': 'roast-chart'}
     return {
-        'type': 'ia.chart.xy', 'meta': {'name': 'DetailChart'},
-        'props': {
-            'dataSources': {'detail': [], 'marks': []},
-            'xAxes': [xaxis], 'yAxes': [temp_axis, ror_axis],
-            'series': [series('Bean Temp', 'bt', 'temp', AMBER, 3,
-                              fill_opacity=0.13),
-                       series('Rate of Rise', 'ror', 'ror', SKY, 2)] +
-                       marks_series_list('marks'),
-            'legend': {'enabled': True, 'position': 'bottom'},
-            'style': {'backgroundColor': 'transparent'}},
+        'type': 'ia.canvas-charts.line',
+        'meta': {'name': 'DetailChart'},
+        'props': p,
         'propConfig': {
-            'props.dataSources.detail': {'binding': tag_binding(
+            'props.data': {'binding': tag_binding(
                 '[default]Roastery/DetailDS')},
-            'props.dataSources.marks': {'binding': tag_binding(
-                '[default]Roastery/DetailMarksDS')}},
+            'props.series[0].referenceLines.items':
+                _refline_binding(
+                    '[default]Roastery/DetailMarksDS',
+                    'roastery.batches.detail_reference_lines()')},
         'position': {'grow': 1, 'shrink': 1, 'basis': '0px'}}
 
 
@@ -4411,8 +4821,9 @@ def batch_detail_view():
             {'field': 'heat', 'header': {'title': 'Heat'}}])],
         classes='roast-card roast-gap-10',
         position={'grow': 0, 'shrink': 0, 'basis': '316px'},
-        prop_config={'props.style.display': {'binding': expr_binding(
-            "if({view.custom.hasPresses}, 'flex', 'none')")}})
+        prop_config={'props.style.classes': {'binding': expr_binding(
+            "if({view.custom.hasPresses}, 'roast-card roast-gap-10', "
+            "'roast-card roast-gap-10 roast-hidden')")}})
     content = flex('Content', 'column',
                    [head, chart_card, mid_row, meta_card, press_card],
                    classes='roast-content roast-gap-12')

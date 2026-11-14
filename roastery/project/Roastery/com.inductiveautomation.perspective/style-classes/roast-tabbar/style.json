@@ -2,7 +2,6 @@
   "base": {
     "style": {
       "backgroundColor": "var(--container)",
-      "borderTop": "1px solid var(--border)",
       "padding": "6px 100px 6px 10px",
       "gap": "8px"
     }

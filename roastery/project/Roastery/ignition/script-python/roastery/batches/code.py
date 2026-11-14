@@ -696,6 +696,31 @@ def stage_detail(batch_number):
     return True
 
 
+def detail_reference_lines():
+    """Reference line items for the staged batch's events, from
+    the DetailDocJson document stage_detail wrote (custom event
+    names intact). Bound on the detail chart's bean series
+    through a script transform triggered by DetailMarksDS."""
+    raw = system.tag.readBlocking([DETAIL_JSON])[0].value
+    if not raw:
+        return []
+    doc = system.util.jsonDecode(raw)
+    events = doc.get('events') or {}
+    evs = []
+    for key, lbl in (('charge', 'CHARGE'), ('dryEnd', 'DRY END'),
+                     ('fcStart', 'FC START'), ('fcEnd', 'FC END'),
+                     ('scStart', 'SC START'), ('scEnd', 'SC END'),
+                     ('drop', 'DROP')):
+        e = events.get(key)
+        if e and e.get('t') is not None:
+            evs.append((float(e['t']), lbl))
+    for c in events.get('custom') or []:
+        if c.get('t') is not None:
+            evs.append((float(c['t']),
+                        (c.get('name') or 'CUSTOM').upper()))
+    return core._ref_items(evs)
+
+
 def open_detail(self):
     """Batches panel Details button: stage the selected batch and
     navigate to the detail page."""

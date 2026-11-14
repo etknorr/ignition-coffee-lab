@@ -3,12 +3,11 @@
     "style": {
       "fontSize": "15px",
       "fontWeight": "700",
-      "borderRadius": "4px",
+      "borderRadius": "var(--roast-radius-interactive)",
       "padding": "10px 8px",
       "cursor": "pointer",
       "color": "var(--label)",
-      "backgroundColor": "transparent",
-      "border": "1px solid transparent"
+      "backgroundColor": "transparent"
     }
   }
 }

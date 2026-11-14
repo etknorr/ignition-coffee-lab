@@ -1,0 +1,10 @@
+{
+  "base": {
+    "style": {
+      "width": "88px",
+      "minWidth": "88px",
+      "maxWidth": "88px",
+      "flexShrink": "0"
+    }
+  }
+}

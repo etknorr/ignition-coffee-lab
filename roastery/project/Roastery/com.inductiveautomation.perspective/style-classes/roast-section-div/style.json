@@ -1,7 +1,6 @@
 {
   "base": {
     "style": {
-      "borderTop": "1px solid var(--border)",
       "paddingTop": "12px",
       "gap": "8px"
     }

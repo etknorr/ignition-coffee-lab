@@ -22,7 +22,8 @@ LIVE_DS = '[default]Roastery/LiveCurveDS'
 # fan and heat are Double in the chart dataset, matching the
 # EventsLog doubles the v4 strip chart read; the stored
 # CurveSamples keep Integer levels.
-LIVE_COLS = ['t_stamp', 'bean', 'ror', 'fan', 'heat']
+LIVE_COLS = ['t_stamp', 'bean', 'ror', 'fan', 'heat',
+             'bg', 'bgRor', 'plan']
 SELECTED_TAG = '[default]Roastery/SelectedBatchNumber'
 NQ_EVENTS_INSERT = 'Roastery/Events/InsertPress'
 
@@ -90,7 +91,11 @@ def empty_curve_dataset():
 
 
 def empty_live_dataset():
-    return typed_empty_dataset(LIVE_COLS, [None, 0.0, 0.0, 0.0, 0.0])
+    # The seed row fixes the column types; it must carry one
+    # value per LIVE_COLS entry (growing the columns without
+    # growing the seed made charge() abort here, v4.4).
+    return typed_empty_dataset(
+        LIVE_COLS, [None, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
 
 def empty_log_dataset():
@@ -591,12 +596,11 @@ def marks_dataset(evs):
     return system.dataset.toDataSet(MARK_COLS, rows)
 
 
-def build_marks():
-    """Rebuild EventMarksDS from the stamped event tags, as a
-    column-per-event marker dataset (marks_dataset). The chart
-    draws one named series per event column, so the legend labels
-    the vertical lines."""
-    from java.util import Date
+def _live_events():
+    """The current roast's stamped events as (elapsed sec,
+    label) pairs, charge first: the single source both marker
+    representations read (the EventMarksDS dataset and the
+    canvas charts' reference lines)."""
     members = ['StartTime', 'State']
     for stem, _lbl in MARK_EVENTS[1:]:
         members.append(stem + 'ElapsedSec')
@@ -604,10 +608,8 @@ def build_marks():
         members += ['CustomEvent%dElapsedSec' % i,
                     'CustomEvent%dName' % i]
     vals = read_members(members)
-    rows = []
-    start = vals['StartTime']
     evs = []
-    if start is not None and vals['State'] != 'Idle':
+    if vals['StartTime'] is not None and vals['State'] != 'Idle':
         evs = [(0, 'CHARGE')]
         for stem, lbl in MARK_EVENTS[1:]:
             e = vals[stem + 'ElapsedSec']
@@ -618,8 +620,86 @@ def build_marks():
             if e is not None and e >= 0:
                 nm = vals['CustomEvent%dName' % i] or 'CUSTOM'
                 evs.append((int(e), nm.upper()))
-    ds = marks_dataset(evs)
+    return evs
+
+
+def build_marks():
+    """Rebuild EventMarksDS from the stamped event tags, as a
+    column-per-event marker dataset (marks_dataset). Kept as
+    the marker record of the roast (the verification suite
+    asserts it); the canvas charts render the same events from
+    event_reference_lines instead."""
+    ds = marks_dataset(_live_events())
     system.tag.writeBlocking([MARKS_DS], [ds])
+
+
+def _ref_items(evs, top_gap=120.0, mid_gap=45.0, mid_top_gap=45.0):
+    """Canvas chart reference line items for (elapsed sec,
+    label) events: native ECharts markLines through the
+    component's series referenceLines. Labels sit at the top
+    of the plot (position 'end', proven in the 2026-11-13
+    probe round) unless the collision policy in the loop
+    moves or drops them. Values are epoch milliseconds on the
+    elapsed time axis, clamped to the axis minimum of
+    1000 ms: the axis starts 1 s in so its first tick reads
+    00:01 instead of the year 1970 (the epoch boundary tick
+    gets a year format from ECharts), and a line at 0 would
+    fall outside the plot."""
+    items = []
+    last_top = None
+    last_mid = None
+    for sec, lbl in sorted(evs, key=lambda e: float(e[0])):
+        sec = float(sec)
+        # Label collision policy (Eric, 2026-11-13, no overlap
+        # pass): labels ride the top of the plot ('end') only
+        # when they stand at least 120 s clear of the previous
+        # top label. (An audit roast with FC Start 100 s after
+        # Charge still merged the two top labels on the phone
+        # chart, where 100 s is only about 30px.) A closer event
+        # drops its label to the middle of the line when the
+        # middle slot is also clear (45 s from the last middle
+        # label and from the top one); anything tighter renders
+        # the line with no label at all rather than print
+        # unreadable stacked text. The event strip under the
+        # chart always carries the name.
+        if last_top is None or sec - last_top >= top_gap:
+            pos, vis = 'end', True
+            last_top = sec
+        elif (sec - last_top >= mid_top_gap
+                and (last_mid is None or sec - last_mid >= mid_gap)):
+            pos, vis = 'middle', True
+            last_mid = sec
+        else:
+            pos, vis = 'end', False
+        items.append({
+            'value': max(1000, int(sec * 1000)),
+            'orientation': 'vertical',
+            'label': {'visible': vis, 'position': pos,
+                      'text': lbl, 'color': '#f59e0b',
+                      'fontSize': 11, 'elementStyle': {}},
+            'line': {'color': '#f59e0b', 'width': 1.5,
+                     'type': 'dashed', 'opacity': 0.9}})
+    return items
+
+
+def event_reference_lines():
+    """Reference line items for the live chart's bean series,
+    bound through a script transform triggered by the
+    EventMarksDS tag (rewritten on every press)."""
+    return _ref_items(_live_events())
+
+
+def event_reference_lines_compact():
+    """Phone variant of the marker labels (no overlap pass):
+    the phone chart squeezes a whole roast into about 215px,
+    so two labels in the same band need roughly 150 s of
+    separation not to touch. The compact policy spaces top
+    labels 150 s apart and middle labels 150 s apart; an
+    event that fits neither band keeps its line and drops
+    its label. The events strip directly under the phone
+    chart names every event, so nothing is lost."""
+    return _ref_items(_live_events(), top_gap=150.0,
+                      mid_gap=150.0, mid_top_gap=30.0)
 
 
 def append_curve_sample(elapsed, t_stamp, temp, ror, fan, heat):
@@ -670,12 +750,46 @@ def build_live_curve():
     points = curve_points()
     pts = [(float(p['t']), p['bt']) for p in points]
     rors = compute_ror_series(pts, ror_params(), offline=False)
-    rows = []
+    # The canvas line chart reads ONE wide dataset (v4.4
+    # migration): the ghost and target overlays merge into the
+    # same rows by timestamp union, each column null where its
+    # source has no point. The chart series set connectNulls,
+    # so the merge nulls never break a line; they are not data
+    # gaps. Columns bg, bgRor and plan come from the overlay
+    # datasets build_overlays maintains.
+    merged = {}
+
+    def put(ms, col, val):
+        row = merged.get(ms)
+        if row is None:
+            row = {}
+            merged[ms] = row
+        row[col] = val
+
     for p, (_t, r) in zip(points, rors):
-        rows.append([Date(long(p['t'] * 1000)), p['bt'], r,
-                     float(p['fan']) if p['fan'] is not None else None,
-                     float(p['heat']) if p['heat'] is not None
-                     else None])
+        ms = long(p['t'] * 1000)
+        put(ms, 'bean', p['bt'])
+        put(ms, 'ror', r)
+        put(ms, 'fan', float(p['fan']) if p['fan'] is not None
+            else None)
+        put(ms, 'heat', float(p['heat']) if p['heat'] is not None
+            else None)
+    for path, col in ((BACKGROUND_DS, 'bg'), (BGROR_DS, 'bgRor'),
+                      (TARGET_DS, 'plan')):
+        ds = system.tag.readBlocking([path])[0].value
+        if ds is None:
+            continue
+        for i in range(ds.rowCount):
+            t = ds.getValueAt(i, 't_stamp')
+            v = ds.getValueAt(i, col)
+            if t is not None and v is not None:
+                put(long(t.getTime()), col, float(v))
+    rows = []
+    for ms in sorted(merged):
+        m = merged[ms]
+        rows.append([Date(ms), m.get('bean'), m.get('ror'),
+                     m.get('fan'), m.get('heat'), m.get('bg'),
+                     m.get('bgRor'), m.get('plan')])
     system.tag.writeBlocking(
         [LIVE_DS], [system.dataset.toDataSet(LIVE_COLS, rows)])
 
@@ -895,6 +1009,9 @@ def build_overlays():
     system.tag.writeBlocking(
         [BGROR_DS],
         [system.dataset.toDataSet(['t_stamp', 'bgRor'], bg_ror_rows)])
+    # The live chart dataset merges the overlays in (v4.4);
+    # refresh it so a ghost or target change lands at once.
+    build_live_curve()
 
 
 

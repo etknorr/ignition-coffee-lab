@@ -38,51 +38,51 @@
               "header": {
                 "title": "Batch"
               },
-              "width": 70
+              "width": 60
             },
             {
               "field": "roast_start",
               "header": {
                 "title": "Date"
               },
-              "width": 150,
+              "width": 132,
               "render": "date",
-              "dateFormat": "YYYY-MM-DD h:mm a"
+              "dateFormat": "MM-DD h:mm a"
             },
             {
               "field": "bean_name",
               "header": {
                 "title": "Bean"
               },
-              "width": 150
+              "width": 120
             },
             {
               "field": "drop_temp_f",
               "header": {
                 "title": "Drop (F)"
               },
-              "width": 80
+              "width": 66
             },
             {
               "field": "total_sec",
               "header": {
                 "title": "Total (s)"
               },
-              "width": 80
+              "width": 62
             },
             {
               "field": "dtr_pct",
               "header": {
                 "title": "DTR %"
               },
-              "width": 70
+              "width": 56
             },
             {
               "field": "roast_degree",
               "header": {
                 "title": "Degree"
               },
-              "width": 110
+              "width": 84
             },
             {
               "field": "id",
@@ -228,11 +228,11 @@
           }
         ],
         "propConfig": {
-          "props.style.display": {
+          "props.style.classes": {
             "binding": {
               "type": "expr",
               "config": {
-                "expression": "if({view.custom.confirmDelete}, 'flex', 'none')"
+                "expression": "if({view.custom.confirmDelete}, 'roast-banner roast-gap-12', 'roast-banner roast-gap-12 roast-hidden')"
               }
             }
           }

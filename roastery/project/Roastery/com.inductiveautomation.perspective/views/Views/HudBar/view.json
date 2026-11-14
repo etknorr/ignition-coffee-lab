@@ -59,12 +59,13 @@
         "props": {
           "text": "Idle",
           "style": {
-            "classes": "roast-pill",
-            "width": "88px",
-            "minWidth": "88px",
-            "maxWidth": "88px",
-            "flexShrink": "0"
+            "classes": "roast-pill"
           }
+        },
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "88px"
         },
         "propConfig": {
           "props.text": {
@@ -152,8 +153,7 @@
             "props": {
               "text": "",
               "style": {
-                "classes": "roast-hud-value",
-                "width": "100%"
+                "classes": "roast-hud-value"
               }
             },
             "propConfig": {
@@ -170,7 +170,7 @@
                     {
                       "type": "format",
                       "formatType": "numeric",
-                      "formatValue": "0.0"
+                      "formatValue": "0"
                     }
                   ]
                 }
@@ -216,8 +216,7 @@
             "props": {
               "text": "",
               "style": {
-                "classes": "roast-hud-value",
-                "width": "100%"
+                "classes": "roast-hud-value"
               }
             },
             "propConfig": {
@@ -234,7 +233,7 @@
                     {
                       "type": "format",
                       "formatType": "numeric",
-                      "formatValue": "0.0"
+                      "formatValue": "0"
                     }
                   ]
                 }
@@ -290,8 +289,7 @@
             "props": {
               "text": "",
               "style": {
-                "classes": "roast-hud-value",
-                "width": "100%"
+                "classes": "roast-hud-value"
               }
             },
             "propConfig": {
@@ -344,8 +342,7 @@
             "props": {
               "text": "",
               "style": {
-                "classes": "roast-hud-value-phase",
-                "width": "100%"
+                "classes": "roast-hud-value-phase"
               }
             },
             "propConfig": {

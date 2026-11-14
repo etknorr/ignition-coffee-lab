@@ -222,8 +222,39 @@ def main():
               and any(r[3] is not None and r[4] is not None
                       for r in live),
               live[-1])
-        check('chart axis is labelled Elapsed (mm:ss)',
-              desk.get_by_text('Elapsed (mm:ss)').count() >= 1)
+        # v4.4: the charts are canvas components now; their
+        # axis titles are canvas text, not DOM text, so the
+        # label is asserted on the served view config (the
+        # mm:ss tick format itself is screenshot verified).
+        def _find(node, want_type, want_name):
+            if isinstance(node, dict):
+                if (node.get('type') == want_type
+                        and node.get('meta', {}).get('name')
+                        == want_name):
+                    return node
+                for v in node.values():
+                    hit = _find(v, want_type, want_name)
+                    if hit is not None:
+                        return hit
+            elif isinstance(node, list):
+                for v in node:
+                    hit = _find(v, want_type, want_name)
+                    if hit is not None:
+                        return hit
+            return None
+
+        _rp = json.load(open(
+            'gateway-2027-maker/data/projects/Roastery/com'
+            '.inductiveautomation.perspective/views/Views/'
+            'RoastPage/view.json'))
+        _chart = _find(_rp.get('root', {}),
+                       'ia.canvas-charts.line', 'RoastChart')
+        check('main chart is a canvas line chart on an elapsed'
+              ' time axis labelled Elapsed (mm:ss)',
+              _chart is not None
+              and _chart['props']['xAxis']['type'] == 'time'
+              and _chart['props']['xAxis']['title']['text']
+              == 'Elapsed (mm:ss)')
         # Visible bleed only: an element counts when it starts
         # inside the viewport and extends past the right edge
         # (the defect Eric screenshotted). The Maker project

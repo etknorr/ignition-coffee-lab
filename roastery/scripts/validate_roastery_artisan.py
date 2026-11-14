@@ -106,10 +106,15 @@ def main():
     # Design tokens (v4.2): every border radius in the style
     # classes and the advanced stylesheet must come from the
     # token scale (2 micro, 4 interactive, 6 small containers,
-    # 8 cards, 999 pills only). Eric flagged the inconsistent
-    # bubbly rounding (16/12/10px) as amateur.
+    # 8 cards, 999 pills only), referenced through the :root
+    # CSS variables defined in the stylesheet. Eric flagged
+    # the inconsistent bubbly rounding (16/12/10px) as amateur.
     import re as _re
-    RADIUS_OK = {'0px', '2px', '4px', '6px', '8px', '999px', '50%'}
+    RADIUS_OK = {'0px', '2px', '4px', '6px', '8px', '999px', '50%',
+                 'var(--roast-radius-micro)',
+                 'var(--roast-radius-interactive)',
+                 'var(--roast-radius-small)',
+                 'var(--roast-radius-card)'}
     bad_radius = []
     for d in have:
         txt = open(os.path.join(sc_root, d, 'style.json')).read()
@@ -125,6 +130,92 @@ def main():
             if val.strip() not in RADIUS_OK:
                 bad_radius.append(('stylesheet', val.strip()))
     res_checks['radius_offenders'] = bad_radius
+    # Style system audit (Eric's standing rule): ALL visual
+    # styling lives in style classes and the advanced
+    # stylesheet. A component carrying static props.style keys
+    # beyond 'classes' is an inline style and fails. Style
+    # BINDINGS (propConfig props.style.*) are allowed only for
+    # the named data driven exceptions: values a class cannot
+    # express because they are computed from live data or view
+    # params at runtime.
+    STYLE_BINDING_OK = {
+        # Phase segment widths: computed percentages of the
+        # roast timeline (Settings targets), bound per segment.
+        ('PhasesBar', 'DrySeg', 'props.style.width'),
+        ('PhasesBar', 'MaiSeg', 'props.style.width'),
+        ('PhasesBar', 'DevSeg', 'props.style.width'),
+        # State driven pill colors (state -> color maps and
+        # connection/mode expressions).
+        ('RoastPage', 'StatePill', 'props.style.backgroundColor'),
+        ('HudBar', 'HudState', 'props.style.backgroundColor'),
+        ('RoastPage', 'WsPill', 'props.style.backgroundColor'),
+        ('Controls', 'ModePill', 'props.style.backgroundColor'),
+        # Alarm banner: red only while an alarm is active.
+        ('RoastPage', 'AlarmBanner', 'props.style.backgroundColor'),
+        ('RoastPage', 'AlarmBannerM', 'props.style.backgroundColor'),
+        # Tile accent bar: the accent is a per instance param.
+        ('Tile', 'AccentBar', 'props.style.backgroundColor'),
+        # Event cell name color: done state is a param (a map
+        # transform cannot emit var() colors; v2 trap).
+        ('EventCell', 'NameLabel', 'props.style.color'),
+        # Class SELECTION by state or param is the class system
+        # working as intended (not an inline style).
+        ('Tile', 'ValueLabel', 'props.style.classes'),
+        ('BatchesPanel', 'ConfirmRow', 'props.style.classes'),
+        ('BatchDetail', 'PressCard', 'props.style.classes'),
+    }
+    inline_offenders = []
+    binding_offenders = []
+    classic_chart_offenders = []
+
+    def _walk(node, view_name):
+        if isinstance(node, dict):
+            # v4.4 (Eric, 2026-11-13): every chart in the
+            # project must be a 2027 canvas chart
+            # (ia.canvas-charts.*). Any classic ia.chart.*
+            # component fails validation.
+            _t = node.get('type')
+            if isinstance(_t, str) and _t.startswith('ia.chart.'):
+                classic_chart_offenders.append(
+                    (view_name, node.get('meta', {}).get('name'),
+                     _t))
+            if node.get('type') and isinstance(node.get('props'),
+                                               dict):
+                st = node['props'].get('style')
+                if isinstance(st, dict):
+                    extra = [k for k in st if k != 'classes']
+                    if extra:
+                        inline_offenders.append(
+                            (view_name,
+                             node.get('meta', {}).get('name'), extra))
+                pc = node.get('propConfig')
+                if isinstance(pc, dict):
+                    for key in pc:
+                        if key.startswith('props.style.') and (
+                                view_name,
+                                node.get('meta', {}).get('name'),
+                                key) not in STYLE_BINDING_OK:
+                            binding_offenders.append(
+                                (view_name,
+                                 node.get('meta', {}).get('name'),
+                                 key))
+            for v in node.values():
+                _walk(v, view_name)
+        elif isinstance(node, list):
+            for v in node:
+                _walk(v, view_name)
+
+    views_root = os.path.join(
+        PROJ_DIR, 'com.inductiveautomation.perspective', 'views')
+    for _root, _dirs, _files in os.walk(views_root):
+        for _f in _files:
+            if _f == 'view.json':
+                _data = json.load(open(os.path.join(_root, _f)))
+                _walk(_data.get('root', {}),
+                      os.path.basename(_root))
+    res_checks['inline_style_offenders'] = inline_offenders
+    res_checks['style_binding_offenders'] = binding_offenders
+    res_checks['classic_chart_offenders'] = classic_chart_offenders
     report['resources'] = res_checks
     for rel in VIEWS:
         want = load_file_view(rel)
@@ -197,7 +288,10 @@ def main():
           and len(report['resources']['named_queries']) == 10
           and report['resources']['roast_card_on_disk']
           and report['resources']['stylesheet_on_disk']
-          and report['resources']['radius_offenders'] == [])
+          and report['resources']['radius_offenders'] == []
+          and report['resources']['inline_style_offenders'] == []
+          and report['resources']['style_binding_offenders'] == []
+          and report['resources']['classic_chart_offenders'] == [])
     print('VALIDATION', 'PASS' if ok else 'CHECK REPORT')
 
 if __name__ == '__main__':

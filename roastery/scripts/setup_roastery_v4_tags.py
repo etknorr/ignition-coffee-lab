@@ -337,7 +337,9 @@ MARKS_COLS = [('t_stamp', 'java.util.Date'),
 BGROR_COLS = [('t_stamp', 'java.util.Date'), ('bgRor', 'java.lang.Double')]
 LIVE_COLS = [('t_stamp', 'java.util.Date'), ('bean', 'java.lang.Double'),
              ('ror', 'java.lang.Double'), ('fan', 'java.lang.Double'),
-             ('heat', 'java.lang.Double')]
+             ('heat', 'java.lang.Double'), ('bg', 'java.lang.Double'),
+             ('bgRor', 'java.lang.Double'),
+             ('plan', 'java.lang.Double')]
 DETAIL_COLS = [('t_stamp', 'java.util.Date'), ('bt', 'java.lang.Double'),
                ('ror', 'java.lang.Double')]
 

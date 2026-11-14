@@ -271,6 +271,11 @@
                         "classes": "roast-stepper-value"
                       }
                     },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "44px"
+                    },
                     "propConfig": {
                       "props.text": {
                         "binding": {
@@ -396,6 +401,11 @@
                       "style": {
                         "classes": "roast-stepper-value"
                       }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "44px"
                     },
                     "propConfig": {
                       "props.text": {
