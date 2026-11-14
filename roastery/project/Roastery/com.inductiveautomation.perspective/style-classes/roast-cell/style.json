@@ -2,8 +2,7 @@
   "base": {
     "style": {
       "backgroundColor": "var(--containerNested)",
-      "border": "1px solid var(--border)",
-      "borderRadius": "6px",
+      "borderRadius": "var(--roast-radius-small)",
       "padding": "8px 6px",
       "gap": "2px"
     }

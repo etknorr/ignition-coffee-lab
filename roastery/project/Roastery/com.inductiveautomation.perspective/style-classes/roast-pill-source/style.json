@@ -1,0 +1,11 @@
+{
+  "base": {
+    "style": {
+      "width": "170px",
+      "minWidth": "170px",
+      "maxWidth": "170px",
+      "flexShrink": "0",
+      "textAlign": "center"
+    }
+  }
+}

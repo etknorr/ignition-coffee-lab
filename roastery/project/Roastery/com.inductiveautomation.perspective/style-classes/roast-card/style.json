@@ -2,8 +2,7 @@
   "base": {
     "style": {
       "backgroundColor": "var(--container)",
-      "border": "1px solid var(--border)",
-      "borderRadius": "8px",
+      "borderRadius": "var(--roast-radius-card)",
       "boxShadow": "var(--boxShadow2)",
       "padding": "16px"
     }

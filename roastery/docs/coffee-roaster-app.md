@@ -1354,3 +1354,295 @@ control dock's heavy blur shadow became a subtle
 Type scale: 10px captions in the HUD, 11/12/13/14 body and
 labels, 16 HUD values and stepper glyphs, 20 medium
 readouts, 30 tile values.
+
+## The style system (v4.3 audit, Eric's standing rule)
+
+All visual styling lives in Perspective style classes and
+the advanced stylesheet. No view carries static inline style
+properties; validate_roastery_artisan.py fails the build if
+one appears, or if a style binding appears outside the named
+exception list below. The audit that produced this section
+walked every view JSON: 13 components carried inline styles
+(the v4.2 stability fixes and the chart backgrounds); all
+moved into classes.
+
+### What lives where
+
+- Style classes (roast-*): colors, backgrounds, typography,
+  padding, border radius (via the token variables), shadows,
+  overflow and text behavior. Naming: roast-<component> for
+  component classes (roast-card, roast-btn, roast-hud-value),
+  roast-<component>-<variant> for variants (roast-btn-charge,
+  roast-seg-drying), roast-gap-<n> for spacing utilities.
+- Advanced stylesheet: the design tokens (:root CSS
+  variables), borders, pseudo states (hover, active, focus),
+  media queries and breakpoints, scrollbars, and the few
+  cascade overrides that need !important.
+- Component position (basis, grow, shrink): box sizing. This
+  is layout, not styling, and it is the only sizing channel
+  that works for flex items in this build (see the compiler
+  matrix).
+- Library and bindings: data. A binding may set a style
+  property only when the value is computed from live data or
+  a view parameter (the exceptions).
+
+### The compiler matrix (measured on this Maker beta)
+
+The style class compiler strips properties from class
+definitions before they reach the client CSS. Proven by
+dumping the compiled .psc-roast-* rules from a live session
+and comparing computed styles:
+
+- Carried by classes: color, background (color and image),
+  font (size, weight, family), padding, border-radius,
+  box-shadow, overflow, text (align, transform, overflow,
+  letter-spacing, line-height), white-space, cursor, filter.
+- Stripped from classes (never render): border and its
+  per-side variants, width, min-width, max-width, height,
+  min-height, flex-shrink. (The compiled rule for a class
+  carrying only stripped keys comes back EMPTY.)
+- Carried through the client layout channel, not the
+  compiled CSS: gap (class gap values do space flex
+  children), and root sizing classes such as roast-scroll.
+
+Consequences applied in this pass: borders moved into the
+advanced stylesheet keyed to the same class names (cards
+had silently rendered borderless since v4; computed
+borders measured 0px and are 1px now, including the HUD
+field dividers, which had also never rendered). Fixed
+component boxes moved from class width keys and inline
+styles into flex position bases (state pill 88px, source
+pill 170px, stepper value 44px, alarm slot 38px).
+
+### Tokens and how to change things globally
+
+Radius tokens are CSS variables in the stylesheet :root
+block: --roast-radius-micro (2px), --roast-radius-
+interactive (4px), --roast-radius-small (6px),
+--roast-radius-card (8px); pills stay a literal 999px
+because the pill is the shape. Classes reference the
+variables. Proof from this pass: editing ONLY the
+stylesheet line "--roast-radius-card: 8px" to 14px and
+rescanning moved every card in the app to 14px; buttons
+stayed at their 4px token; no view or class file changed.
+Spacing sits in the gap and padding values of the classes
+(4pt rhythm: 4, 8, 12, 16, 20). Palette colors are the
+theme variables (var(--container), var(--label),
+var(--border), ...) plus the semantic button color classes
+(roast-btn-charge and friends), which are the one place
+literal hex lives, so both themes hold.
+
+To change a token globally: edit the stylesheet variable
+(or the class value, for spacing and type) in
+build_roastery_v4.py, rebuild, rescan. To add a styled
+component: add a roast-* class (or reuse one), apply it via
+style.classes, put any border or pseudo state in the
+stylesheet under the same name, express fixed sizes as a
+flex position basis, and never write a static props.style
+key; the validator will fail the build if you do.
+
+### Named exceptions: style bindings that stay
+
+Bindings, not static styles; each computes its value from
+live data or a parameter, which a class cannot express:
+
+- PhasesBar DrySeg/MaiSeg/DevSeg, props.style.width: the
+  segment percentages computed from the Settings targets.
+- RoastPage StatePill and HudBar HudState,
+  props.style.backgroundColor: the state to color map.
+- RoastPage WsPill, props.style.backgroundColor:
+  connected/offline color from the live source state.
+- Controls ModePill, props.style.backgroundColor: the
+  mode color by roast state.
+- RoastPage AlarmBanner/AlarmBannerM,
+  props.style.backgroundColor: red only while an alarm is
+  active (the slot itself is a reserved flex basis).
+- Tile AccentBar, props.style.backgroundColor: the accent
+  is a per-instance view parameter.
+- EventCell NameLabel, props.style.color: the done state
+  is a parameter (a map transform cannot emit var()
+  colors; the v2 trap).
+- Class SELECTION bindings (Tile ValueLabel, BatchesPanel
+  ConfirmRow, BatchDetail PressCard, props.style.classes):
+  choosing among classes by parameter or UI state; this is
+  the class system working as intended, and it replaced the
+  last two display bindings in this pass (the hidden state
+  is the roast-hidden class).
+
+Chart series colors, axis and legend configuration are
+chart data properties (the v3 precedent), not component
+styles; the chart surface background is the roast-chart
+class.
+
+## v4.4: all charts are canvas charts (2026-11-13)
+
+Eric, clicking the v4.3 build: "The roast curve doesn't do
+dark mode. Is this using a new echart? All of them must be
+new echarts." He was right on both counts. The classic XY
+chart painted its own light plot surface regardless of the
+session theme, and it was still the component under every
+chart in the app. All three Roastery charts (the main Roast
+Curve, the Fan / Heat levels strip, and the BatchDetail
+curve) are now ia.canvas-charts.line, the ECharts based
+component. The validator fails if any component type
+starting with ia.chart. appears in a Roastery view
+(classic_chart_offenders), so the classic chart cannot
+creep back.
+
+Theming rules, proven in a live probe round before the
+migration was built on them:
+
+- A chart color left as the empty string follows the
+  session theme natively: axis text, gridlines, titles, and
+  legend all render correctly in dark and light with no
+  bindings. Background '' is transparent, so the card shows
+  through.
+- CSS var() strings do NOT resolve inside chart props. The
+  wrapper hands them to the canvas literally, which is an
+  invalid fill, so the text renders black and vanishes on a
+  dark background. Never put var() in a chart prop.
+- Series colors are literal hex by design (the app palette:
+  bean and fan #3b82f6, RoR #14b8a6, heat #ef4444, ghost
+  slate, target light slate dashed). They read identically
+  in both themes, like the classic chart's series did.
+- The ChartLab-era worry about dual-axis canvas charts
+  rendering the second series wrong was specific to tag
+  HISTORY bindings. These charts are dataset fed, and the
+  dataset path renders both axes correctly.
+
+Data and markers:
+
+- One wide dataset per chart. roastery.core.build_live_curve
+  unions the recorded samples with the background (ghost)
+  series, the ghost RoR, and the target profile by timestamp
+  into LiveCurveDS (columns t_stamp, bean, ror, fan, heat,
+  bg, bgRor, plan). Every series sets connectNulls, because
+  the gaps in a unioned row are merge artifacts, not data
+  gaps. The x axis stays the v4.1 elapsed axis: epoch based
+  Date(elapsed times 1000) values on a time axis, never wall
+  clock.
+- Event markers are native ECharts markLines now:
+  series[].referenceLines items, built by the library
+  (roastery.core.event_reference_lines for the live chart,
+  roastery.batches.detail_reference_lines for the detail
+  chart) and bound through the bracket path
+  props.series[N].referenceLines.items with the marks
+  dataset tag as the trigger and a script transform asking
+  the library for the items. Labels sit at the top of the
+  plot (position 'end'). Two axis facts the probe round
+  established: the time axis minimum is 1000 ms, because the
+  tick at exactly 0 is the epoch year boundary and ECharts
+  labels it 1970; and reference line values clamp to the
+  same 1000 ms minimum or the line at 0 falls outside the
+  plot.
+- Height is load bearing on this component, more than it
+  was on the classic chart (whose value axis collapsed
+  under about 120px in v4.1). The canvas wrapper reserves
+  roughly 150px of fixed layout (title, axes, legend)
+  before the grid, so below about 240px of component height
+  the grid collapses to a sliver regardless of config:
+  proven live at 150px with legend, labels, and titles all
+  off (still collapsed), 200px (half collapsed), and 250px
+  (clean). The strip is 250px in the desktop chart card
+  (which grew to 660px to hold it without shrinking the
+  main chart) and 280px as its own mobile card. The main
+  chart keeps the remaining height everywhere.
+- On the phone the main chart drops its two y-axis titles
+  and shrinks its axis labels (main_chart mobile variant):
+  at 360px the titles and label columns otherwise squeeze
+  the plot. The detail chart drops its axis titles at every
+  width for the same reason; its page is a single layout,
+  and at 360px the titles clipped at the card edges and the
+  plot collapsed to a sliver (proven, then fixed, then
+  re-proven with all four event labels readable).
+
+One migration bug worth remembering: when LiveCurveDS
+gained its bg, bgRor, and plan columns, the empty dataset
+prototype row in empty_live_dataset kept only five values
+for eight columns. system.dataset.toDataSet throws on the
+mismatch, clear_curve_samples threw inside charge(), and
+the press appeared to half work (state changed, no press
+recorded, no markers). Prototype rows must grow with their
+column lists.
+
+## No overlap pass (2026-11-13)
+
+Eric, clicking again: "There are words and numbers
+everywhere that are overlapping and can't be read. Be
+scrupulous about this." The audit covered every text
+bearing element at 360px and desktop in both themes. What
+it found and fixed:
+
+Chart axes. Tick density is now explicit through
+ticks.majorSplit (the component's splitNumber analog; no
+interval or label formatter is exposed). The main chart
+runs split 11, about 60 second steps at a typical span.
+Thirty second steps (split 22) were tried on desktop and
+the labels merged into each other, so 60 seconds is the
+standard; Eric's floor was about 15 seconds. Phone charts
+add labels.rotation 35 so the labels tilt clear of each
+other, the strip included; the detail chart rotates 30.
+Value axes got explicit splits too (bean 6, RoR 4, level
+5).
+
+Marker labels. The library's collision policy
+(roastery.core._ref_items) places a label at the top of the
+plot only when it stands clear of the previous top label
+(120 s on the standard policy), drops it to the middle of
+its line when that band is clear (45 s spacing), and
+otherwise draws the line with no label rather than stack
+unreadable text; the events strip under the chart always
+carries every name. The phone's live chart uses a compact
+variant (event_reference_lines_compact, 150 s spacing in
+both bands) because a whole roast is about 215px wide
+there. An audit roast with Charge, Dry End at 50 s, and FC
+Start at 130 s renders all three distinctly on desktop,
+and Charge plus a middle Dry End on the phone (FC Start
+keeps its line, label dropped by policy).
+
+HUD. Bean and RoR now read as whole numbers. At 16px
+monospace a one decimal value needs 48px and the Bean
+field box holds 44px, so the last digit clipped in Eric's
+hands. The HUD is the glance layer; the tiles beside it
+keep the 0.0 precision. The phase value class dropped to
+13px so 'Development' fits its field with margin.
+
+Phase bar. Three fixes. Segment text is two stacked lines
+(name, then time and share) because the single line
+('DEVELOPMENT 01:05 - 43%') never fits a target proportion
+segment on a phone. The bar is contiguous now: percentage
+widths summing to 100 plus 8px gaps overflowed the card.
+And the Development caption is DEV: at a 23 percent share
+the segment is about 68px wide on a phone and the full
+word needs about 88px at 12px, so it clipped mid word
+under every box sizing fix (the segment box itself needed
+border-box sizing and min-width 0 in the stylesheet, also
+fixed; see below). DEV is the working abbreviation, the
+same root as the DTR figure beside the bar; the full word
+stays in the HUD, the summary, and Settings.
+
+Log page. The header row had a fixed 72px height while
+its subtitle needed three lines at 360px, so the New
+Roast and New Batch buttons painted over the text. The
+row is auto height with wrap now: buttons drop under the
+text on narrow screens. Table columns slimmed from 710px
+total to about 580px, and the list date drops its year
+(the detail view carries the full date), so the Bean
+column no longer runs off the card edge.
+
+The hidden utility actually hides now. This corrects a
+v4.3 claim above: roast-hidden was described as the
+mechanism that replaced the last display bindings, but on
+this build the style class compiler drops display from
+class definitions too (the compiled .psc-roast-hidden rule
+was empty, measured live), so the BatchesPanel delete
+confirm row rendered unconditionally, complete with a
+'Delete batch 0' prompt. display now lives in the advanced
+stylesheet (.psc-roast-hidden, display none !important),
+the same treatment as borders, and both class driven
+hides (confirm row, detail press card) work. Add display
+to the list of properties the compiler strips: border,
+width, minWidth, maxWidth, height, minHeight, flexShrink,
+and now display. Anything load bearing in one of those
+properties belongs in the stylesheet, keyed to the class
+name.

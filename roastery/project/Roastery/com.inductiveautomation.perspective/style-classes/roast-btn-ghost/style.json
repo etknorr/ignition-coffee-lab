@@ -2,8 +2,7 @@
   "base": {
     "style": {
       "backgroundColor": "transparent",
-      "color": "var(--label)",
-      "border": "1px solid var(--border)"
+      "color": "var(--label)"
     }
   }
 }

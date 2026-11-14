@@ -1,8 +1,7 @@
 {
   "base": {
     "style": {
-      "border": "1px solid var(--border)",
-      "borderRadius": "4px",
+      "borderRadius": "var(--roast-radius-interactive)",
       "padding": "8px 10px",
       "fontSize": "14px",
       "color": "var(--label)",

@@ -2,8 +2,7 @@
   "base": {
     "style": {
       "backgroundColor": "#991b1b",
-      "padding": "8px 16px",
-      "minHeight": "37px"
+      "padding": "8px 16px"
     }
   }
 }

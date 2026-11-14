@@ -1,7 +1,7 @@
 {
   "base": {
     "style": {
-      "fontSize": "17px",
+      "fontSize": "16px",
       "fontWeight": "700",
       "color": "var(--label)",
       "textAlign": "center"

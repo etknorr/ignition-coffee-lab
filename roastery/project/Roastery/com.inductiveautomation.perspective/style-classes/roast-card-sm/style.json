@@ -2,11 +2,9 @@
   "base": {
     "style": {
       "backgroundColor": "var(--container)",
-      "border": "1px solid var(--border)",
-      "borderRadius": "8px",
+      "borderRadius": "var(--roast-radius-card)",
       "boxShadow": "var(--boxShadow2)",
       "padding": "12px 16px",
-      "minWidth": "0px",
       "overflow": "hidden"
     }
   }

@@ -4,7 +4,6 @@
       "fontSize": "13px",
       "fontWeight": "600",
       "color": "var(--label)",
-      "maxWidth": "100%",
       "whiteSpace": "nowrap",
       "overflow": "hidden",
       "textOverflow": "ellipsis"

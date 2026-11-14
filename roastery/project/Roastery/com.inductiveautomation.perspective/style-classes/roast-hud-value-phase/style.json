@@ -1,14 +1,13 @@
 {
   "base": {
     "style": {
-      "fontSize": "14px",
+      "fontSize": "13px",
       "fontWeight": "700",
       "color": "var(--label)",
       "fontFamily": "monospace",
       "whiteSpace": "nowrap",
       "overflow": "hidden",
-      "textOverflow": "ellipsis",
-      "width": "100%"
+      "textOverflow": "ellipsis"
     }
   }
 }
