@@ -74,6 +74,14 @@ Perspective project, the tag and UDT setup, and the view builder.
   batch document in a JSONB column, the roast curve in a
   separate series table keyed by batch number, and one
   batch_events row per control button press (the audit trail).
+  The Log also imports Artisan .alog files (upload on the Log
+  page) and the batch detail exports any batch back to .alog,
+  hash and signature included, so Roastery and Artisan exchange
+  roasts losslessly; the detail summary carries an analyzer
+  style phase analysis (per phase time, share, temp gain and
+  average RoR, plus the turning point). All of it lives in the
+  library package `roastery.artisan` and
+  `roastery.batches._phase_analysis`.
   Tapping a batch opens its detail (curve, events timeline,
   phases and DTR, metadata, captured presses); Edit opens a
   slide over panel (a right docked view, not a popup) whose form
@@ -132,8 +140,8 @@ those levels and nothing else.
   `roastery` scripting library, the ten named queries under
   `ignition/named-query/Roastery/`, and the Perspective style
   classes plus the advanced stylesheet). All application
-  Python lives in the project library (packages `roastery.core`
-  and `roastery.batches`); view and tag scripts are one line
+  Python lives in the project library (packages `roastery.core`,
+  `roastery.batches` and `roastery.artisan`); view and tag scripts are one line
   calls into it. Styling is organized as `roast-` style classes
   with the advanced stylesheet holding only global rules.
 - `scripts/`: the Python that builds and reproduces the
@@ -180,6 +188,11 @@ those levels and nothing else.
     `screenshot_roastery_artisan_verify.py`, and
     `screenshot_roastery_artisan_verify2.py`: Playwright click
     tests used to prove the interactions in the lab.
+- `docker-compose.yml`, `.env.example`, `PACKAGING.md`,
+  `services/`, `prod/`: the gateway packaging (local Docker
+  stack and prod Kubernetes manifests) that used to live in a
+  `gateway/` folder at the repository root; see the Gateway
+  configuration section below.
 - `docs/coffee-roaster-app.md`: the full build note, including
   the Artisan feature mapping (implemented, adapted, and
   excluded, with reasons) grounded in the Artisan 5.0.0 source,
@@ -255,10 +268,16 @@ without running the builder.
 
 ## Gateway configuration
 
-The gateway configuration this app depends on (historian,
+The gateway configuration this app depends on (historians,
 database connection, devices) and its two deployment modes,
-local Docker and production Kubernetes, live in the `gateway/`
-folder at the root of this repository.
+local Docker and production Kubernetes, live in this folder,
+structured after etknorr/project-template: `docker-compose.yml`
+and `.env.example` here, `services/ignition/config/` for the
+gateway config resources, `services/db/init/` for the Postgres
+first start SQL, `services/mqtt/` for the MQTT broker, and
+`prod/` for the Kubernetes manifests. See `PACKAGING.md` for
+the full story, including the human steps no file can do (API
+key, Maker license, gateway secret).
 
 ## Honest lab notes
 

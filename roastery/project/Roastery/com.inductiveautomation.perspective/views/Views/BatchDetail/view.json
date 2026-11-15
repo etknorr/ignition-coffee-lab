@@ -13,7 +13,9 @@
     "eventsDs": null,
     "metaDs": null,
     "pressDs": null,
-    "hasPresses": false
+    "hasPresses": false,
+    "analysisDs": null,
+    "dTp": "--"
   },
   "params": {},
   "propConfig": {},
@@ -67,7 +69,6 @@
               "direction": "row",
               "justify": "space-between",
               "alignItems": "center",
-              "wrap": "wrap",
               "style": {
                 "classes": "roast-gap-12"
               }
@@ -153,7 +154,28 @@
                     }
                   }
                 ]
-              },
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "76px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "ActionRow"
+            },
+            "props": {
+              "direction": "row",
+              "justify": "flex-end",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-gap-12"
+              }
+            },
+            "children": [
               {
                 "type": "ia.input.button",
                 "meta": {
@@ -199,12 +221,35 @@
                     }
                   }
                 }
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "ExportButton"
+                },
+                "props": {
+                  "text": "Export .alog",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.artisan\n\troastery.artisan.export_download(self)\n"
+                      }
+                    }
+                  }
+                }
               }
             ],
             "position": {
               "grow": 0,
               "shrink": 0,
-              "basis": "76px"
+              "basis": "52px"
             }
           },
           {
@@ -1137,6 +1182,141 @@
                         }
                       }
                     }
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "AnalysisHead"
+                    },
+                    "props": {
+                      "text": "Phase Analysis",
+                      "style": {
+                        "classes": "roast-section-title"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.display.table",
+                    "meta": {
+                      "name": "AnalysisTable"
+                    },
+                    "props": {
+                      "data": [],
+                      "columns": [
+                        {
+                          "field": "phase",
+                          "header": {
+                            "title": "Phase"
+                          }
+                        },
+                        {
+                          "field": "time",
+                          "header": {
+                            "title": "Time"
+                          }
+                        },
+                        {
+                          "field": "share",
+                          "header": {
+                            "title": "Share"
+                          }
+                        },
+                        {
+                          "field": "gain",
+                          "header": {
+                            "title": "Gain"
+                          }
+                        },
+                        {
+                          "field": "avgRor",
+                          "header": {
+                            "title": "Avg RoR"
+                          }
+                        }
+                      ],
+                      "pager": {
+                        "enabled": false
+                      },
+                      "rows": {
+                        "height": 32
+                      },
+                      "header": {
+                        "height": 32
+                      },
+                      "style": {
+                        "classes": "roast-table-sm"
+                      }
+                    },
+                    "propConfig": {
+                      "props.data": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "view.custom.analysisDs"
+                          }
+                        }
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "250px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "Tp"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "TpCap"
+                        },
+                        "props": {
+                          "text": "Turning point",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "TpVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dTp"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
                   }
                 ],
                 "position": {
@@ -1149,7 +1329,7 @@
             "position": {
               "grow": 0,
               "shrink": 0,
-              "basis": "314px"
+              "basis": "486px"
             }
           },
           {

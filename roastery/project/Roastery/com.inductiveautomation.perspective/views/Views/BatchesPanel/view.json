@@ -3,7 +3,8 @@
     "selBatchNumber": 0,
     "selLabel": "",
     "selNote": "Select a batch for its details, the editor, a ghost overlay, or delete.",
-    "confirmDelete": false
+    "confirmDelete": false,
+    "importNote": "Choose an Artisan .alog file to add that roast to the log."
   },
   "params": {},
   "propConfig": {},
@@ -407,6 +408,95 @@
                   "type": "script",
                   "config": {
                     "script": "\timport roastery.core, roastery.batches\n\troastery.batches.arm_delete(self)\n"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "ImportRow"
+        },
+        "props": {
+          "direction": "row",
+          "alignItems": "center",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "ImportLabel"
+            },
+            "props": {
+              "text": "Artisan import",
+              "style": {
+                "classes": "roast-note"
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "92px"
+            }
+          },
+          {
+            "type": "ia.input.fileupload",
+            "meta": {
+              "name": "ArtisanImport"
+            },
+            "props": {
+              "maxUploads": 1,
+              "supportedFileTypes": [
+                "alog"
+              ],
+              "fileSizeLimit": 5
+            },
+            "events": {
+              "component": {
+                "onFileReceived": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.artisan\n\troastery.artisan.import_upload(self, event)\n"
+                  }
+                }
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 1,
+              "basis": "190px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "ImportNote"
+            },
+            "props": {
+              "text": "Choose an Artisan .alog file to add that roast to the log.",
+              "style": {
+                "classes": "roast-note"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.importNote"
                   }
                 }
               }

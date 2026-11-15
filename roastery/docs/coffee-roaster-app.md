@@ -1646,3 +1646,127 @@ width, minWidth, maxWidth, height, minHeight, flexShrink,
 and now display. Anything load bearing in one of those
 properties belongs in the stylesheet, keyed to the class
 name.
+
+## Artisan import and export (2026-11-14)
+
+The roast log speaks Artisan's file format both ways, so roasts
+move between Roastery and Artisan (Eric's other SR800 tool)
+without losing data. All logic lives in the project scripting
+library as a third package, roastery.artisan (Jython), plus the
+existing named queries; view handlers are one line calls, per
+the standing rule that features live in the library, not in
+CPython scripts.
+
+Format facts (full study: knowledge note
+artisan-file-format.md, from the Artisan 5.0.0 source). An
+.alog file is one Python dict literal, loaded with
+ast.literal_eval. The `mode` key ('C' or 'F') is the unit of
+every temperature in the file. timex is seconds since
+RECORDING start; temp2 is the bean curve, temp1 the
+environment curve; missing readings are -1. Main events exist
+only as sample indices in timeindex [CHARGE, DRY, FCs, FCe,
+SCs, SCe, DROP, COOL]. Custom slider events live in
+specialevents with values on an internal scale (percent p is
+stored as p/10 + 1, with 0 percent stored as exactly 0). RoR
+is never stored in the file; Artisan recomputes it from the
+temps, exactly like Roastery, so imported temps go through
+roastery.core.compute_ror_series (offline path) before they
+land in batch_series.
+
+Import (Log page, Artisan import row, ia.input.fileupload,
+onFileReceived; the handler reads event.file.getBytes()). The
+profile maps onto the standard batch document and series:
+series rows start at Charge (pre-charge samples are dropped
+from the series but kept in the raw arrays), C mode files are
+converted to F, Fan and Heater slider events (etypes slots
+named Fan/Air and Heater/Burner) become per sample fan and
+heat levels with the quantization level = 1 + round(pct * 8 /
+100) clamped to 1..9, and back with pct = (level - 1) * 12.5.
+The imported batch takes the next free batch number, never
+the file's number, and an import whose roastUUID is already
+in the log is refused with a note naming the existing batch.
+Everything Roastery has no field for (the ET curve, extra
+device curves, alarms, PID and ramp/soak, energy and between
+batch data, display colors, the imported computed cache) is
+kept verbatim in the document's `artisan` subdocument,
+grouped identity / curves / events / display / settings, so
+export is lossless. No schema change was needed beyond that
+JSONB subdocument.
+
+Export (BatchDetail, Export .alog button,
+system.perspective.download). The dict is rebuilt from the
+stored batch: carried subdocument values win wherever the
+batch still matches them, structural keys (timex, temp1,
+temp2, timeindex from the document events, special events
+from the raw lists or rebuilt from fanHeatTrace, phases,
+weight, beans) always come from the current document, so
+editor changes are honored. A native batch with no ET probe
+exports temp1 as all -1, the format's own missing sentinel.
+The computed cache is rebuilt in Artisan's key shape (event
+times elapsed since charge except CHARGE_time, which is the
+absolute timex; phase times; turning point as the curve
+minimum between charge and dry end; AUC as the trapezoid
+area above AUCbase from the turning point to drop). The
+file carries the Artisan 5.0.0 identity fields and the
+signature constant published in the Artisan source: that
+pair is what official Artisan builds verify (an ed25519
+signature over version + revision + artisan_os), so exports
+open without a "not genuine" prompt. The file hash is
+computed last, exactly as Artisan does: SHA-256 over
+json.dumps of the profile with every int converted to float,
+keys sorted, separators (',', ':'), ensure_ascii. One format
+truth to know: an event's temperature in an .alog IS the
+curve sample at the event's index, so a re-imported batch
+takes its drop temp from the nearest stored sample (batch
+1042: 251.7 F re-imported vs 251.92 F as originally recorded
+from the live tag).
+
+Round trip verification, all live on the Maker gateway
+2026-11-14. (1) The fixture sample-roast.alog (196 keys,
+SR800, built from the Artisan source exactly as getProfile
+writes it) imported through the Log page upload: batch 1049,
+221 series rows, dry end 270 s, FC start 465 s, drop 585 s
+at 406.8 F, weights 200.0 g in and 171.4 g out, fan and heat
+levels from the 8 slider events. (2) Its export parses under
+Artisan's own loader path under CPython (ast.literal_eval
+plus the replicated validateProfileDict checks): the
+recomputed hash matches, the ed25519 signature verifies,
+and timex, temp1, temp2, timeindex, special events and
+values, phases, weights and roastUUID are identical to the
+fixture; the export also carries exactly 196 keys.
+(3) Native seeded batch 1042 exported (41 keys, hash
+verified), then re-imported as batch 1050: bean, total time
+and drop time match, 21 of 21 series rows, and every bean
+temp matches the original to 0.01 F.
+
+Two detail view fixes rode along. The header buttons
+wrapped on phone widths into the chart card's area (a flex
+basis of 'auto' computes as zero height in this build, so
+the wrapped row was painted over); the header is now two
+fixed rows (Back plus title, then Use as Ghost, Edit,
+Export .alog right aligned), verified by a coordinate tap
+on Export at 360px firing the download. And the detail
+chart's marker label gaps widened (top band 150 s, middle
+60 s): an imported profile with FC Start 120 s before Drop
+merged the two top labels into one word at 360px; Drop now
+drops to the middle band.
+
+## Phase analysis readouts (2026-11-14)
+
+BatchDetail's Summary card gained an analyzer style Phase
+Analysis table, computed by roastery.batches._phase_analysis
+from the stored series and the document events at stage
+time: per phase (Drying, Maillard, Development) the
+duration, its share of the roast, the bean temp gain
+between the bounding events, and the average rate of rise
+over the phase (gain per minute), plus the turning point
+(the bean temp minimum between charge and dry end, read off
+the stored curve) as its own line. The verify suite checks
+the block renders on the detail page. Remaining Artisan
+mapping gaps worth doing next, in rough value order: roast
+comparison overlays beyond the single ghost curve, the
+Roast Properties completeness pass (organic and certification
+fields Artisan carries that our form does not), and
+background profile loading directly from an .alog on the
+Roast page (the import path now makes this cheap: stage the
+imported series as the background dataset without saving).

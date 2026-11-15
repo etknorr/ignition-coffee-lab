@@ -409,6 +409,10 @@ def main():
               ('Batch %d' % batch_no) in body)
         check('detail shows captured presses',
               'CAPTURED BUTTON PRESSES' in body and 'Charge' in body)
+        check('detail shows phase analysis',
+              'PHASE ANALYSIS' in body and 'Turning point' in body
+              and 'Drying' in body and 'Maillard' in body
+              and 'Development' in body)
         check('no overlays on detail', overlays(desk) == 0)
         desk.screenshot(path=os.path.join(
             SHOTS, 'roastery-v4-detail-desktop.png'))

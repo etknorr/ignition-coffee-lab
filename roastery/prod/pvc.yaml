@@ -1,0 +1,15 @@
+# Roastery gateway state: projects, internal config, and the gateway's
+# data directory live on this volume. Treat it as precious; it is the
+# stateful heart of the deployment. Back it up with Longhorn snapshots.
+# (Same shape and wording as k8s/ignition/pvc.yaml in the homelab repo.)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: roastery-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 10Gi

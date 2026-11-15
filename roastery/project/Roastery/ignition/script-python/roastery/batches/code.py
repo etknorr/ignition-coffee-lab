@@ -718,7 +718,8 @@ def detail_reference_lines():
         if c.get('t') is not None:
             evs.append((float(c['t']),
                         (c.get('name') or 'CUSTOM').upper()))
-    return core._ref_items(evs)
+    return core._ref_items(evs, top_gap=150.0, mid_gap=60.0,
+                           mid_top_gap=60.0)
 
 
 def open_detail(self):
@@ -734,6 +735,53 @@ def open_detail(self):
         # on a cold connection.
         system.perspective.sendMessage(DETAIL_REFRESH_MESSAGE, {},
                                        scope='session')
+
+
+def _phase_analysis(doc, points):
+    """Analyzer style phase readouts for the detail view, in the
+    spirit of Artisan's computed block: per phase duration, share
+    of the roast, bean temp gain between the bounding events and
+    the average rate of rise over the phase (gain per minute),
+    plus the turning point (the bean temp minimum between charge
+    and dry end) read off the stored curve."""
+    events = doc.get('events') or {}
+
+    def ev(key, field):
+        e = events.get(key)
+        return e.get(field) if e else None
+
+    total = doc.get('totalSec') or (points[-1][0] if points else 0)
+    dry_t = ev('dryEnd', 't')
+    tp = None
+    for (t, bt) in points:
+        if t <= 0:
+            continue
+        if dry_t is not None and t >= dry_t:
+            break
+        if dry_t is None and total and t > total * 0.5:
+            break
+        if tp is None or bt < tp[1]:
+            tp = (t, bt)
+    rows = []
+    for name, a, b in (('Drying', 'charge', 'dryEnd'),
+                       ('Maillard', 'dryEnd', 'fcStart'),
+                       ('Development', 'fcStart', 'drop')):
+        ta, tb = ev(a, 't'), ev(b, 't')
+        if ta is None or tb is None or tb <= ta:
+            continue
+        dur = tb - ta
+        fa, fb = ev(a, 'tempF'), ev(b, 'tempF')
+        gain = (fb - fa) if (fa is not None and fb is not None)             else None
+        ror = (gain / (dur / 60.0)) if gain is not None else None
+        rows.append([name, _mmss(dur),
+                     ('%.0f%%' % (dur * 100.0 / total))
+                     if total else '--',
+                     ('%+.0f F' % gain) if gain is not None
+                     else '--',
+                     ('%.1f F/min' % ror) if ror is not None
+                     else '--'])
+    tp_text = ('%.0f F at %s' % (tp[1], _mmss(tp[0]))) if tp         else '--'
+    return rows, tp_text
 
 
 def detail_startup(self):
@@ -770,6 +818,22 @@ def detail_startup(self):
             _mmss(phases.get('dryingSec')),
             _mmss(phases.get('maillardSec')),
             _mmss(phases.get('developmentSec'))))
+    pts = []
+    try:
+        sds = _run(NQ_SERIES_SELECT, {'batch_number': number})
+        for r in range(sds.rowCount):
+            bt = sds.getValueAt(r, 'bean_temp_f')
+            if bt is not None:
+                pts.append((float(sds.getValueAt(r,
+                                                 't_offset_sec')),
+                            float(bt)))
+    except Exception:
+        pts = []
+    pts.sort()
+    seg_rows, tp_text = _phase_analysis(doc, pts)
+    self.view.custom.analysisDs = system.dataset.toDataSet(
+        ['phase', 'time', 'share', 'gain', 'avgRor'], seg_rows)
+    self.view.custom.dTp = tp_text
     ev_rows = []
     events = doc.get('events') or {}
     for key, lbl in (('charge', 'Charge'), ('dryEnd', 'Dry End'),
