@@ -1,0 +1,19 @@
+{
+  "scope": "A",
+  "description": "SQL historian backed by the Postgres database connection. The prod historian; see gateway/config/INVENTORY.md for how it relates to CoreHistorian.",
+  "version": 1,
+  "restricted": false,
+  "overridable": true,
+  "files": [
+    "config.json"
+  ],
+  "attributes": {
+    "lastModification": {
+      "actor": "admin",
+      "timestamp": "2026-11-11T00:00:00Z"
+    },
+    "uuid": "5769252d-c619-44c0-a8db-28299159af35",
+    "lastModificationSignature": "a4aff0429dcbd3ee4fa50483d2ba27bba5d5e9182b7adab2a226cd87f28d15d7",
+    "enabled": true
+  }
+}

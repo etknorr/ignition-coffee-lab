@@ -1,0 +1,9 @@
+TimeInterval,BrowsePath,ValueSource,DataType
+0,BoilerSupplyTemp,"sine(170,190,47,true)",Double
+0,BoilerReturnTemp,"sine(165,180,59,true)",Double
+0,FillerRate,"random(1150,1280,true)",Double
+0,SteamHeaderPressure,"sine(95,102,53,true)",Double
+0,Line1OEE,"sine(82,93,71,true)",Double
+0,AirHandlerTemp,"sine(58,66,43,true)",Double
+0,ChillerLoopTemp,"sine(42,48,67,true)",Double
+0,PackerInfeedRate,"ramp(0,1200,90,true)",Double
