@@ -1,11 +1,27 @@
 {
-  "custom": {},
+  "custom": {
+    "alarmsDs": null,
+    "alarmCount": 0,
+    "alarmIdx": 0,
+    "alarmNote": ""
+  },
   "params": {},
   "propConfig": {},
   "props": {
     "defaultSize": {
       "width": 900,
-      "height": 240
+      "height": 560
+    }
+  },
+  "events": {
+    "system": {
+      "onStartup": {
+        "scope": "G",
+        "type": "script",
+        "config": {
+          "script": "\timport roastery.core\n\troastery.core.alarms_startup(self)\n"
+        }
+      }
     }
   },
   "root": {
@@ -38,342 +54,1010 @@
           "name": "AlarmSectionDesc"
         },
         "props": {
-          "text": "Lite alarms shown as the banner on the Roast page.",
+          "text": "Alarm definitions, Artisan style: an alarm arms after its guard event plus the offset, then watches the bean temp, the rate of rise, or the elapsed time. Banner alarms show on the Roast page while the condition holds; Message alarms latch until the next charge. Definitions live in one tag and are evaluated by the library on every temp change.",
           "style": {
             "classes": "roast-section-desc"
           }
         }
       },
       {
+        "type": "ia.display.table",
+        "meta": {
+          "name": "AlarmTable"
+        },
+        "props": {
+          "data": [],
+          "columns": [
+            {
+              "field": "idx",
+              "header": {
+                "title": "#"
+              },
+              "width": 32
+            },
+            {
+              "field": "name",
+              "header": {
+                "title": "Name"
+              },
+              "width": 128
+            },
+            {
+              "field": "enabled",
+              "header": {
+                "title": "On"
+              },
+              "width": 38
+            },
+            {
+              "field": "guard",
+              "header": {
+                "title": "Guard"
+              },
+              "width": 74
+            },
+            {
+              "field": "offsetSec",
+              "header": {
+                "title": "Offset (s)"
+              },
+              "width": 72
+            },
+            {
+              "field": "source",
+              "header": {
+                "title": "Source"
+              },
+              "width": 54
+            },
+            {
+              "field": "cond",
+              "header": {
+                "title": "Cond"
+              },
+              "width": 46
+            },
+            {
+              "field": "threshold",
+              "header": {
+                "title": "Value"
+              },
+              "width": 58
+            },
+            {
+              "field": "message",
+              "header": {
+                "title": "Message"
+              },
+              "width": 180
+            },
+            {
+              "field": "action",
+              "header": {
+                "title": "Action"
+              },
+              "width": 68
+            }
+          ],
+          "pager": {
+            "enabled": false
+          },
+          "rows": {
+            "height": 32
+          },
+          "header": {
+            "height": 32,
+            "style": {
+              "classes": "roast-table-header"
+            }
+          },
+          "style": {
+            "classes": "roast-table-sm"
+          }
+        },
+        "propConfig": {
+          "props.data": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "view.custom.alarmsDs"
+              }
+            }
+          }
+        },
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "190px"
+        }
+      },
+      {
         "type": "ia.container.flex",
         "meta": {
-          "name": "AlarmHigh"
+          "name": "AlarmLoadRow"
         },
         "props": {
           "direction": "row",
-          "alignItems": "center",
+          "alignItems": "flex-end",
           "wrap": "wrap",
           "style": {
-            "classes": "roast-gap-10"
+            "classes": "roast-gap-12"
           }
         },
         "children": [
           {
-            "type": "ia.input.checkbox",
+            "type": "ia.container.flex",
             "meta": {
-              "name": "AlarmHighCheck"
+              "name": "AlIdxField"
             },
             "props": {
-              "selected": false,
-              "text": "",
+              "direction": "column",
               "style": {
-                "classes": "roast-checkbox"
+                "classes": "roast-gap-8"
               }
             },
-            "propConfig": {
-              "props.selected": {
-                "binding": {
-                  "type": "tag",
-                  "config": {
-                    "tagPath": "[default]Roastery/CurrentBatch/AlarmHighTempEnabled",
-                    "mode": "direct",
-                    "bidirectional": true
-                  },
-                  "bidirectional": true
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AlIdxFieldCap"
+                },
+                "props": {
+                  "text": "Edit alarm",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.dropdown",
+                "meta": {
+                  "name": "AlIdxDrop"
+                },
+                "props": {
+                  "options": [
+                    {
+                      "value": 0,
+                      "label": "Alarm 1"
+                    },
+                    {
+                      "value": 1,
+                      "label": "Alarm 2"
+                    },
+                    {
+                      "value": 2,
+                      "label": "Alarm 3"
+                    },
+                    {
+                      "value": 3,
+                      "label": "Alarm 4"
+                    },
+                    {
+                      "value": 4,
+                      "label": "Alarm 5"
+                    },
+                    {
+                      "value": 5,
+                      "label": "Alarm 6"
+                    },
+                    {
+                      "value": 6,
+                      "label": "Alarm 7"
+                    },
+                    {
+                      "value": 7,
+                      "label": "Alarm 8"
+                    },
+                    {
+                      "value": 8,
+                      "label": "Alarm 9"
+                    },
+                    {
+                      "value": 9,
+                      "label": "Alarm 10"
+                    },
+                    {
+                      "value": 10,
+                      "label": "Alarm 11"
+                    },
+                    {
+                      "value": 11,
+                      "label": "Alarm 12"
+                    }
+                  ],
+                  "value": 0,
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/AlarmEditor/Idx",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
                 }
               }
-            },
+            ],
             "position": {
-              "grow": 0,
-              "shrink": 0,
-              "basis": "30px"
+              "grow": 1,
+              "shrink": 1,
+              "basis": "150px"
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "AlLoadButton"
+            },
+            "props": {
+              "text": "Load",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+              }
+            },
+            "events": {
+              "component": {
+                "onActionPerformed": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core\n\troastery.core.alarm_editor_load_idx(self)\n"
+                  }
+                }
+              }
             }
           },
           {
             "type": "ia.display.label",
             "meta": {
-              "name": "AlarmHighCap"
-            },
-            "props": {
-              "text": "High bean temp",
-              "style": {
-                "classes": "roast-alarm-cap"
-              }
-            },
-            "position": {
-              "grow": 0,
-              "shrink": 0,
-              "basis": "168px"
-            }
-          },
-          {
-            "type": "ia.input.numeric-entry-field",
-            "meta": {
-              "name": "AlarmHighNum"
-            },
-            "props": {
-              "value": 0,
-              "format": "0",
-              "style": {
-                "classes": "roast-input"
-              }
-            },
-            "propConfig": {
-              "props.value": {
-                "binding": {
-                  "type": "tag",
-                  "config": {
-                    "tagPath": "[default]Roastery/CurrentBatch/AlarmHighTempF",
-                    "mode": "direct",
-                    "bidirectional": true
-                  },
-                  "bidirectional": true
-                }
-              }
-            },
-            "position": {
-              "grow": 0,
-              "shrink": 0,
-              "basis": "110px"
-            }
-          },
-          {
-            "type": "ia.input.text-field",
-            "meta": {
-              "name": "AlarmHighMsgIn"
+              "name": "AlCountLabel"
             },
             "props": {
               "text": "",
-              "placeholder": "",
               "style": {
-                "classes": "roast-input"
+                "classes": "roast-note"
               }
             },
             "propConfig": {
               "props.text": {
                 "binding": {
-                  "type": "tag",
+                  "type": "expr",
                   "config": {
-                    "tagPath": "[default]Roastery/CurrentBatch/AlarmHighTempMsg",
-                    "mode": "direct",
-                    "bidirectional": true
-                  },
-                  "bidirectional": true
+                    "expression": "'Alarms defined: ' + {view.custom.alarmCount}"
+                  }
                 }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "AlEdRow1"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AlNameField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AlNameFieldCap"
+                },
+                "props": {
+                  "text": "Name",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.text-field",
+                "meta": {
+                  "name": "AlNameIn"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/AlarmEditor/Name",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "200px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AlMsgField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AlMsgFieldCap"
+                },
+                "props": {
+                  "text": "Message",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.text-field",
+                "meta": {
+                  "name": "AlMsgIn"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/AlarmEditor/Message",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "260px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AlEnabledField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AlEnabledFieldCap"
+                },
+                "props": {
+                  "text": "Enabled",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.checkbox",
+                "meta": {
+                  "name": "AlEnabledCheck"
+                },
+                "props": {
+                  "selected": false,
+                  "text": "",
+                  "style": {
+                    "classes": "roast-checkbox"
+                  }
+                },
+                "propConfig": {
+                  "props.selected": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/AlarmEditor/Enabled",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "90px"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "AlEdRow2"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AlGuardField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AlGuardFieldCap"
+                },
+                "props": {
+                  "text": "Guard event",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.dropdown",
+                "meta": {
+                  "name": "AlGuardDrop"
+                },
+                "props": {
+                  "options": [
+                    {
+                      "value": "None",
+                      "label": "None"
+                    },
+                    {
+                      "value": "Charge",
+                      "label": "Charge"
+                    },
+                    {
+                      "value": "TP",
+                      "label": "TP"
+                    },
+                    {
+                      "value": "Dry End",
+                      "label": "Dry End"
+                    },
+                    {
+                      "value": "FC Start",
+                      "label": "FC Start"
+                    },
+                    {
+                      "value": "FC End",
+                      "label": "FC End"
+                    },
+                    {
+                      "value": "SC Start",
+                      "label": "SC Start"
+                    },
+                    {
+                      "value": "SC End",
+                      "label": "SC End"
+                    },
+                    {
+                      "value": "Drop",
+                      "label": "Drop"
+                    }
+                  ],
+                  "value": "None",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/AlarmEditor/Guard",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "150px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AlOffsetField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AlOffsetFieldCap"
+                },
+                "props": {
+                  "text": "Offset (sec)",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.numeric-entry-field",
+                "meta": {
+                  "name": "AlOffsetNum"
+                },
+                "props": {
+                  "value": 0,
+                  "format": "0",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/AlarmEditor/OffsetSec",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "110px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AlSourceField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AlSourceFieldCap"
+                },
+                "props": {
+                  "text": "Source",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.dropdown",
+                "meta": {
+                  "name": "AlSourceDrop"
+                },
+                "props": {
+                  "options": [
+                    {
+                      "value": "BT",
+                      "label": "BT"
+                    },
+                    {
+                      "value": "RoR",
+                      "label": "RoR"
+                    },
+                    {
+                      "value": "Time",
+                      "label": "Time"
+                    }
+                  ],
+                  "value": "BT",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/AlarmEditor/Source",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "110px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AlCondField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AlCondFieldCap"
+                },
+                "props": {
+                  "text": "Condition",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.dropdown",
+                "meta": {
+                  "name": "AlCondDrop"
+                },
+                "props": {
+                  "options": [
+                    {
+                      "value": ">=",
+                      "label": ">="
+                    },
+                    {
+                      "value": "<=",
+                      "label": "<="
+                    }
+                  ],
+                  "value": ">=",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/AlarmEditor/Cond",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "100px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AlValueField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AlValueFieldCap"
+                },
+                "props": {
+                  "text": "Value",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.numeric-entry-field",
+                "meta": {
+                  "name": "AlValueNum"
+                },
+                "props": {
+                  "value": 0,
+                  "format": "0",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/AlarmEditor/Value",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "110px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AlActionField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AlActionFieldCap"
+                },
+                "props": {
+                  "text": "Action",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.dropdown",
+                "meta": {
+                  "name": "AlActionDrop"
+                },
+                "props": {
+                  "options": [
+                    {
+                      "value": "Banner",
+                      "label": "Banner"
+                    },
+                    {
+                      "value": "Message",
+                      "label": "Message"
+                    }
+                  ],
+                  "value": "Banner",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/AlarmEditor/Action",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "130px"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "AlBtnRow"
+        },
+        "props": {
+          "direction": "row",
+          "alignItems": "center",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "AlSaveButton"
+            },
+            "props": {
+              "text": "Save Alarm",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-primary"
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.alarm_editor_save(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "AlAddButton"
+            },
+            "props": {
+              "text": "Add as New",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-green"
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.alarm_editor_add(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "AlDeleteButton"
+            },
+            "props": {
+              "text": "Delete Alarm",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-charge"
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.alarm_editor_delete(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "AlNoteLabel"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-note-success"
               }
             },
             "position": {
               "grow": 1,
               "shrink": 1,
-              "basis": "220px"
-            }
-          }
-        ],
-        "position": {
-          "grow": 0,
-          "shrink": 0,
-          "basis": "48px"
-        }
-      },
-      {
-        "type": "ia.container.flex",
-        "meta": {
-          "name": "AlarmDrop"
-        },
-        "props": {
-          "direction": "row",
-          "alignItems": "center",
-          "wrap": "wrap",
-          "style": {
-            "classes": "roast-gap-10"
-          }
-        },
-        "children": [
-          {
-            "type": "ia.input.checkbox",
-            "meta": {
-              "name": "AlarmDropCheck"
-            },
-            "props": {
-              "selected": false,
-              "text": "",
-              "style": {
-                "classes": "roast-checkbox"
-              }
+              "basis": "0px"
             },
             "propConfig": {
-              "props.selected": {
+              "props.text": {
                 "binding": {
-                  "type": "tag",
+                  "type": "property",
                   "config": {
-                    "tagPath": "[default]Roastery/CurrentBatch/AlarmDropEnabled",
-                    "mode": "direct",
-                    "bidirectional": true
-                  },
-                  "bidirectional": true
+                    "path": "view.custom.alarmNote"
+                  }
                 }
               }
-            },
-            "position": {
-              "grow": 0,
-              "shrink": 0,
-              "basis": "30px"
-            }
-          },
-          {
-            "type": "ia.display.label",
-            "meta": {
-              "name": "AlarmDropCap"
-            },
-            "props": {
-              "text": "Drop approaching",
-              "style": {
-                "classes": "roast-alarm-cap"
-              }
-            },
-            "position": {
-              "grow": 0,
-              "shrink": 0,
-              "basis": "168px"
-            }
-          },
-          {
-            "type": "ia.input.numeric-entry-field",
-            "meta": {
-              "name": "AlarmDropNum"
-            },
-            "props": {
-              "value": 0,
-              "format": "0",
-              "style": {
-                "classes": "roast-input"
-              }
-            },
-            "propConfig": {
-              "props.value": {
-                "binding": {
-                  "type": "tag",
-                  "config": {
-                    "tagPath": "[default]Roastery/CurrentBatch/AlarmDropDeltaF",
-                    "mode": "direct",
-                    "bidirectional": true
-                  },
-                  "bidirectional": true
-                }
-              }
-            },
-            "position": {
-              "grow": 0,
-              "shrink": 0,
-              "basis": "110px"
             }
           }
-        ],
-        "position": {
-          "grow": 0,
-          "shrink": 0,
-          "basis": "48px"
-        }
-      },
-      {
-        "type": "ia.container.flex",
-        "meta": {
-          "name": "AlarmFC"
-        },
-        "props": {
-          "direction": "row",
-          "alignItems": "center",
-          "wrap": "wrap",
-          "style": {
-            "classes": "roast-gap-10"
-          }
-        },
-        "children": [
-          {
-            "type": "ia.input.checkbox",
-            "meta": {
-              "name": "AlarmFCCheck"
-            },
-            "props": {
-              "selected": false,
-              "text": "",
-              "style": {
-                "classes": "roast-checkbox"
-              }
-            },
-            "propConfig": {
-              "props.selected": {
-                "binding": {
-                  "type": "tag",
-                  "config": {
-                    "tagPath": "[default]Roastery/CurrentBatch/AlarmFCWatchEnabled",
-                    "mode": "direct",
-                    "bidirectional": true
-                  },
-                  "bidirectional": true
-                }
-              }
-            },
-            "position": {
-              "grow": 0,
-              "shrink": 0,
-              "basis": "30px"
-            }
-          },
-          {
-            "type": "ia.display.label",
-            "meta": {
-              "name": "AlarmFCCap"
-            },
-            "props": {
-              "text": "First crack watch",
-              "style": {
-                "classes": "roast-alarm-cap"
-              }
-            },
-            "position": {
-              "grow": 0,
-              "shrink": 0,
-              "basis": "168px"
-            }
-          },
-          {
-            "type": "ia.input.numeric-entry-field",
-            "meta": {
-              "name": "AlarmFCNum"
-            },
-            "props": {
-              "value": 0,
-              "format": "0",
-              "style": {
-                "classes": "roast-input"
-              }
-            },
-            "propConfig": {
-              "props.value": {
-                "binding": {
-                  "type": "tag",
-                  "config": {
-                    "tagPath": "[default]Roastery/CurrentBatch/AlarmFCWindowSec",
-                    "mode": "direct",
-                    "bidirectional": true
-                  },
-                  "bidirectional": true
-                }
-              }
-            },
-            "position": {
-              "grow": 0,
-              "shrink": 0,
-              "basis": "110px"
-            }
-          }
-        ],
-        "position": {
-          "grow": 0,
-          "shrink": 0,
-          "basis": "48px"
-        }
+        ]
       }
     ]
   }

@@ -1097,6 +1097,99 @@ the groups own the inserts. All app reads stay on named queries
 either way; the Log detail reads batch_events through
 Roastery/Events/SelectByBatch.
 
+### Transaction group PressEvents: WORKING (2026-11-17)
+
+The press group above now exists and runs. It was authored by
+decompiling the SQL Bridge module jars (CFR on the common,
+gateway and designer jars from the .modl) and writing the
+resource in the exact format GroupSerializationUtil reads:
+folder com.inductiveautomation.sqlbridge/transaction-groups/
+PressEvents in the project, holding config.json (the group
+config) and resource.json (files ["config.json"], attributes
+{"typeKey": "standard"}), then POST /scan/projects. The live
+status route is GET /data/fsql/api/v1/status/project/Roastery
+(the /services/transaction-groups route from the v3 notes is
+only the gateway web UI page). End state verified live: the
+group reports state RUNNING with no errored groups.
+
+Group settings (config.json keys are the lowercased property
+names the Gson serializer writes):
+
+- type_key "standard", name "PressEvents",
+  execution_enabled true, data_source "db",
+  table_name "public.batch_events" (see the schema note
+  below), auto_create_table false, rec_mode "INSERT_ALL",
+  raw_query_history_ins true (direct insert, no store and
+  forward hop), update_rate 250 MS (raised from the original
+  1.0 SEC later the same day: at 1.0 s, two presses landing
+  inside one scan, like the v4 suite's back to back Fan +1
+  and Heat +1 clicks, collapsed into a single execution that
+  read only the latest LastAction, losing the first press's
+  row. At 250 MS each press lands in its own execution; the
+  v4 one row per press check passes. Also later the same
+  day: the RoastBatch UDT type definition on the gateway was
+  overwritten from the updated setup script so new instances
+  default PressCaptureMode to Group, matching the live
+  instance; instance values were preserved by the overwrite).
+- Trigger: group_execution_flags 258 (FLAG_TRIGGER 2 plus
+  FLAG_PREVENT_STARTUP_EXEC 256, so a gateway start does not
+  fire a spurious row), trigger_mode "AnyChange",
+  trigger_path "ActionCounter". The trigger path is the NAME
+  of a configured item, not a tag path: the group reads item
+  values through its __GROUP__ source.
+- Timestamp: store_timestamp true with timestamp_column
+  "pressed_at", so the group itself stamps each row.
+- Items (all type grouptag_sqltref, target_type DB_FIELD
+  unless noted): ActionCounter (driving tag
+  [default]Roastery/CurrentBatch/ActionCounter, target_type
+  NONE, the trigger item), BatchNumber to batch_number,
+  LastAction to action, LastActionElapsedSec to
+  t_offset_sec, BeanTempF to bean_temp_f, RateOfRiseF to
+  rate_of_rise_f, FanLevel to fan_level, HeatLevel to
+  heat_level. Item names are simple aliases; each item's
+  driving_tag_path carries the full tag path, and
+  target_data_type carries Int4, Int8, Float8 or String.
+
+Schema note, the part that cost the earlier attempts: the
+startup table check queries JDBC metadata with an empty
+schema pattern for Postgres, so an unqualified table name
+reports "table does not exist" (warning only, the group still
+ran as WARNED). Qualifying the table as public.batch_events
+fixes the lookup, and custom_index_column true with
+index_column "id" makes the required index column match the
+existing BIGSERIAL id instead of the default
+batch_events_ndx, so the check finds every required column
+and the group reaches clean RUNNING. auto_create_table must
+stay false so the check never tries to create or alter the
+real table.
+
+Single writer decision: PressCaptureMode on CurrentBatch is
+now "Group" (live tag value, and the default in
+scripts/setup_roastery_v4_tags.py). roastery.core.record_press
+still bumps ActionCounter and stamps LastAction,
+LastActionElapsedSec and LastActionAt on every press, which
+is exactly what the group reads, but in Group mode the
+library does not insert, so the group is the only writer of
+batch_events rows and there are no doubles. Every press type
+(Charge, event buttons, steppers, Drop, Cool, Finish, Save
+Batch, Reset) flows through record_press, so one group
+covers all of them with no view changes. SeriesCaptureMode
+stays "Library": batch_series capture is unchanged and no
+series group was built.
+
+Proof (2026-11-17, live Playwright Perspective session,
+Maker modal dismissed): with PressCaptureMode "Group" and
+batch_events empty, clicking Charge wrote exactly one row
+(batch 1042, action Charge, t_offset_sec 0, bean_temp_f
+352.50, rate_of_rise_f -31.16, fan 5, heat 5, pressed_at set
+by the group), clicking Dry End wrote one row (t_offset_sec
+4, bean_temp_f 353.60), and clicking Reset wrote one row
+(t_offset_sec 6) and returned State to Idle. Two earlier
+tag level probes (actions GroupProbe and GroupProbe2) also
+landed with exact context. All five test rows were deleted
+afterwards; batch_events returned to 0 rows, with batches at
+7 rows and batch_series at 101 rows untouched.
+
 ### Verification
 
 verify_roastery_v4.py drives a full roast from the phone layout
@@ -1770,3 +1863,936 @@ fields Artisan carries that our form does not), and
 background profile loading directly from an .alog on the
 Roast page (the import path now makes this cheap: stage the
 imported series as the background dataset without saving).
+
+## Artisan feature inventory and ranking (2026-11-17)
+
+Study only, from the Artisan 5.0.0 source at ~/workspace/artisan-src
+(src/artisanlib) checked against the Roastery library code
+(roastery.core, roastery.batches, roastery.artisan) and the
+sections above. Ranking is for one user: a single probe SR800
+home roaster, manual control only, Fan and Heat levels 1 to 9,
+phone as remote control and desktop as trend screen. Status
+key: HAVE means the library or views already do it (location
+named), BUILD means not yet present (one line scope), SKIP
+means not building it (reason stated). Single sensor rule:
+anything that needs ET or a second probe is SKIP, and the
+reason is stated plainly on each such line.
+
+### Tier 1: highest importance
+
+1. Background profile loaded directly from an .alog on the Roast page. DONE.
+   Artisan: loadbackground() and the background dialog
+   (main.py, background.py) load any saved profile as the
+   template curve behind the live roast. Roastery today loads
+   a ghost only from a saved database batch (batches.set_background).
+   Scope: file upload on the Roast page, parse with
+   roastery.artisan, stage the series as the background dataset
+   without saving a batch. Known gap from 2026-11-14.
+   Built 2026-11-17: BgUpload on the Roast page chart card
+   calls roastery.artisan.stage_background_upload, which
+   parses the file, stages the series through the same
+   BackgroundCurveJson mechanism as the saved batch ghost,
+   and labels it File: <name>. Clear ghost empties it.
+   Nothing is written to the database. Verified live in
+   verify_roastery_tier1.py (221 points staged, no batch
+   written).
+2. Multi curve comparison beyond the single ghost. DONE.
+   Artisan: comparator.py (RoastProfile, roastCompareDlg)
+   overlays many profiles, each with its own color, visibility,
+   time offset and BT and RoR traces, plus a compare table.
+   Roastery has exactly one ghost curve. Scope: select two to
+   four saved batches on the Log page and overlay them on
+   BatchDetail and optionally on the Roast page, BT and RoR
+   only. Known gap from 2026-11-14.
+   Built 2026-11-17: the Log page compare section
+   (roastery.batches.build_compare) takes up to three saved
+   batches and overlays BT (solid) and RoR (dashed) per batch
+   on one canvas line chart with literal colors (orange,
+   teal, purple) and a legend naming A, B and C in the
+   caption. RoR is recomputed offline per batch by
+   roastery.core.compute_ror_series. Verified live in
+   verify_roastery_tier1.py, including no overflow at 360px.
+3. Roast Properties completeness pass. DONE.
+   Artisan: roast_properties.py (editGraphDlg) and the
+   ProfileData fields in atypes.py carry far more than the
+   current 16 form fields (core.FORM_MEMBERS). Missing in
+   Roastery: roast title, roaster type, size and heating,
+   organization, elevation, volume in and out, defects weight,
+   roasted density, bean size min and max, the ten defect
+   flags (heavyFC, lowFC, lightCut, darkCut, drops, oily,
+   uneven, tipping, scorching, divots), whole and ground bean
+   color readings with color system, ambient temperature,
+   humidity and pressure, roasted moisture, greens
+   temperature, and cupping notes as a field separate from
+   roast notes. Scope: extend the form and the document,
+   keep values in the JSONB document and the artisan
+   subdocument so export stays lossless. Known gap from
+   2026-11-14, narrowed here to fields a home roaster will
+   actually fill in. Artisan Plus store, coffee, blend and
+   schedule fields are not part of this pass (see SKIP).
+   Built 2026-11-17: all 30 fields landed as CurrentBatch
+   members and core.FORM_MEMBERS entries, so the metadata
+   form, the slide over editor, the JSONB document and the
+   artisan import and export all carry them (import maps the
+   .alog keys including volume and roasted density lists and
+   the ten defect flags; export writes them back only when
+   set, so nothing is fabricated). Cupping notes are their
+   own field, separate from roast notes. Verified live in
+   verify_roastery_tier1.py with a 27 field fixture round
+   trip through import, document and export.
+4. Live turning point detection and display. DONE.
+   Artisan: findTP() in main.py (wrapping findTPint in
+   util.py) finds the BT minimum after CHARGE; computed.TP_time
+   and TP_BT anchor the dry phase RoR and the default AUC
+   start. Roastery computes a turning point only after the
+   fact, inside batches._phase_analysis on the detail page.
+   Scope: detect TP live in roastery.core once BT rises clear
+   of the post charge minimum, show it as a tile and a chart
+   marker, and store it in the batch document.
+   Built 2026-11-17: roastery.core._track_turning_point runs
+   on every bean temp change, tracks the post charge minimum
+   and confirms the turning point at a 5 F rise, stopping at
+   FC START. Shown on a Turning Point tile, as a TP chart
+   marker (notes column), and stored in the batch document;
+   batches._phase_analysis prefers the stored value. Note:
+   the RoasterSim program never dips after charge, so on the
+   simulator TP confirms at elapsed 0 on the charge minimum.
+   Verified live in verify_roastery_tier1.py.
+5. Live AUC with Artisan settings (begin, base, target, guide). DONE.
+   Artisan: canvas.py AUC settings (AUCbegin, AUCbase,
+   AUCbaseFlag, AUCtarget, AUCguideFlag, AUCLCDmode) and
+   main.py updateAUC(), calcAUC(), profileAUC() and
+   updateAUCguide(), which runs a live AUC total, an AUC
+   since FC START total, and a guide time predicting when
+   the target AUC is reached at the current RoR. Roastery
+   has only a saved batch AUC in batches.curve_auc, with the
+   base fixed at the charge temperature and no live value.
+   Scope: live AUC tile and HUD value from BT only, Settings
+   fields for begin event, base temperature and target, and
+   the guide time as a readout. Per phase AUC is Tier 2.
+   Built 2026-11-17: roastery.core.update_live_auc
+   recomputes AUC from the stored curve points on every temp
+   change (trapezoid in F min above the base), with the
+   Settings AUC section carrying begin event (Charge, TP,
+   Dry End, FC Start), base temperature, base from event,
+   target and guide toggle. The guide solves the constant
+   RoR quadratic for the elapsed time the target is reached.
+   Shown on an AUC tile, in the summary (total, since FC,
+   guide time) and stored in the batch document as
+   aucDetail. Deviation from the scope line: AUC did not
+   join the phone HUD. Measured at 360px, the HUD budget
+   (state pill, bean, RoR, clock, phase wide enough for
+   Second Crack) cannot fit a fifth field without clipping
+   a digit or a phase letter, so AUC lives on the tiles and
+   in the summary on both layouts instead. Verified live in
+   verify_roastery_tier1.py.
+6. Full alarm table replacing the three lite alarms. DONE.
+   Artisan: alarms.py plus the alarm lists in canvas.py
+   (alarmflag, alarmguard, alarmnegguard, alarmtime,
+   alarmoffset, alarmcond, alarmsource, alarmtemperature,
+   alarmaction, alarmbeep, alarmstrings) give an editable
+   table of alarms with a guard event, a time offset, a
+   source (BT, delta BT, time, or an event), a condition and
+   an action, and alarm sets can be imported and exported
+   as JSON. Roastery has three fixed view expression alarms
+   in SettingsAlarms. Scope: an editable alarm list evaluated
+   in roastery.core against BT, RoR, elapsed time and events,
+   with banner and message actions only. No alarm may move
+   Fan or Heat, because control stays manual.
+   Built 2026-11-17: definitions live as JSON in the
+   AlarmDefsJson tag (seeded with the three former lite
+   alarms) and roastery.core.evaluate_alarms runs them on
+   every temp change and press: a definition arms after its
+   guard event plus offset, then compares BT, RoR or elapsed
+   time with >= or <=. Banner alarms show while the
+   condition holds; Message alarms latch until the next
+   charge. The Settings Alarms section shows the table and
+   an editor (Load, Save, Add as New, Delete) whose fields
+   are bound to the AlarmEditor staging tags, because
+   view.custom property bindings do not write user edits
+   back in this build. Two build lessons from this item,
+   both proven in the Tier 1 rounds: a virtualized table at
+   position basis auto renders zero rows (the alarm table
+   uses a fixed 190px basis and scrolls internally), and the
+   editor read path must not rely on property bindings.
+   Verified live in verify_roastery_tier1.py (banner fires,
+   message latches, guard stays silent, editor save
+   rewrites the definitions).
+
+### Tier 2: high value math, lines and background help
+
+7. Phase analytics completion. DONE.
+   Artisan: main.py RoR() and computedProfileInformation()
+   report per phase RoR with the dry phase measured from the
+   turning point, per phase delta temp, total RoR, the RoR
+   at FC START (fcs_ror), per phase AUC, and the cool phase
+   time. Roastery batches._phase_analysis has duration,
+   share, temp gain and average RoR per phase, but its dry
+   phase starts at charge, and it has no per phase AUC, no
+   FC START RoR and no cool phase line. Scope: align the dry
+   phase RoR to the turning point and add those fields to
+   the Phase Analysis table and the saved document.
+   Built 2026-11-17: roastery.batches._phase_analysis now
+   follows Artisan RoR() exactly: the dry phase delta and
+   RoR use the greens temp branch when a greens temp is
+   recorded, otherwise they are measured from the turning
+   point; Maillard and Development use the bounding event
+   temps and times. Per phase AUC is the trapezoid area
+   over the Artisan ts() ranges (charge to dry, dry to FC
+   start, FC start to drop) above the saved AUC base.
+   fcs_ror comes from the one RoR implementation at the FC
+   start sample, total RoR runs TP to drop, and the cool
+   line runs drop to the Artisan COOL time for imports or
+   the last stored sample for native roasts. The structured
+   result is stored in the document as phaseAnalysis at
+   save and at import and recomputed on editor saves, and
+   it shows in the Phase Analysis table (new AUC column)
+   plus RoR at FC start, Total RoR and Cool phase readouts
+   on BatchDetail. Verified live in
+   verify_roastery_tier2.py against an independent
+   recompute from the stored series (dry RoR 50.7 F/min
+   through the greens branch on the fixture, cool 60 s).
+8. Loss, yield and density computations. DONE.
+   Artisan: main.py weight_loss(), volume_increase() and
+   computedProfileInformation() derive weight loss, defects
+   loss, total loss, total yield, volume gain, moisture loss
+   (green moisture minus roasted moisture), organic loss
+   (weight loss minus moisture loss), and green and roasted
+   density from weight over volume. Roastery stores only
+   weightLossPct in batches.build_document. Scope: compute
+   the full set at save time and show it in Summary and on
+   BatchDetail, using the Tier 1 volume, defects and
+   moisture fields.
+   Built 2026-11-17: roastery.batches.loss_yield_density
+   computes the full set at save time and at import from
+   the Tier 1 fields and stores it in the document loss
+   block: weight loss, defects loss, total loss, total
+   yield, volume gain, moisture loss, organic loss, and
+   green and roasted density in g/L. Every input is
+   guarded: a missing or invalid input stores nothing,
+   never a fabricated number, and weightLossPct now comes
+   from the same math. Shown in the live Summary (new
+   lines read from the standing tags, the same expression
+   pattern as the existing Weight loss line) and on
+   BatchDetail under Loss, Yield and Density. One naming
+   note: Artisan's computed total_yield is a weight in
+   grams, so the document stores totalYieldG for that
+   value and totalYieldPct for the percent the UI shows.
+   Verified live in verify_roastery_tier2.py with a
+   fixture of known inputs (200 g in, 170 g out, 10 g
+   defects, 250 to 300 ml, moisture 10.8 to 1.8) producing
+   exactly 15.0, 5.9, 20.0 and 80.0 percent and 800 and
+   567 g/L, and a sparse seeded batch storing none of the
+   volume or moisture values.
+9. BT projection lines, linear and quadratic. DONE.
+   Artisan: canvas.py updateProjection() extends the BT
+   curve forward at the current RoR (linear mode), or with
+   a linear RoR trend (quadratic mode, after five minutes),
+   so the roaster can see where the curve is heading.
+   Scope: a dashed projection series on the live chart from
+   the current BT and RoR, with a Settings toggle and mode.
+   BT only; the ET and delta projection variants are SKIP.
+   Built 2026-11-17: roastery.core.projection_points
+   builds a dashed Projection series (amber, literal hex)
+   that build_live_curve merges into LiveCurveDS as the
+   proj column. Linear mode extends BT two minutes
+   forward at the current RoR in 15 s steps. Quadratic
+   mode integrates a linear RoR trend with Artisan's
+   0.002 deltadelta clamp and, as in Artisan, engages
+   only after five minutes elapsed; before that it falls
+   back to linear. Settings gained a Projection section
+   (toggle ProjectionEnabled, mode ProjectionMode).
+   Display only: the Tier 2 suite proves the saved batch
+   document carries no projection data. Verified live:
+   the projection slope matched the live RoR and the
+   toggle emptied the series.
+10. Live deviation from the background curve, and a BT similarity score. DONE.
+    Artisan: the deviation readouts against the background
+    profile, and main.py curveSimilarity() returning a BT
+    similarity value (dbt in the computed block) between the
+    live or saved curve and the background. Roastery has a
+    deviation tile only against the four point target plan
+    (batches and core.build_overlays). Scope: deviation of
+    live BT from the loaded ghost at the same elapsed time,
+    plus a similarity score on BatchDetail for the staged
+    batch against its ghost.
+    Built 2026-11-17: (a) roastery.core.update_bg_deviation
+    runs on every temp change: live BT minus the staged
+    ghost BT interpolated at the same elapsed time,
+    published on the BgDeviationText tag and shown on a
+    Bg Deviation tile in the desktop tiles row and as a
+    Deviation vs background line in the Summary. The
+    phone HUD is untouched, per the Tier 1 space finding.
+    The staged ghost's drop time now travels with it on
+    the BackgroundDropSec tag, written by both ghost
+    routes and cleared with the ghost. (b)
+    roastery.batches.bt_similarity implements Artisan
+    curveSimilarity(), BT half only: the RMSE in F
+    between the staged batch and the ghost from dry end
+    to drop, with the ghost time axis shifted so the two
+    drop times align (Artisan's dropTimeDelta), shown on
+    BatchDetail as BT similarity vs ghost. Roastery
+    adaptation: Artisan locates its dry index by scanning
+    back from drop for the phases dry boundary
+    temperature; Roastery uses its recorded Dry End event
+    as the same phase boundary. A batch staged as its own
+    ghost scores 0.0 F RMSE in the Tier 2 suite, and the
+    live deviation matched an independent recompute to
+    0.1 F. The ET half stays skipped (single sensor).
+11. Background playback prompts. DONE.
+    Artisan: background.py and canvas.py playback settings
+    (backgroundPlaybackEvents, backgroundPlaybackDROP,
+    backgroundReproduce, specialeventplayback and the
+    playback aid flags) replay the background profile during
+    a roast: its Fan and Heat events prompt at their times,
+    with an optional beep, and DROP can be replayed. Scope:
+    when a ghost is loaded, prompt at each ghost Fan and
+    Heat change and at ghost DROP with a banner and the
+    suggested level. Prompts only; nothing is applied
+    automatically, because control stays manual.
+    Built 2026-11-17: both ghost routes now also stage the
+    ghost's Fan and Heat change events. roastery.core
+    .build_background_events derives them from the staged
+    per sample fan and heat levels (the first sample sets
+    the starting levels and never prompts) plus a Drop
+    event at the ghost drop time, and writes them to the
+    BackgroundEventsJson tag; roastery.batches
+    .set_background builds them from the saved series
+    fan_level and heat_level columns, and roastery.artisan
+    .stage_background_upload from the imported per sample
+    levels. During a roast, core.evaluate_playback (on
+    every temp change) fires the earliest due unfired
+    event once, as a reserved prompt strip under the alarm
+    banner: "Background: Fan 3", "Background: Heat 4",
+    "Background: Drop now", amber, with a Dismiss button
+    (core.dismiss_prompt). A showing prompt is never
+    overwritten: later events queue behind it and fire on
+    the first temp change after the dismiss, so each
+    prompt stays readable. The Fan and Heat tags are never
+    written by the playback path; the Tier 2 suite proves
+    Fan and Heat stay at 5 through all three prompts.
+    Settings gained toggles PlaybackEnabled (default on)
+    and PlaybackSound (default off). Clearing the ghost
+    clears the staged events and any pending prompt.
+    Deviation: sound is visual only in this build.
+    Perspective client scripting has no clean beep API
+    (no supported audio playback from a view script on
+    this platform), so the sound toggle is stored and
+    shown, the prompt strip is the signal, and the
+    Settings section says so in plain text. Verified live
+    with a purpose built .alog ghost whose events land at
+    30 s (Fan 3), 48 s (Heat 4) and a 75 s drop: the three
+    prompts fired in order with the right levels.
+12. Display smoothing for the BT line itself. DONE.
+    Artisan: canvas.py smoothETBT() smooths the displayed
+    temperature curves with the curve filter before drawing,
+    separate from the delta computation. Roastery draws the
+    bean line from raw samples; its curve filter only feeds
+    the RoR math in core.compute_ror_series. Scope: an
+    optional display only smoothing level in Settings,
+    applied to the chart dataset, never to stored temps.
+    Built 2026-11-17: Settings tag DisplaySmoothing
+    (0 to 5, default 0, off) in the new Settings Playback
+    sections. roastery.core.display_smoothed applies a
+    trailing decay weighted average, the same weight family
+    as the RoR curve filter, to the bean column only when
+    core.build_live_curve assembles LiveCurveDS. RoR is
+    computed from the raw points before smoothing and is
+    untouched; the ghost, target and projection columns
+    are untouched; stored samples stay raw. Verified live:
+    with level 3 the displayed bean values differed from
+    the raw samples (max over 0.3 F) and lagged them on a
+    rising stretch, the RoR column was identical on and
+    off, every stored sample was unchanged, and the saved
+    batch series held the raw samples, not the smoothed
+    display values.
+13. Analyzer crosshair readout. DONE.
+    Artisan: canvas.py togglecrosslines() and drawcross()
+    with BTat() give a crosshair that reads out time, BT
+    and RoR at any point on the curve, including background
+    values. Roastery charts have no point readout. Scope:
+    a tap or hover readout on the live and detail charts
+    showing elapsed time, BT, RoR, ghost BT and deviation
+    at that time, built to the no overlap rules.
+    Built 2026-11-17: route chosen: a fixed analyzer
+    strip under each chart, not floating chart text. The
+    canvas chart in this build exposes no usable tap or
+    hover point binding to drive a readout, so the
+    selected time is a tag (AnalyzerSec on the live side,
+    DetailAnalyzer/Sec on the detail side; minus 1 means
+    Latest) stepped with -10s and +10s buttons or jumped
+    with Latest, and roastery.core.analyzer_values
+    interpolates BT, RoR, ghost BT and deviation (BT minus
+    ghost BT) at that time from the real curve points and
+    the one RoR implementation. The strip is a fixed 88 px
+    flex block (controls row plus a four field values row)
+    inside the chart card on the live Roast page and on
+    BatchDetail (roastery.batches.detail_analyzer_refresh
+    recomputes from the staged detail dataset), so nothing
+    floats over axis labels or markers, and at 360 px the
+    fields keep their own row under the chart; the phone
+    HUD is untouched. Ghost and deviation fields read the
+    placeholder when no ghost is loaded. Verified live on
+    both charts: readout values matched independent
+    recomputes from the raw samples and the stored series
+    (BT within 0.6 F, RoR within tolerance, deviation
+    within 1.2 F), and stepping moved the selection and
+    the values together.
+14. Auto event suggestions for Dry End and FC START. DONE.
+    Artisan: canvas.py autoDRYflag and autoFCsFlag with
+    main.py findDryEnd(), which locates the sample where BT
+    crosses the phase boundary temperature in phases[1] and
+    phases[2]. Scope: when live BT crosses the Settings
+    phase target temperature, suggest the event with a
+    prompt; Eric confirms with the normal button. Suggestion
+    only, never an automatic stamp.
+    Built 2026-11-17: roastery.core.evaluate_suggestions
+    runs on every temp change while Roasting. When live BT
+    reaches TargetDryEndTempF with Dry End unstamped (or
+    TargetFCTempF with FC Start unstamped), it latches a
+    suggestion once per crossing on the same reserved
+    prompt strip as item 11 (blue): "BT crossed 320 F,
+    stamp Dry End?" with a Dismiss button. The suggestion
+    path writes no event tags and records no press; the
+    normal dock button stamps the event, and stamping (or
+    dismissing, or a reset) clears the suggestion. A
+    playback prompt takes display precedence over a
+    suggestion when both are pending. Per event Settings
+    toggles SuggestDryEndEnabled and SuggestFcEnabled
+    (both default on) sit in the Settings Playback
+    sections. Verified live with targets set just above the
+    running curve for a deterministic crossing: the Dry End
+    suggestion appeared with the crossed temp in its text,
+    no Dry End event or press row existed before
+    confirmation, the dock Dry End button then stamped it
+    and cleared the suggestion, and the FC Start suggestion
+    was dismissed without stamping before FC Start was
+    stamped normally.
+
+### Tier 3: useful, after Tier 2
+
+15. Curve display options (line width, style, markers, fill). DONE.
+    Artisan: the CurveStyles settings group and curves.py
+    CurvesDlg set per curve line style, draw style (default
+    or step), line width, marker and marker size for BT, RoR,
+    background and background RoR, plus fill under a curve.
+    Roastery series styling is fixed in the chart props.
+    Scope: Settings choices for BT, RoR and ghost width and
+    style, RoR fill on or off, and event marker size, within
+    the canvas chart props and the no overlap rules.
+    Built 2026-11-17: a new Settings section, SettingsDisplay
+    (Curve Display card), following the existing section
+    pattern, tag backed on the CurrentBatch UDT: DispBtWidth
+    (1 to 5) and DispBtStyle (solid, dashed, dotted),
+    DispRorWidth and DispRorStyle, DispGhostWidth and
+    DispGhostStyle (one pair drives both ghost series, BT
+    and RoR), DispRorFill (boolean) and DispMarkerSize (2 to
+    10). The main chart binds these tags onto the series
+    props it already authors: line width and type on the
+    bean, RoR and ghost series, the RoR area opacity (0.22
+    on, 0 off, through the series area block the line chart
+    honors), and the reference line endpoint size on the
+    bean series (the event markers are the reference lines,
+    so their endpoint dots are the markers). Literal hex
+    colors are untouched; only width, dash, fill and marker
+    size move. Defaults (BT 3 solid, RoR 2 solid, ghost 2
+    solid, fill off, markers 4) reproduce the pre Tier 3
+    look exactly. Draw style (step) is deliberately not
+    offered: BT and RoR are smoothed samples, and the Fan
+    and Heat strip already draws the stepped signals.
+    Verified in verify_roastery_tier3b.py at the authored
+    view level (series order, authored defaults, all nine
+    prop bindings plus the fill binding) and live in session
+    screenshots with distinctive values set (BT 5 dashed,
+    RoR 4 dotted with fill, ghost 3 dashed, markers 9).
+16. Phases from background, and phase watermarks on the chart. DONE.
+    Artisan: phases.py (phasesGraphDlg) sets the phase
+    boundary temperatures, with phasesfromBackgroundflag
+    taking them from the loaded background and watermarksflag
+    shading the phase bands on the chart. Roastery phase bar
+    targets are times and a DTR percent in SettingsTargets.
+    Scope: an option to take phase boundaries from the
+    loaded ghost, and light phase band shading behind the
+    live chart that follows the phase bar.
+    Built 2026-11-17, in two halves. Phase bands: the 2027
+    canvas line chart exposes no markArea in this build, so
+    the bands use the mechanism the library already uses for
+    overlays, dataset columns composed by
+    roastery.core.build_live_curve. Four columns (bandDry,
+    bandMai, bandDev, bandCool, appended at the end of
+    LiveCurveDS so positional readers stay valid) hold the
+    bean axis top (460 F) inside their phase range and null
+    outside, with exact boundary rows inserted at the band
+    edges, and four width 0 series with a solid area fill
+    (opacity 0.12, literal hex: drying #eab308, maillard
+    #f97316, development #dc2626, cooling #0284c7) draw
+    first, behind every curve. A live probe proved the line
+    component honors a series area block exactly like the
+    area component. Band ranges come from
+    core.phase_band_ranges: stamped phases end at their
+    stamps, the phase still ahead ends at its effective
+    target boundary, and Cooling runs from the drop stamp
+    to the latest sample. No text lives inside the bands;
+    their legend entries carry the phase names because an
+    empty label makes the wrapper invent Series N names
+    (proven live). Phases from background: staging a ghost
+    (batch ghost or .alog file ghost) also stages its
+    stamped phase boundaries onto session tags
+    (BgPhaseDrySec, BgPhaseFcSec, BgPhaseDropSec, written by
+    core.stage_bg_phases from batches.set_background and
+    artisan.stage_background_upload, cleared by
+    core.clear_background). The SettingsDisplay Phases From
+    Background card holds the PhaseFromBg toggle and a
+    readout of the staged boundaries. With the toggle on
+    and staged values ordered, the PhasesBar target
+    proportions, its DTR target, and the band boundaries
+    all follow the ghost; the saved SettingsTargets tags
+    (PhaseDryTargetSec, PhaseMaillardTargetSec,
+    PhaseDevTargetSec, DTRTargetPct) are never written by
+    any staging path. Staged is session level only; saved
+    stays Eric's. Verified in verify_roastery_tier3b.py:
+    band ranges read back from LiveCurveDS match the
+    stamped phases during a simulated roast, the
+    development band moves from the saved target boundary
+    (600 s) to the ghost drop (585 s) when the toggle turns
+    on, the phase bar dry segment follows the ghost share,
+    and the saved target tags are byte identical before and
+    after staging and toggling.
+17. Full profile designer for the target plan. DONE.
+    Artisan: designer.py (designerconfigDlg, pointDlg)
+    edits a target profile point by point with time order
+    validation. Roastery target is four fixed points.
+    Scope: allow adding and editing extra target points,
+    stored the same way, with the deviation tile and plan
+    line reading the longer list.
+    Built 2026-11-17: the plan is now a variable length list
+    stored as JSON ([sec, tempF] pairs) on the TargetPlanJson
+    member of CurrentBatch, read only through
+    roastery.core.target_plan_points. That was the storage
+    choice because the four fixed tags cannot hold a longer
+    list; the JSON tag survives restarts like every standing
+    tag, and when it is empty or invalid the plan falls back
+    to the legacy four point tags, so the existing four
+    points are the default list with no separate migration.
+    Saving a plan syncs two legacy scalars (first point temp
+    to TargetChargeTempF, last point to TargetDropSec and
+    TargetDropTempF, which the alarms and metadata read);
+    the dry end and FC legacy tags are not synced because
+    they also carry the suggestion thresholds. The Settings
+    Targets section gained the Target Plan Designer: a read
+    only table of the plan points (fixed 190px basis, the
+    Tier 1 virtualized table lesson) plus an editor staging
+    one point in the TargetEditor tags (the AlarmEditor
+    precedent), with Load Point, Save Point, Add Point,
+    Delete Point and Reset to Four Points buttons, all thin
+    handlers into roastery.core (target_editor_load, save,
+    add, delete, target_plan_reset). Validation follows
+    Artisan and the BatchEdit ordered time pattern: 2 to 12
+    points, first point anchored at 0 sec, times strictly
+    increasing, temps 50 to 500 F; a violation is REJECTED
+    with a visible note and nothing is saved (no silent
+    sorting). The charge point cannot be deleted.
+    Both readers moved to the list: build_overlays builds
+    the plan line from target_plan_points, and the deviation
+    tile now binds the library published PlanDeviationText
+    tag (roastery.core.update_plan_deviation, the
+    BgDeviationText pattern), because a view expression can
+    only interpolate the old four fixed points; the contract
+    is unchanged (signed F while Roasting, two dashes
+    otherwise). The saved batch document target block also
+    carries the full points list beside the legacy fields.
+    Default behavior is unchanged: with the JSON tag empty
+    the plan is exactly the old four points. Verified live
+    in verify_roastery_tier3c.py: points added, edited and
+    deleted through the real UI, out of order Add and Save
+    both rejected with the plan unchanged, the plan overlay
+    dataset and the deviation text read a 6 point plan, and
+    Reset returned to the default four.
+18. Batch export beyond .alog (CSV, JSON, printable report). DONE.
+    Artisan: main.py fileExportCSV, fileExportJSON,
+    fileExportExcel and the PDF and HTML report builders
+    (pdfReport, htmlReport, productionReport) export a
+    profile and its statistics. Roastery exports only .alog
+    from BatchDetail. Scope: CSV and JSON download of the
+    series plus document from BatchDetail, and a printable
+    summary. Ranking and production reports are SKIP.
+    Built 2026-11-17: three more buttons sit beside Export
+    .alog on BatchDetail (Export CSV, Export JSON, Print
+    Summary; the action row now wraps so all six actions fit
+    at 360px). All three are thin handlers into
+    roastery.batches: build_csv_text emits a metadata header
+    section (comment lines carrying the document key fields:
+    batch, bean, origin, start and end, degree, drop temp,
+    weights, loss, AUC, source) followed by the series table
+    (time_sec, time_mmss, bean_temp_f, rate_of_rise_f_per_min,
+    fan_level, heat_level) from the stored batch_series rows;
+    build_json_text downloads one object with the relational
+    fields, the full batch document and the full series;
+    build_summary_html downloads a standalone printable HTML
+    summary (summary, loss/yield/density with friendly labels,
+    phase analysis, events, metadata, curve statistics) that
+    is opened and printed from the browser. Downloads use
+    system.perspective.download, the .alog route. Ranking and
+    production reports stay skipped, per scope. Verified live
+    in verify_roastery_tier3a.py: all three downloads fire for
+    seeded batch 1042 and their series and document values
+    match an independent recompute from Postgres.
+19. Statistics summary on the chart and in the HUD. DONE
+    (revised scope: under the live chart and on BatchDetail;
+    nothing added to the HUD, which is provably full at
+    360px).
+    Artisan: canvas.py writestatistics() writes the phase
+    times and percents onto the chart itself, statistics.py
+    configures the summary, and main.py getPhasesLCDsData()
+    drives the phases LCD modes. Roastery shows phases only
+    in the PhasesBar and Summary views. Scope: a compact
+    phase summary line under the live chart title, using
+    values already computed, checked at 360px.
+    Built 2026-11-17: a single line label (new style class
+    roast-stats-line, 11px semibold, the caption scale,
+    nowrap with ellipsis as the backstop) sits directly
+    under the live chart on RoastPage in both layouts,
+    between the chart and the analyzer strip, reading
+    "Dry 4:30 38% · Mai 3:45 32% · Dev 2:10 30% · DTR 22%"
+    in form. It carries no new math: one expression reuses
+    the PhasesBar and Summary formulas (stamped phase
+    seconds, shares of drop time once dropped, effective
+    target proportions before that, ghost proportions when
+    phases from background is on, DTR as in Summary), with
+    m:ss times and an integer DTR so the longest form fits
+    the 286px phone chart card whole at 360px. The same
+    line sits on BatchDetail's chart card, computed by
+    roastery.batches.detail_startup from the stored
+    document phases into view.custom.dStatsLine. Verified
+    in verify_roastery_tier3b.py: the live line matches the
+    stamped phase times mid roast and after drop, its
+    scrollWidth equals its clientWidth at 360px with all
+    phases populated, and the BatchDetail line equals the
+    line recomputed from the seeded batch 1042 document in
+    Postgres.
+20. Between batch protocol, BT only subset. DONE.
+    Artisan: main.py calcBBPMetrics() and the bbp keys
+    record the previous roast end to the next charge: total
+    BBP time, bottom temperature, and the RoR into and out
+    of the bottom. Scope: after DROP, keep recording BT
+    until the next CHARGE and store those four values on
+    the next batch. The ET half of BBP is SKIP (below).
+    Built 2026-11-17, BT only (the ET half stays skipped,
+    single sensor): roastery.core.drop opens the window
+    (first sample is the drop temp at t = 0); the existing
+    BeanTempF change capture path (on_bean_temp) also
+    stages every change while the state is Dropped, Cooling
+    or Complete into the BbpSamplesDS dataset tag
+    (t_offset_sec is float seconds since DROP). The staging
+    lives outside the batch workspace, in the Bbp tag
+    folder (the Calculator folder precedent) plus that
+    dataset tag, so the window survives Save Batch for the
+    roast that just dropped. Opening a window at DROP does
+    not clear the staged metrics, which belong to the batch
+    now running until its Save Batch consumes them
+    (core.bbp_clear_staged, called by save_current_batch).
+    roastery.core.charge closes
+    the window before anything else: it appends the final
+    sample at the charge temp and moment, computes the
+    metrics with roastery.core.bbp_compute, stages them on
+    the Bbp tags, and clears the samples; a CHARGE with no
+    open window clears any stale staged metrics instead.
+    roastery.batches.build_document then writes the staged
+    values into the next batch document as a bbp
+    subdocument (time_sec, bottom_temp_f, ror_in_f_min,
+    ror_out_f_min), and BatchDetail shows them as one
+    Between batch (BBP) line in the Summary card when the
+    subdocument is present; batches with no preceding drop
+    carry no bbp key and show nothing. Metric definitions,
+    all from the staged samples S = [(t, BT)]: time_sec is
+    the last sample t minus the first (DROP to CHARGE);
+    bottom_temp_f is the minimum BT, the bottom being the
+    FIRST sample holding it at time t_b; the RoR span is
+    the library RoR delta span (RoRDeltaSpanSec through
+    ror_params, default 20 s, 0 falling back to 20), the
+    same span convention compute_ror_series differentiates
+    over; ror_in_f_min is (bottom minus BT interpolated at
+    max(t_first, t_b minus span)) times 60 over (t_b minus
+    that start), or 0.0 when the bottom is the first
+    sample; ror_out_f_min is (BT interpolated at
+    min(t_last, t_b plus span) minus bottom) times 60 over
+    (that end minus t_b), or 0.0 when the bottom is the
+    last sample. Edge cases: the first ever roast has no
+    staged window and its document has no bbp; a CHARGE
+    with no DROP before it finalizes nothing; Reset
+    discards the window and any staged metrics (decided:
+    reset_batch calls _bbp_clear_all, so a reset workspace,
+    including New Roast, starts a fresh between batch
+    story). Verified live in verify_roastery_tier3c.py: a
+    full simulated cycle (roast, DROP, a falling then
+    rising BT window driven through the WebSocket source,
+    CHARGE, Save) stored a bbp subdocument matching an
+    independent recompute from the staged samples, and
+    BatchDetail showed all four values.
+21. Yield and conversion calculator. DONE.
+    Artisan: calculator.py (calculatorDlg) converts
+    temperatures, weights and volumes and calculates yield
+    from a loss percent. Scope: a small calculator card in
+    Settings or on BatchDetail for expected weight out from
+    charge weight and a target loss percent.
+    Built 2026-11-17: a Yield and Conversion Calculator card
+    on BatchDetail, below Metadata (near the batch weights,
+    which is where the numbers belong; Settings was not
+    touched). It is seeded from the staged batch by
+    roastery.batches.calculator_seed, called from
+    detail_startup, so it opens on this batch's charge and
+    out weights (batch 1042 seeds 200 g in, 172 g out, and
+    the reverse loss reads its own 14.0%). The inputs are
+    numeric fields bound bidirectionally to a new Calculator
+    tag folder (the proven tag path; view.custom bindings do
+    not write back in this build), and every readout is an
+    expression tag in that folder, so the math is live with
+    no handler code: ExpectedOutG and ExpectedOutOz (forward
+    yield from charge and target loss percent), ActualLossPct
+    (the reverse, from charge and weight out), TempC from
+    TempF, TempFOut from TempCIn, ConvOz from ConvG and
+    ConvGOut from ConvOzIn. The folder is also declared in
+    setup_roastery_v4_tags.py so a full tag rebuild keeps it.
+    Verified live in verify_roastery_tier3a.py by driving
+    the real inputs: 250 g at 12% gives 220.0 g out, out
+    220 g from 250 g gives 12.0% loss, 212 F is 100.0 C,
+    100 C is 212.0 F, 100 g is 3.53 oz and 10 oz is 283.5 g,
+    in the tags and in the rendered card, at desktop and
+    360px with no overflow.
+
+### Already have (HAVE)
+
+22. Live BT and RoR curves on canvas charts. HAVE.
+    Artisan canvas.py draws temp2 and delta2 live. Roastery:
+    core.build_live_curve and the v4.4 canvas charts, BT and
+    RoR on an elapsed mm:ss axis.
+23. RoR math suite. HAVE.
+    Artisan canvas.py compute_ror and util.py arrayRoR with
+    deltaBTspan, curvefilter, deltaBTfilter, polyfitRoRcalc,
+    optimalSmoothing with Savitzky-Golay, filterDropOuts and
+    RoRlimit clipping. Roastery: core.compute_ror_series and
+    core.ror_params with the same options in SettingsRor,
+    one implementation for live, saved and ghost. Note:
+    Artisan deltaBTsamples is derived from span over sampling
+    interval; Roastery applies the span in seconds against
+    real timestamps, which is the same math, so there is no
+    separate samples setting to build.
+24. Standard and custom events with captured temps. HAVE.
+    Artisan timeindex events and specialevents. Roastery:
+    core.stamp_event and stamp_custom, seven standard events
+    plus Cool, and four named custom events.
+25. Phases, DTR and phase bar targets. HAVE.
+    Artisan canvas.py calcStatistics phase times and ratios.
+    Roastery: PhasesBar, Summary and SettingsTargets phase
+    target seconds and DTR target percent.
+26. Saved batch AUC, basic form. HAVE.
+    Artisan profileAUC. Roastery: batches.curve_auc at save
+    time. The configurable and live form is Tier 1 item 5.
+27. Roast degree from drop temperature. HAVE.
+    Roastery: batches.roast_degree, shown in Summary and Log.
+28. Fan and Heat steppers, traces and press capture. HAVE.
+    Artisan event sliders in events.py, adapted to 1 to 9
+    steppers. Roastery: core.stepper, record_press, the
+    levels strip and batch_events rows.
+29. Single ghost background from a saved batch. HAVE.
+    Artisan background profile, basic form. Roastery:
+    batches.set_background. Extensions are Tier 1 items 1
+    and 2 and Tier 2 items 10 and 11.
+30. Four point target plan and deviation against plan. HAVE.
+    Artisan designer, lite form. Roastery: core.build_overlays
+    and the deviation tile. Extension is Tier 3 item 17.
+31. Roast log CRUD with slide over editor and event time editing. HAVE.
+    Artisan roastlog.py and batches.py, adapted to Postgres
+    named queries. Roastery: batches panel, editor with
+    ordered time validation and phase and DTR recompute.
+32. Artisan .alog import and export, lossless. HAVE.
+    Artisan getProfile, serialize and computed block.
+    Roastery: roastery.artisan import on the Log page and
+    export from BatchDetail, with the artisan subdocument.
+33. Phase Analysis table with offline turning point. HAVE.
+    Roastery: batches._phase_analysis on BatchDetail. The
+    live turning point is Tier 1 item 4, and the table
+    completion is Tier 2 item 7.
+34. Settings in sections, written live to tags. HAVE.
+    Roastery: SettingsPage with Roaster, Targets, RoR,
+    Alarms, Metadata defaults and Custom Events sections.
+35. Shell layout: HUD, docks, tab bar, tiles. HAVE.
+    The Roastery mapping of Artisan LCD readouts (main.py
+    LCD boxes and large LCD windows) to the mobile HUD dock,
+    tiles and bottom tab bar. A separate large readout
+    window is SKIP below as a duplicate of these.
+
+### Skipped (SKIP)
+
+36. ET curve and every ET display toggle. SKIP, single sensor.
+    Artisan temp1 and the toggleETCurve family in main.py
+    need an environment probe. The SR800 has one bean temp
+    probe and no ET probe, so there is nothing to show.
+    Imported ET arrays stay preserved in the artisan
+    subdocument only.
+37. Delta ET (the RoR of ET). SKIP, single sensor.
+    Artisan delta1 in canvas.py is computed from temp1.
+    No ET probe means no delta ET.
+38. ET minus BT area and the paired AUC outputs. SKIP, single sensor.
+    Artisan main.py ts() and profileAUC() return an ET AUC,
+    a BT AUC and the area between ET and BT. Only the BT
+    AUC is buildable, and it is Tier 1 item 5.
+39. MET (maximum ET). SKIP, single sensor.
+    Artisan computed.MET is the maximum temp1 between the
+    turning point and DROP. No ET probe, no MET.
+40. ET projection and background ET and background delta curves. SKIP, single sensor.
+    Artisan canvas.py updateProjection() ET branch and the
+    background delta toggles in main.py all read temp1 or
+    delta1, which do not exist on this roaster.
+41. ET half of curve similarity and of BBP. SKIP, single sensor.
+    Artisan curveSimilarity() returns det and dbt, and the
+    bbp keys carry drop ET values. The BT halves are Tier 2
+    item 10 and Tier 3 item 20; the ET halves need a second
+    probe.
+42. Extra device curves as live channels. SKIP, single sensor in practice.
+    Artisan extratemp1 and extratemp2 channels in atypes.py
+    assume extra temperature devices. Eric has no extra
+    probe hardware; imported extra arrays stay in the
+    artisan subdocument for lossless export only.
+43. PID, ramp and soak, and gain scheduling. SKIP, by design.
+    Artisan pid.py, pid_dialogs.py and the sv and pid keys
+    drive a controlled heater. Eric confirmed the SR800
+    setup has no PID and manual Fan and Heat are the control
+    surface, so no PID appears anywhere in Roastery.
+44. Auto CHARGE and Auto DROP stamping. SKIP, for now.
+    Artisan main.py BTbreak() with autoChargeMode and
+    autoDropMode detects charge and drop from BT breaks.
+    It is BT only, so the sensor is not the blocker; the
+    blocker is trust. A false stamp corrupts phases, DTR
+    and the saved record, and Eric stamps from his phone
+    as the remote control. Revisit only if he asks for it.
+    The suggestion pattern in Tier 2 item 14 is the safe
+    form of automation here.
+45. Flavor wheel and cupping profile scoring. SKIP, out of scope.
+    Artisan wheels.py and cup_profile.py score flavors after
+    the roast. Cupping is a post roast workflow outside a
+    roast time console, as settled in the v2 mapping; the
+    cupping notes text field in Tier 1 item 3 is the capture
+    point.
+46. Green stock, inventory and Artisan Plus. SKIP, separate system.
+    Artisan plus stock, store, blend and schedule fields in
+    atypes.py belong to inventory and production scheduling,
+    not to roast time control and logging on a home roaster.
+47. Energy, BTU and CO2 metering. SKIP, no meter source.
+    Artisan canvas.py calcEnergyuse() and the load and meter
+    keys need configured burner or electric meters. The
+    SR800 setup has no meter feed, so any number would be
+    invented.
+48. Ranking and production reports. SKIP, production feature.
+    Artisan main.py rankingReport() and productionReport()
+    compare batches across a production run. A home roaster
+    gets the same value from Tier 1 item 2 comparison and
+    Tier 3 item 18 single batch export.
+49. Scales, WebLCDs, external programs and device buses. SKIP, hardware not present.
+    Artisan scale.py, weblcds.py, externalprogram hooks and
+    the Modbus, S7 and serial device layers assume hardware
+    Eric does not have attached to the SR800. The WebSocket
+    and simulated sources he does have are already built.
+50. Separate large LCD readout windows. SKIP, duplicate.
+    Artisan main.py largeDeltaLCDs() and largePhasesLCDs()
+    open big readout windows. The HUD dock, tiles and
+    desktop trend layout already cover this need.
+
+### Build order (after the three Tier 1 gaps)
+
+Status 2026-11-17: all six Tier 1 items are built and
+verified live (see the Built notes on items 1 to 6 above and
+scripts/verify_roastery_tier1.py). The order below is the
+record of how they were sequenced. Tier 2 items 7 to 14 are
+also built and verified live (Built notes on items 7 to 14
+above, scripts/verify_roastery_tier2.py, 87 checks). Next:
+transaction groups, then the mastery learning backlog.
+
+Implement Tier 1 items 1, 2 and 3 first, in that order.
+Then, in this exact order:
+
+1. Live turning point detection. Scope: detect and display
+   TP live and store it in the document. Module:
+   roastery.core. Needs: chart changes (marker). No Settings
+   or form changes.
+2. Live AUC with begin, base, target and guide. Scope: live
+   AUC tile, since FC START AUC, guide time readout, saved
+   values aligned to the same math. Modules: roastery.core
+   and roastery.batches. Needs: Settings additions (AUC
+   section fields), chart changes (guide line optional).
+3. Full alarm table. Scope: editable alarm list evaluated
+   in the library, banner and message actions only.
+   Module: roastery.core. Needs: Settings additions (alarm
+   table replaces the lite rows). No chart or form changes.
+4. Phase analytics completion. Scope: TP based dry RoR,
+   per phase AUC, FC START RoR, per phase delta temp and
+   cool phase in the table and document. Module:
+   roastery.batches. Needs: no Settings, chart or form
+   changes; BatchDetail display only.
+5. Loss, yield and density computations. Scope: defects
+   loss, total loss and yield, volume gain, moisture and
+   organic loss, green and roasted density, computed at
+   save and shown in Summary and BatchDetail. Module:
+   roastery.batches, using Tier 1 item 3 form fields.
+   Needs: form and metadata changes (the Tier 1 fields).
+   No Settings or chart changes.
+6. BT projection lines. Scope: dashed linear projection on
+   the live chart, quadratic mode after five minutes.
+   Module: roastery.core. Needs: Settings additions
+   (toggle and mode), chart changes (projection series).
+7. Deviation from background and BT similarity score.
+   Scope: live deviation against the ghost, similarity on
+   BatchDetail. Modules: roastery.core and
+   roastery.batches. Needs: chart changes (none beyond the
+   existing ghost series), no Settings or form changes.
+8. Background playback prompts. Scope: banner prompts at
+   ghost Fan and Heat changes and ghost DROP, with the
+   suggested level. Module: roastery.core. Needs:
+   Settings additions (playback on or off, sound on or
+   off). No chart or form changes.
+9. Auto event suggestions for Dry End and FC START.
+   Scope: prompt on phase temperature crossing, confirmed
+   by the normal buttons. Module: roastery.core. Needs:
+   Settings additions (suggestions on or off per event).
+   No chart or form changes.
+10. Display smoothing for the BT line. Scope: display only
+    smoothing level applied to chart datasets. Module:
+    roastery.core. Needs: Settings additions (level),
+    chart changes (smoothed series source).
+11. Analyzer crosshair readout. Scope: tap or hover values
+    for time, BT, RoR, ghost BT and deviation. Module:
+    roastery.core for the data shaping. Needs: chart
+    changes only.
+12. Curve display options. Scope: width and style for BT,
+    RoR and ghost, RoR fill toggle, marker size. Module:
+    roastery.core for chart dataset and series building.
+    Needs: Settings additions, chart changes.
+13. Phases from background and chart phase bands. Scope:
+    ghost derived phase boundaries and light band shading.
+    Modules: roastery.batches and roastery.core. Needs:
+    Settings additions (source toggle), chart changes.
+14. Full profile designer for the target plan. Scope:
+    editable extra target points with time order checks.
+    Module: roastery.core. Needs: form and metadata
+    changes (target editor), chart changes (plan line
+    already reads the point list).
+15. Statistics summary line under the chart. Scope: phase
+    times and percents in one compact line, live. Module:
+    roastery.core values, view change only. Needs: no
+    Settings or form changes; layout change checked at
+    360px for overlap.
+16. Batch export beyond .alog. Scope: CSV and JSON
+    downloads and a printable summary from BatchDetail.
+    Module: roastery.artisan for the file builders, with
+    roastery.batches supplying the document. Needs: no
+    Settings or chart changes.
+17. Between batch protocol, BT only. Scope: record BT
+    from DROP to the next CHARGE and store the four BBP
+    values on the next batch. Modules: roastery.core and
+    roastery.batches. Needs: form and metadata changes
+    (display fields on BatchDetail only).
+18. Yield and conversion calculator. Scope: expected
+    weight out from charge weight and target loss, plus
+    unit conversions. Module: roastery.batches. Needs:
+    form and metadata changes (a calculator card). No
+    Settings or chart changes.

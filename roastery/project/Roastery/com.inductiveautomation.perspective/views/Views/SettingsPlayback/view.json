@@ -1,0 +1,542 @@
+{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 900,
+      "height": 560
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "root"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-gap-12"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "PlaybackSection"
+        },
+        "props": {
+          "direction": "column",
+          "style": {
+            "classes": "roast-card roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "PlaybackSectionHead"
+            },
+            "props": {
+              "text": "Background Playback",
+              "style": {
+                "classes": "roast-section-title"
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "PlaybackSectionDesc"
+            },
+            "props": {
+              "text": "When a background ghost is loaded, its Fan and Heat changes and its Drop prompt on the Roast page at their elapsed times, Artisan playback style, each exactly once. Prompts only: nothing is applied automatically, Fan and Heat stay manual.",
+              "style": {
+                "classes": "roast-section-desc"
+              }
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "PbRow1"
+            },
+            "props": {
+              "direction": "row",
+              "wrap": "wrap",
+              "style": {
+                "classes": "roast-gap-12"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "PbEnabledField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "PbEnabledFieldCap"
+                    },
+                    "props": {
+                      "text": "Playback prompts on",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.checkbox",
+                    "meta": {
+                      "name": "PbEnabledCheck"
+                    },
+                    "props": {
+                      "selected": false,
+                      "text": "",
+                      "style": {
+                        "classes": "roast-checkbox"
+                      }
+                    },
+                    "propConfig": {
+                      "props.selected": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/PlaybackEnabled",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "190px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "PbSoundField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "PbSoundFieldCap"
+                    },
+                    "props": {
+                      "text": "Beep with prompts",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.checkbox",
+                    "meta": {
+                      "name": "PbSoundCheck"
+                    },
+                    "props": {
+                      "selected": false,
+                      "text": "",
+                      "style": {
+                        "classes": "roast-checkbox"
+                      }
+                    },
+                    "propConfig": {
+                      "props.selected": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/PlaybackSound",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "170px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "PbNoteField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "PbNoteFieldCap"
+                    },
+                    "props": {
+                      "text": "Sound note",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "PbSoundNote"
+                    },
+                    "props": {
+                      "text": "Sound is visual only in this build: the Perspective client has no clean beep API reachable from its scripting layer, so the banner prompt is the signal and this switch is stored for when a sound route exists.",
+                      "style": {
+                        "classes": "roast-note"
+                      }
+                    },
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "0px"
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "320px"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "SuggestSection"
+        },
+        "props": {
+          "direction": "column",
+          "style": {
+            "classes": "roast-card roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "SuggestSectionHead"
+            },
+            "props": {
+              "text": "Event Suggestions",
+              "style": {
+                "classes": "roast-section-title"
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "SuggestSectionDesc"
+            },
+            "props": {
+              "text": "When the live bean temp crosses a phase target temp from the Targets section (Dry End temp, FC temp), the Roast page suggests the event once. Suggestion only: the event is stamped only when you press its normal button, which also clears the suggestion.",
+              "style": {
+                "classes": "roast-section-desc"
+              }
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "SgRow1"
+            },
+            "props": {
+              "direction": "row",
+              "wrap": "wrap",
+              "style": {
+                "classes": "roast-gap-12"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "SgDryField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "SgDryFieldCap"
+                    },
+                    "props": {
+                      "text": "Suggest Dry End",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.checkbox",
+                    "meta": {
+                      "name": "SgDryCheck"
+                    },
+                    "props": {
+                      "selected": false,
+                      "text": "",
+                      "style": {
+                        "classes": "roast-checkbox"
+                      }
+                    },
+                    "propConfig": {
+                      "props.selected": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/SuggestDryEndEnabled",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "170px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "SgFcField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "SgFcFieldCap"
+                    },
+                    "props": {
+                      "text": "Suggest FC Start",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.checkbox",
+                    "meta": {
+                      "name": "SgFcCheck"
+                    },
+                    "props": {
+                      "selected": false,
+                      "text": "",
+                      "style": {
+                        "classes": "roast-checkbox"
+                      }
+                    },
+                    "propConfig": {
+                      "props.selected": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/SuggestFcEnabled",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "170px"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "DisplaySection"
+        },
+        "props": {
+          "direction": "column",
+          "style": {
+            "classes": "roast-card roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "DisplaySectionHead"
+            },
+            "props": {
+              "text": "Display Smoothing",
+              "style": {
+                "classes": "roast-section-title"
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "DisplaySectionDesc"
+            },
+            "props": {
+              "text": "Optional smoothing of the bean temp LINE on the live chart, Artisan smoothETBT style. Display only: stored temps stay raw and the rate of rise is computed from the raw temps exactly as before, at every level.",
+              "style": {
+                "classes": "roast-section-desc"
+              }
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "DsRow1"
+            },
+            "props": {
+              "direction": "row",
+              "wrap": "wrap",
+              "style": {
+                "classes": "roast-gap-12"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "DsLevelField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "DsLevelFieldCap"
+                    },
+                    "props": {
+                      "text": "BT line smoothing level",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.dropdown",
+                    "meta": {
+                      "name": "DispSmoothDropdown"
+                    },
+                    "props": {
+                      "options": [
+                        {
+                          "value": 0,
+                          "label": "0 - Off (raw temps)"
+                        },
+                        {
+                          "value": 1,
+                          "label": "1 - Light"
+                        },
+                        {
+                          "value": 2,
+                          "label": "2"
+                        },
+                        {
+                          "value": 3,
+                          "label": "3 - Medium"
+                        },
+                        {
+                          "value": 4,
+                          "label": "4"
+                        },
+                        {
+                          "value": 5,
+                          "label": "5 - Strongest"
+                        }
+                      ],
+                      "value": 0,
+                      "style": {
+                        "classes": "roast-input"
+                      }
+                    },
+                    "propConfig": {
+                      "props.value": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DisplaySmoothing",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "260px"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

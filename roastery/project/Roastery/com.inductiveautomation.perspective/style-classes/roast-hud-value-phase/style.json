@@ -1,7 +1,7 @@
 {
   "base": {
     "style": {
-      "fontSize": "13px",
+      "fontSize": "12px",
       "fontWeight": "700",
       "color": "var(--label)",
       "fontFamily": "monospace",

@@ -15,14 +15,28 @@
     "pressDs": null,
     "hasPresses": false,
     "analysisDs": null,
-    "dTp": "--"
+    "dTp": "--",
+    "dFcsRor": "--",
+    "dTotalRor": "--",
+    "dCool": "--",
+    "dSimilarity": "--",
+    "dDefectsLoss": "--",
+    "dTotalLoss": "--",
+    "dYield": "--",
+    "dVolumeGain": "--",
+    "dMoistureLoss": "--",
+    "dOrganicLoss": "--",
+    "dGreenDensity": "--",
+    "dRoastedDensity": "--",
+    "dBbp": "",
+    "dStatsLine": ""
   },
   "params": {},
   "propConfig": {},
   "props": {
     "defaultSize": {
       "width": 1440,
-      "height": 1100
+      "height": 1500
     }
   },
   "events": {
@@ -171,6 +185,7 @@
               "direction": "row",
               "justify": "flex-end",
               "alignItems": "center",
+              "wrap": "wrap",
               "style": {
                 "classes": "roast-gap-12"
               }
@@ -244,12 +259,81 @@
                     }
                   }
                 }
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "ExportCsvButton"
+                },
+                "props": {
+                  "text": "Export CSV",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core, roastery.batches\n\troastery.batches.export_csv_download(self)\n"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "ExportJsonButton"
+                },
+                "props": {
+                  "text": "Export JSON",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core, roastery.batches\n\troastery.batches.export_json_download(self)\n"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "PrintSummaryButton"
+                },
+                "props": {
+                  "text": "Print Summary",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core, roastery.batches\n\troastery.batches.export_summary_download(self)\n"
+                      }
+                    }
+                  }
+                }
               }
             ],
             "position": {
               "grow": 0,
               "shrink": 0,
-              "basis": "52px"
+              "basis": "auto"
             }
           },
           {
@@ -699,12 +783,437 @@
                   "shrink": 1,
                   "basis": "0px"
                 }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "DetailStatsLine"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-stats-line"
+                  }
+                },
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "20px"
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "view.custom.dStatsLine"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "DetailAnalyzerStrip"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "DetailAnalyzerControls"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "alignItems": "center",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "DetailAnalyzerCap"
+                        },
+                        "props": {
+                          "text": "Analyzer",
+                          "style": {
+                            "classes": "roast-caption"
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "64px"
+                        }
+                      },
+                      {
+                        "type": "ia.input.button",
+                        "meta": {
+                          "name": "DetailAnalyzerMinus"
+                        },
+                        "props": {
+                          "text": "-10s",
+                          "style": {
+                            "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                          }
+                        },
+                        "events": {
+                          "dom": {
+                            "onClick": {
+                              "scope": "G",
+                              "type": "script",
+                              "config": {
+                                "script": "\timport roastery.core, roastery.batches\n\troastery.batches.detail_analyzer_step(-10)\n"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "DetailAnalyzerTime"
+                        },
+                        "props": {
+                          "text": "--:--",
+                          "style": {
+                            "classes": "roast-value-strong"
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "52px"
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/DetailAnalyzer/TimeText",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.button",
+                        "meta": {
+                          "name": "DetailAnalyzerPlus"
+                        },
+                        "props": {
+                          "text": "+10s",
+                          "style": {
+                            "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                          }
+                        },
+                        "events": {
+                          "dom": {
+                            "onClick": {
+                              "scope": "G",
+                              "type": "script",
+                              "config": {
+                                "script": "\timport roastery.core, roastery.batches\n\troastery.batches.detail_analyzer_step(10)\n"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.button",
+                        "meta": {
+                          "name": "DetailAnalyzerLatest"
+                        },
+                        "props": {
+                          "text": "Latest",
+                          "style": {
+                            "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                          }
+                        },
+                        "events": {
+                          "dom": {
+                            "onClick": {
+                              "scope": "G",
+                              "type": "script",
+                              "config": {
+                                "script": "\timport roastery.core, roastery.batches\n\troastery.batches.detail_analyzer_latest()\n"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "36px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "DetailAnalyzerValues"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "DetailAnalyzerBt"
+                        },
+                        "props": {
+                          "direction": "column",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerBtCap"
+                            },
+                            "props": {
+                              "text": "BT (F)",
+                              "style": {
+                                "classes": "roast-caption"
+                              }
+                            }
+                          },
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerBtVal"
+                            },
+                            "props": {
+                              "text": "--",
+                              "style": {
+                                "classes": "roast-value"
+                              }
+                            },
+                            "propConfig": {
+                              "props.text": {
+                                "binding": {
+                                  "type": "tag",
+                                  "config": {
+                                    "tagPath": "[default]Roastery/DetailAnalyzer/BtText",
+                                    "mode": "direct",
+                                    "bidirectional": false
+                                  },
+                                  "bidirectional": false
+                                }
+                              }
+                            }
+                          }
+                        ],
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "DetailAnalyzerRor"
+                        },
+                        "props": {
+                          "direction": "column",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerRorCap"
+                            },
+                            "props": {
+                              "text": "RoR",
+                              "style": {
+                                "classes": "roast-caption"
+                              }
+                            }
+                          },
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerRorVal"
+                            },
+                            "props": {
+                              "text": "--",
+                              "style": {
+                                "classes": "roast-value"
+                              }
+                            },
+                            "propConfig": {
+                              "props.text": {
+                                "binding": {
+                                  "type": "tag",
+                                  "config": {
+                                    "tagPath": "[default]Roastery/DetailAnalyzer/RorText",
+                                    "mode": "direct",
+                                    "bidirectional": false
+                                  },
+                                  "bidirectional": false
+                                }
+                              }
+                            }
+                          }
+                        ],
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "DetailAnalyzerBg"
+                        },
+                        "props": {
+                          "direction": "column",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerBgCap"
+                            },
+                            "props": {
+                              "text": "Ghost BT (F)",
+                              "style": {
+                                "classes": "roast-caption"
+                              }
+                            }
+                          },
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerBgVal"
+                            },
+                            "props": {
+                              "text": "--",
+                              "style": {
+                                "classes": "roast-value"
+                              }
+                            },
+                            "propConfig": {
+                              "props.text": {
+                                "binding": {
+                                  "type": "tag",
+                                  "config": {
+                                    "tagPath": "[default]Roastery/DetailAnalyzer/BgText",
+                                    "mode": "direct",
+                                    "bidirectional": false
+                                  },
+                                  "bidirectional": false
+                                }
+                              }
+                            }
+                          }
+                        ],
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "DetailAnalyzerDev"
+                        },
+                        "props": {
+                          "direction": "column",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerDevCap"
+                            },
+                            "props": {
+                              "text": "Dev (F)",
+                              "style": {
+                                "classes": "roast-caption"
+                              }
+                            }
+                          },
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerDevVal"
+                            },
+                            "props": {
+                              "text": "--",
+                              "style": {
+                                "classes": "roast-value"
+                              }
+                            },
+                            "propConfig": {
+                              "props.text": {
+                                "binding": {
+                                  "type": "tag",
+                                  "config": {
+                                    "tagPath": "[default]Roastery/DetailAnalyzer/DevText",
+                                    "mode": "direct",
+                                    "bidirectional": false
+                                  },
+                                  "bidirectional": false
+                                }
+                              }
+                            }
+                          }
+                        ],
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "44px"
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "88px"
+                }
               }
             ],
             "position": {
               "grow": 0,
               "shrink": 0,
-              "basis": "430px"
+              "basis": "538px"
             }
           },
           {
@@ -1232,6 +1741,12 @@
                           "header": {
                             "title": "Avg RoR"
                           }
+                        },
+                        {
+                          "field": "auc",
+                          "header": {
+                            "title": "AUC"
+                          }
                         }
                       ],
                       "pager": {
@@ -1317,6 +1832,700 @@
                         }
                       }
                     ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "FcsRor"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "FcsRorCap"
+                        },
+                        "props": {
+                          "text": "RoR at FC start",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "FcsRorVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dFcsRor"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "TotalRor"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "TotalRorCap"
+                        },
+                        "props": {
+                          "text": "Total RoR (TP to drop)",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "TotalRorVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dTotalRor"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "Cool"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CoolCap"
+                        },
+                        "props": {
+                          "text": "Cool phase",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CoolVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dCool"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "Sim"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "SimCap"
+                        },
+                        "props": {
+                          "text": "BT similarity vs ghost",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "SimVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dSimilarity"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "LossHead"
+                    },
+                    "props": {
+                      "text": "Loss, Yield and Density",
+                      "style": {
+                        "classes": "roast-section-title"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "DefLoss"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "DefLossCap"
+                        },
+                        "props": {
+                          "text": "Defects loss",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "DefLossVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dDefectsLoss"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "TotLoss"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "TotLossCap"
+                        },
+                        "props": {
+                          "text": "Total loss",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "TotLossVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dTotalLoss"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "Yield"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "YieldCap"
+                        },
+                        "props": {
+                          "text": "Total yield",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "YieldVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dYield"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "VolGain"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "VolGainCap"
+                        },
+                        "props": {
+                          "text": "Volume gain",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "VolGainVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dVolumeGain"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "MoistLoss"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "MoistLossCap"
+                        },
+                        "props": {
+                          "text": "Moisture loss",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "MoistLossVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dMoistureLoss"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "OrgLoss"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "OrgLossCap"
+                        },
+                        "props": {
+                          "text": "Organic loss",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "OrgLossVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dOrganicLoss"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "GreenDens"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "GreenDensCap"
+                        },
+                        "props": {
+                          "text": "Green density",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "GreenDensVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dGreenDensity"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "RoastDens"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "RoastDensCap"
+                        },
+                        "props": {
+                          "text": "Roasted density",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "RoastDensVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dRoastedDensity"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "BbpLine"
+                    },
+                    "props": {
+                      "text": "",
+                      "style": {
+                        "classes": "roast-note"
+                      }
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "view.custom.dBbp"
+                          }
+                        }
+                      }
+                    }
                   }
                 ],
                 "position": {
@@ -1329,7 +2538,7 @@
             "position": {
               "grow": 0,
               "shrink": 0,
-              "basis": "486px"
+              "basis": "820px"
             }
           },
           {
@@ -1411,6 +2620,949 @@
               "grow": 0,
               "shrink": 0,
               "basis": "300px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "CalcCard"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-card roast-gap-10"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "CalcHead"
+                },
+                "props": {
+                  "text": "Yield and Conversion Calculator",
+                  "style": {
+                    "classes": "roast-section-title"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "CalcNote"
+                },
+                "props": {
+                  "text": "Seeded from this batch weights. Edit any input and the readouts update live (expression tags in the Calculator folder).",
+                  "style": {
+                    "classes": "roast-note-sm"
+                  }
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "CalcRow1"
+                },
+                "props": {
+                  "direction": "row",
+                  "wrap": "wrap",
+                  "style": {
+                    "classes": "roast-gap-12"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcChargeField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcChargeFieldCap"
+                        },
+                        "props": {
+                          "text": "Charge weight (g)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.numeric-entry-field",
+                        "meta": {
+                          "name": "CalcChargeIn"
+                        },
+                        "props": {
+                          "value": 0,
+                          "format": "0.0",
+                          "style": {
+                            "classes": "roast-input"
+                          }
+                        },
+                        "propConfig": {
+                          "props.value": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ChargeG",
+                                "mode": "direct",
+                                "bidirectional": true
+                              },
+                              "bidirectional": true
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcLossField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcLossFieldCap"
+                        },
+                        "props": {
+                          "text": "Target loss (%)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.numeric-entry-field",
+                        "meta": {
+                          "name": "CalcLossIn"
+                        },
+                        "props": {
+                          "value": 0,
+                          "format": "0.0",
+                          "style": {
+                            "classes": "roast-input"
+                          }
+                        },
+                        "propConfig": {
+                          "props.value": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/LossPct",
+                                "mode": "direct",
+                                "bidirectional": true
+                              },
+                              "bidirectional": true
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcExpectedField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcExpectedFieldCap"
+                        },
+                        "props": {
+                          "text": "Expected out (g)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcExpectedVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ExpectedOutG",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0.0"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcExpectedOzField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcExpectedOzFieldCap"
+                        },
+                        "props": {
+                          "text": "Expected out (oz)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcExpectedOzVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ExpectedOutOz",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0.00"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "CalcRow2"
+                },
+                "props": {
+                  "direction": "row",
+                  "wrap": "wrap",
+                  "style": {
+                    "classes": "roast-gap-12"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcOutField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcOutFieldCap"
+                        },
+                        "props": {
+                          "text": "Weight out (g)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.numeric-entry-field",
+                        "meta": {
+                          "name": "CalcOutIn"
+                        },
+                        "props": {
+                          "value": 0,
+                          "format": "0.0",
+                          "style": {
+                            "classes": "roast-input"
+                          }
+                        },
+                        "propConfig": {
+                          "props.value": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/OutG",
+                                "mode": "direct",
+                                "bidirectional": true
+                              },
+                              "bidirectional": true
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcActualLossField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcActualLossFieldCap"
+                        },
+                        "props": {
+                          "text": "Loss from out (%)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcActualLossVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ActualLossPct",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0.0"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcTempFField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcTempFFieldCap"
+                        },
+                        "props": {
+                          "text": "Temp (F)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.numeric-entry-field",
+                        "meta": {
+                          "name": "CalcTempFIn"
+                        },
+                        "props": {
+                          "value": 0,
+                          "format": "0.0",
+                          "style": {
+                            "classes": "roast-input"
+                          }
+                        },
+                        "propConfig": {
+                          "props.value": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/TempF",
+                                "mode": "direct",
+                                "bidirectional": true
+                              },
+                              "bidirectional": true
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcTempCField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcTempCFieldCap"
+                        },
+                        "props": {
+                          "text": "Temp (C)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcTempCVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/TempC",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0.0"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "CalcRow3"
+                },
+                "props": {
+                  "direction": "row",
+                  "wrap": "wrap",
+                  "style": {
+                    "classes": "roast-gap-12"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcTempCInField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcTempCInFieldCap"
+                        },
+                        "props": {
+                          "text": "Temp (C) in",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.numeric-entry-field",
+                        "meta": {
+                          "name": "CalcTempCInIn"
+                        },
+                        "props": {
+                          "value": 0,
+                          "format": "0.0",
+                          "style": {
+                            "classes": "roast-input"
+                          }
+                        },
+                        "propConfig": {
+                          "props.value": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/TempCIn",
+                                "mode": "direct",
+                                "bidirectional": true
+                              },
+                              "bidirectional": true
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcTempFOutField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcTempFOutFieldCap"
+                        },
+                        "props": {
+                          "text": "Temp (F) out",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcTempFOutVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/TempFOut",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0.0"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcConvGField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcConvGFieldCap"
+                        },
+                        "props": {
+                          "text": "Weight (g)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.numeric-entry-field",
+                        "meta": {
+                          "name": "CalcConvGIn"
+                        },
+                        "props": {
+                          "value": 0,
+                          "format": "0.0",
+                          "style": {
+                            "classes": "roast-input"
+                          }
+                        },
+                        "propConfig": {
+                          "props.value": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ConvG",
+                                "mode": "direct",
+                                "bidirectional": true
+                              },
+                              "bidirectional": true
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcConvOzField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcConvOzFieldCap"
+                        },
+                        "props": {
+                          "text": "Weight (oz)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcConvOzVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ConvOz",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0.00"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "CalcRow4"
+                },
+                "props": {
+                  "direction": "row",
+                  "wrap": "wrap",
+                  "style": {
+                    "classes": "roast-gap-12"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcConvOzInField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcConvOzInFieldCap"
+                        },
+                        "props": {
+                          "text": "Weight (oz) in",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.numeric-entry-field",
+                        "meta": {
+                          "name": "CalcConvOzInIn"
+                        },
+                        "props": {
+                          "value": 0,
+                          "format": "0.00",
+                          "style": {
+                            "classes": "roast-input"
+                          }
+                        },
+                        "propConfig": {
+                          "props.value": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ConvOzIn",
+                                "mode": "direct",
+                                "bidirectional": true
+                              },
+                              "bidirectional": true
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcConvGOutField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcConvGOutFieldCap"
+                        },
+                        "props": {
+                          "text": "Weight (g) out",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcConvGOutVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ConvGOut",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0.0"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  }
+                ]
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
             }
           },
           {

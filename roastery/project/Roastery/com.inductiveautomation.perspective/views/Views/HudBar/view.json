@@ -181,7 +181,7 @@
         "position": {
           "grow": 0,
           "shrink": 0,
-          "basis": "52px"
+          "basis": "46px"
         }
       },
       {
@@ -244,7 +244,7 @@
         "position": {
           "grow": 0,
           "shrink": 0,
-          "basis": "48px"
+          "basis": "42px"
         }
       },
       {
@@ -307,7 +307,7 @@
         "position": {
           "grow": 0,
           "shrink": 0,
-          "basis": "60px"
+          "basis": "58px"
         }
       },
       {

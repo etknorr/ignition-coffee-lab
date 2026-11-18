@@ -1,0 +1,187 @@
+{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 900,
+      "height": 220
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "ProjectionSection"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-card roast-gap-10"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "ProjectionSectionHead"
+        },
+        "props": {
+          "text": "Projection",
+          "style": {
+            "classes": "roast-section-title"
+          }
+        }
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "ProjectionSectionDesc"
+        },
+        "props": {
+          "text": "Where the bean curve is heading, Artisan style: a dashed projection line on the live chart extending two minutes forward from the current bean temp and rate of rise. BT only.",
+          "style": {
+            "classes": "roast-section-desc"
+          }
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "ProjRow1"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "ProjEnabledField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "ProjEnabledFieldCap"
+                },
+                "props": {
+                  "text": "Projection on",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.checkbox",
+                "meta": {
+                  "name": "ProjEnabledCheck"
+                },
+                "props": {
+                  "selected": false,
+                  "text": "",
+                  "style": {
+                    "classes": "roast-checkbox"
+                  }
+                },
+                "propConfig": {
+                  "props.selected": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/ProjectionEnabled",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "160px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "ProjModeField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "ProjModeFieldCap"
+                },
+                "props": {
+                  "text": "Mode",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.dropdown",
+                "meta": {
+                  "name": "ProjModeDropdown"
+                },
+                "props": {
+                  "options": [
+                    {
+                      "value": "Linear",
+                      "label": "Linear (current RoR)"
+                    },
+                    {
+                      "value": "Quadratic",
+                      "label": "Quadratic (RoR trend)"
+                    }
+                  ],
+                  "value": "Linear",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/ProjectionMode",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "260px"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

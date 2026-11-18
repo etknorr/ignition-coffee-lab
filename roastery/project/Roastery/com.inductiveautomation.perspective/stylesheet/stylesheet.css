@@ -37,6 +37,13 @@
    here, keyed to the same class name. */
 .psc-roast-hidden { display: none !important; }
 
+/* Statistics summary line (Tier 3 item 19): single line, never
+   wraps, truncates with an ellipsis instead of pushing the
+   layout at 360px (the class compiler carries these text
+   properties, and the rule here makes the intent explicit). */
+.psc-roast-stats-line { white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+
 /* Phase bar segments size by percentage widths that must sum
    to the bar. Two sizing traps, both proven at 360px on
    2026-11-13: content-box sizing added the segments' padding

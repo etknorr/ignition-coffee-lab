@@ -1,11 +1,26 @@
 {
-  "custom": {},
+  "custom": {
+    "targetPlanDs": null,
+    "targetPlanCount": 0,
+    "targetPlanNote": ""
+  },
   "params": {},
   "propConfig": {},
   "props": {
     "defaultSize": {
       "width": 900,
-      "height": 300
+      "height": 760
+    }
+  },
+  "events": {
+    "system": {
+      "onStartup": {
+        "scope": "G",
+        "type": "script",
+        "config": {
+          "script": "\timport roastery.core\n\troastery.core.targets_startup(self)\n"
+        }
+      }
     }
   },
   "root": {
@@ -712,6 +727,530 @@
               "grow": 1,
               "shrink": 1,
               "basis": "180px"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "DesignerHead"
+        },
+        "props": {
+          "text": "Target Plan Designer",
+          "style": {
+            "classes": "roast-section-title"
+          }
+        }
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "DesignerDesc"
+        },
+        "props": {
+          "text": "Edit the plan point by point. Times must be strictly increasing and the first point stays at 0 sec; an out of order save is rejected and nothing changes. The four fields above seed the default plan and the Reset button returns to them.",
+          "style": {
+            "classes": "roast-section-desc"
+          }
+        }
+      },
+      {
+        "type": "ia.display.table",
+        "meta": {
+          "name": "TargetPlanTable"
+        },
+        "props": {
+          "data": [],
+          "columns": [
+            {
+              "field": "idx",
+              "header": {
+                "title": "#"
+              },
+              "width": 36
+            },
+            {
+              "field": "timeSec",
+              "header": {
+                "title": "Time (sec)"
+              },
+              "width": 92
+            },
+            {
+              "field": "timeText",
+              "header": {
+                "title": "Time"
+              },
+              "width": 70
+            },
+            {
+              "field": "tempF",
+              "header": {
+                "title": "Temp (F)"
+              },
+              "width": 92
+            }
+          ],
+          "pager": {
+            "enabled": false
+          },
+          "rows": {
+            "height": 32
+          },
+          "header": {
+            "height": 32,
+            "style": {
+              "classes": "roast-table-header"
+            }
+          },
+          "style": {
+            "classes": "roast-table-sm"
+          }
+        },
+        "propConfig": {
+          "props.data": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "view.custom.targetPlanDs"
+              }
+            }
+          }
+        },
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "190px"
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "TargetLoadRow"
+        },
+        "props": {
+          "direction": "row",
+          "alignItems": "flex-end",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "TpIdxField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "TpIdxFieldCap"
+                },
+                "props": {
+                  "text": "Edit point",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.dropdown",
+                "meta": {
+                  "name": "TpIdxDrop"
+                },
+                "props": {
+                  "options": [
+                    {
+                      "value": 0,
+                      "label": "Point 1"
+                    },
+                    {
+                      "value": 1,
+                      "label": "Point 2"
+                    },
+                    {
+                      "value": 2,
+                      "label": "Point 3"
+                    },
+                    {
+                      "value": 3,
+                      "label": "Point 4"
+                    },
+                    {
+                      "value": 4,
+                      "label": "Point 5"
+                    },
+                    {
+                      "value": 5,
+                      "label": "Point 6"
+                    },
+                    {
+                      "value": 6,
+                      "label": "Point 7"
+                    },
+                    {
+                      "value": 7,
+                      "label": "Point 8"
+                    },
+                    {
+                      "value": 8,
+                      "label": "Point 9"
+                    },
+                    {
+                      "value": 9,
+                      "label": "Point 10"
+                    },
+                    {
+                      "value": 10,
+                      "label": "Point 11"
+                    },
+                    {
+                      "value": 11,
+                      "label": "Point 12"
+                    }
+                  ],
+                  "value": 0,
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/TargetEditor/Idx",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "150px"
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "TpLoadButton"
+            },
+            "props": {
+              "text": "Load Point",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.target_editor_load_idx(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "TpCountLabel"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-note"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "'Points in plan: ' + {view.custom.targetPlanCount}"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "TpEdRow"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "TpTimeField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "TpTimeFieldCap"
+                },
+                "props": {
+                  "text": "Point time (sec)",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.numeric-entry-field",
+                "meta": {
+                  "name": "TpTimeNum"
+                },
+                "props": {
+                  "value": 0,
+                  "format": "0",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/TargetEditor/TimeSec",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "160px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "TpTempField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "TpTempFieldCap"
+                },
+                "props": {
+                  "text": "Point temp (F)",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.numeric-entry-field",
+                "meta": {
+                  "name": "TpTempNum"
+                },
+                "props": {
+                  "value": 0,
+                  "format": "0.0",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/TargetEditor/TempF",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "160px"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "TpBtnRow"
+        },
+        "props": {
+          "direction": "row",
+          "alignItems": "center",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "TpSaveButton"
+            },
+            "props": {
+              "text": "Save Point",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-primary"
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.target_editor_save(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "TpAddButton"
+            },
+            "props": {
+              "text": "Add Point",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-green"
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.target_editor_add(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "TpDeleteButton"
+            },
+            "props": {
+              "text": "Delete Point",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-charge"
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.target_editor_delete(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "TpResetButton"
+            },
+            "props": {
+              "text": "Reset to Four Points",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.target_plan_reset(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "TpNoteLabel"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-note-success"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.targetPlanNote"
+                  }
+                }
+              }
             }
           }
         ]

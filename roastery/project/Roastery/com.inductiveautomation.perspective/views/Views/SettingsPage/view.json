@@ -118,6 +118,66 @@
           {
             "type": "ia.display.view",
             "meta": {
+              "name": "SettingsAucEmbed"
+            },
+            "props": {
+              "path": "Views/SettingsAuc",
+              "params": {}
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "SettingsProjectionEmbed"
+            },
+            "props": {
+              "path": "Views/SettingsProjection",
+              "params": {}
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "SettingsPlaybackEmbed"
+            },
+            "props": {
+              "path": "Views/SettingsPlayback",
+              "params": {}
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "SettingsDisplayEmbed"
+            },
+            "props": {
+              "path": "Views/SettingsDisplay",
+              "params": {}
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
               "name": "SettingsAlarmsEmbed"
             },
             "props": {

@@ -1,0 +1,434 @@
+{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 900,
+      "height": 300
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "AucSection"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-card roast-gap-10"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "AucSectionHead"
+        },
+        "props": {
+          "text": "AUC",
+          "style": {
+            "classes": "roast-section-title"
+          }
+        }
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "AucSectionDesc"
+        },
+        "props": {
+          "text": "Area under the curve, Artisan style: the integral of bean temp above the base temp from the begin event, in F min (Artisan works in C min; its 640 C min default target equals 1152 F min here). The guide projects when the target is reached at the current rate of rise and shows in the Roast summary.",
+          "style": {
+            "classes": "roast-section-desc"
+          }
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "AucRow1"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AucBeginField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AucBeginFieldCap"
+                },
+                "props": {
+                  "text": "Begin event",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.dropdown",
+                "meta": {
+                  "name": "AucBeginDropdown"
+                },
+                "props": {
+                  "options": [
+                    {
+                      "value": "Charge",
+                      "label": "Charge"
+                    },
+                    {
+                      "value": "TP",
+                      "label": "Turning point"
+                    },
+                    {
+                      "value": "Dry End",
+                      "label": "Dry end"
+                    },
+                    {
+                      "value": "FC Start",
+                      "label": "FC start"
+                    }
+                  ],
+                  "value": "Charge",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/AucBegin",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "220px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AucBaseField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AucBaseFieldCap"
+                },
+                "props": {
+                  "text": "Base temp (F)",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.numeric-entry-field",
+                "meta": {
+                  "name": "AucBaseNum"
+                },
+                "props": {
+                  "value": 0,
+                  "format": "0",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/AucBaseTempF",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "180px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AucBaseEvField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AucBaseEvFieldCap"
+                },
+                "props": {
+                  "text": "Base from begin event temp",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.checkbox",
+                "meta": {
+                  "name": "AucBaseEvCheck"
+                },
+                "props": {
+                  "selected": false,
+                  "text": "",
+                  "style": {
+                    "classes": "roast-checkbox"
+                  }
+                },
+                "propConfig": {
+                  "props.selected": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/AucBaseFromEvent",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "230px"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "AucRow2"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AucTargetField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AucTargetFieldCap"
+                },
+                "props": {
+                  "text": "Target (F min)",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.numeric-entry-field",
+                "meta": {
+                  "name": "AucTargetNum"
+                },
+                "props": {
+                  "value": 0,
+                  "format": "0",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/AucTargetFMin",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "180px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AucGuideField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AucGuideFieldCap"
+                },
+                "props": {
+                  "text": "Guide (projection)",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.checkbox",
+                "meta": {
+                  "name": "AucGuideCheck"
+                },
+                "props": {
+                  "selected": false,
+                  "text": "",
+                  "style": {
+                    "classes": "roast-checkbox"
+                  }
+                },
+                "propConfig": {
+                  "props.selected": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/AucGuideEnabled",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "200px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AucLiveField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AucLiveFieldCap"
+                },
+                "props": {
+                  "text": "Live readout",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AucLive"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-value"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "'AUC now: ' + numberFormat({[default]Roastery/CurrentBatch/AucLiveFMin}, '0') + ' F min - since FC ' + numberFormat({[default]Roastery/CurrentBatch/AucSinceFcFMin}, '0') + ' F min'"
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "320px"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

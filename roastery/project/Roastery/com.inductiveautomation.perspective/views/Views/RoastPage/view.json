@@ -4,7 +4,9 @@
     "clockCaption": "ROAST TIME",
     "deviationText": "--",
     "phaseText": "Pre-charge",
-    "alarmText": ""
+    "alarmText": "",
+    "bgNote": "",
+    "promptText": ""
   },
   "params": {},
   "propConfig": {
@@ -26,10 +28,13 @@
     },
     "custom.deviationText": {
       "binding": {
-        "type": "expr",
+        "type": "tag",
         "config": {
-          "expression": "if({[default]Roastery/CurrentBatch/State} != 'Roasting', '--', numberFormat({[default]Roastery/CurrentBatch/BeanTempF} - (if(((now() - {[default]Roastery/CurrentBatch/StartTime}) / 1000) <= {[default]Roastery/CurrentBatch/TargetDryEndSec}, {[default]Roastery/CurrentBatch/TargetChargeTempF} + ({[default]Roastery/CurrentBatch/TargetDryEndTempF} - {[default]Roastery/CurrentBatch/TargetChargeTempF}) * ((now() - {[default]Roastery/CurrentBatch/StartTime}) / 1000) / {[default]Roastery/CurrentBatch/TargetDryEndSec}, if(((now() - {[default]Roastery/CurrentBatch/StartTime}) / 1000) <= {[default]Roastery/CurrentBatch/TargetFCSec}, {[default]Roastery/CurrentBatch/TargetDryEndTempF} + ({[default]Roastery/CurrentBatch/TargetFCTempF} - {[default]Roastery/CurrentBatch/TargetDryEndTempF}) * (((now() - {[default]Roastery/CurrentBatch/StartTime}) / 1000) - {[default]Roastery/CurrentBatch/TargetDryEndSec}) / ({[default]Roastery/CurrentBatch/TargetFCSec} - {[default]Roastery/CurrentBatch/TargetDryEndSec}), if(((now() - {[default]Roastery/CurrentBatch/StartTime}) / 1000) <= {[default]Roastery/CurrentBatch/TargetDropSec}, {[default]Roastery/CurrentBatch/TargetFCTempF} + ({[default]Roastery/CurrentBatch/TargetDropTempF} - {[default]Roastery/CurrentBatch/TargetFCTempF}) * (((now() - {[default]Roastery/CurrentBatch/StartTime}) / 1000) - {[default]Roastery/CurrentBatch/TargetFCSec}) / ({[default]Roastery/CurrentBatch/TargetDropSec} - {[default]Roastery/CurrentBatch/TargetFCSec}), {[default]Roastery/CurrentBatch/TargetDropTempF})))), '+0.0;-0.0') + ' F')"
-        }
+          "tagPath": "[default]Roastery/CurrentBatch/PlanDeviationText",
+          "mode": "direct",
+          "bidirectional": false
+        },
+        "bidirectional": false
       }
     },
     "custom.phaseText": {
@@ -40,12 +45,23 @@
         }
       }
     },
-    "custom.alarmText": {
+    "custom.promptText": {
       "binding": {
         "type": "expr",
         "config": {
-          "expression": "if({[default]Roastery/CurrentBatch/AlarmHighTempEnabled} && {[default]Roastery/CurrentBatch/BeanTempF} >= {[default]Roastery/CurrentBatch/AlarmHighTempF}, {[default]Roastery/CurrentBatch/AlarmHighTempMsg} + ' -- now ' + numberFormat({[default]Roastery/CurrentBatch/BeanTempF}, '0') + ' F', if({[default]Roastery/CurrentBatch/AlarmDropEnabled} && {[default]Roastery/CurrentBatch/State} = 'Roasting' && {[default]Roastery/CurrentBatch/BeanTempF} >= {[default]Roastery/CurrentBatch/TargetDropTempF} - {[default]Roastery/CurrentBatch/AlarmDropDeltaF}, 'Drop approaching -- target ' + numberFormat({[default]Roastery/CurrentBatch/TargetDropTempF}, '0') + ' F', if(({[default]Roastery/CurrentBatch/AlarmFCWatchEnabled} && {[default]Roastery/CurrentBatch/State} = 'Roasting' && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} < 0 && ((now() - {[default]Roastery/CurrentBatch/StartTime}) / 1000) >= ({[default]Roastery/CurrentBatch/TargetFCSec} - {[default]Roastery/CurrentBatch/AlarmFCWindowSec}) && ((now() - {[default]Roastery/CurrentBatch/StartTime}) / 1000) <= ({[default]Roastery/CurrentBatch/TargetFCSec} + {[default]Roastery/CurrentBatch/AlarmFCWindowSec})), 'First crack watch -- listen for cracks', '')))"
+          "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive}, {[default]Roastery/CurrentBatch/PlaybackText}, if({[default]Roastery/CurrentBatch/SuggestionActive}, {[default]Roastery/CurrentBatch/SuggestionText}, ''))"
         }
+      }
+    },
+    "custom.alarmText": {
+      "binding": {
+        "type": "tag",
+        "config": {
+          "tagPath": "[default]Roastery/CurrentBatch/AlarmText",
+          "mode": "direct",
+          "bidirectional": false
+        },
+        "bidirectional": false
       }
     }
   },
@@ -389,7 +405,97 @@
                 "binding": {
                   "type": "expr",
                   "config": {
-                    "expression": "if(({[default]Roastery/CurrentBatch/AlarmHighTempEnabled} && {[default]Roastery/CurrentBatch/BeanTempF} >= {[default]Roastery/CurrentBatch/AlarmHighTempF}) || ({[default]Roastery/CurrentBatch/AlarmDropEnabled} && {[default]Roastery/CurrentBatch/State} = 'Roasting' && {[default]Roastery/CurrentBatch/BeanTempF} >= {[default]Roastery/CurrentBatch/TargetDropTempF} - {[default]Roastery/CurrentBatch/AlarmDropDeltaF}) || ({[default]Roastery/CurrentBatch/AlarmFCWatchEnabled} && {[default]Roastery/CurrentBatch/State} = 'Roasting' && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} < 0 && ((now() - {[default]Roastery/CurrentBatch/StartTime}) / 1000) >= ({[default]Roastery/CurrentBatch/TargetFCSec} - {[default]Roastery/CurrentBatch/AlarmFCWindowSec}) && ((now() - {[default]Roastery/CurrentBatch/StartTime}) / 1000) <= ({[default]Roastery/CurrentBatch/TargetFCSec} + {[default]Roastery/CurrentBatch/AlarmFCWindowSec})), '#991b1b', 'rgba(0,0,0,0)')"
+                    "expression": "if({[default]Roastery/CurrentBatch/AlarmActive}, '#991b1b', 'rgba(0,0,0,0)')"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "PromptStrip"
+            },
+            "props": {
+              "direction": "row",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-banner"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "PromptStripText"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-banner-text"
+                  }
+                },
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "0px"
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "view.custom.promptText"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "PromptStripDismiss"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive} || {[default]Roastery/CurrentBatch/SuggestionActive}, 'Dismiss', '')"
+                      }
+                    }
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core, roastery.batches\n\troastery.core.dismiss_prompt()\n"
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "38px"
+            },
+            "propConfig": {
+              "props.style.backgroundColor": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive}, '#92400e', if({[default]Roastery/CurrentBatch/SuggestionActive}, '#1e40af', 'rgba(0,0,0,0)'))"
                   }
                 }
               }
@@ -484,6 +590,118 @@
                         }
                       },
                       {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "BgRow"
+                        },
+                        "props": {
+                          "direction": "row",
+                          "alignItems": "center",
+                          "wrap": "wrap",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "BgFileLabel"
+                            },
+                            "props": {
+                              "text": "Background .alog",
+                              "style": {
+                                "classes": "roast-note"
+                              }
+                            },
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "104px"
+                            }
+                          },
+                          {
+                            "type": "ia.input.fileupload",
+                            "meta": {
+                              "name": "BgUpload"
+                            },
+                            "props": {
+                              "maxUploads": 1,
+                              "supportedFileTypes": [
+                                "alog"
+                              ],
+                              "fileSizeLimit": 5
+                            },
+                            "events": {
+                              "component": {
+                                "onFileReceived": {
+                                  "scope": "G",
+                                  "type": "script",
+                                  "config": {
+                                    "script": "\timport roastery.artisan\n\troastery.artisan.stage_background_upload(self, event)\n"
+                                  }
+                                }
+                              }
+                            },
+                            "position": {
+                              "grow": 0,
+                              "shrink": 1,
+                              "basis": "170px"
+                            }
+                          },
+                          {
+                            "type": "ia.input.button",
+                            "meta": {
+                              "name": "BgClearButton"
+                            },
+                            "props": {
+                              "text": "Clear ghost",
+                              "style": {
+                                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                              }
+                            },
+                            "events": {
+                              "dom": {
+                                "onClick": {
+                                  "scope": "G",
+                                  "type": "script",
+                                  "config": {
+                                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.clear_background()\n"
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "BgNote"
+                            },
+                            "props": {
+                              "text": "",
+                              "style": {
+                                "classes": "roast-note"
+                              }
+                            },
+                            "position": {
+                              "grow": 1,
+                              "shrink": 1,
+                              "basis": "0px"
+                            },
+                            "propConfig": {
+                              "props.text": {
+                                "binding": {
+                                  "type": "property",
+                                  "config": {
+                                    "path": "view.custom.bgNote"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      {
                         "type": "ia.canvas-charts.line",
                         "meta": {
                           "name": "RoastChart"
@@ -505,11 +723,16 @@
                             },
                             "backgroundColor": "",
                             "colorPalette": [
+                              "#eab308",
+                              "#f97316",
+                              "#dc2626",
+                              "#0284c7",
                               "#64748b",
                               "#64748b",
                               "#94a3b8",
                               "#3b82f6",
-                              "#14b8a6"
+                              "#14b8a6",
+                              "#f59e0b"
                             ]
                           },
                           "axisPointer": {
@@ -535,6 +758,298 @@
                           },
                           "liveData": false,
                           "series": [
+                            {
+                              "advanced": {
+                                "connectNulls": false,
+                                "step": "",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 0
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Drying",
+                              "line": {
+                                "type": "solid",
+                                "width": 0,
+                                "color": "#eab308"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": false,
+                              "value": "bandDry",
+                              "visible": true,
+                              "area": {
+                                "fillStyle": "solid",
+                                "color": "#eab308",
+                                "opacity": 0.12,
+                                "gradientMode": "fade",
+                                "gradientStart": "#eab308",
+                                "gradientEnd": ""
+                              }
+                            },
+                            {
+                              "advanced": {
+                                "connectNulls": false,
+                                "step": "",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 0
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Maillard",
+                              "line": {
+                                "type": "solid",
+                                "width": 0,
+                                "color": "#f97316"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": false,
+                              "value": "bandMai",
+                              "visible": true,
+                              "area": {
+                                "fillStyle": "solid",
+                                "color": "#f97316",
+                                "opacity": 0.12,
+                                "gradientMode": "fade",
+                                "gradientStart": "#f97316",
+                                "gradientEnd": ""
+                              }
+                            },
+                            {
+                              "advanced": {
+                                "connectNulls": false,
+                                "step": "",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 0
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Development",
+                              "line": {
+                                "type": "solid",
+                                "width": 0,
+                                "color": "#dc2626"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": false,
+                              "value": "bandDev",
+                              "visible": true,
+                              "area": {
+                                "fillStyle": "solid",
+                                "color": "#dc2626",
+                                "opacity": 0.12,
+                                "gradientMode": "fade",
+                                "gradientStart": "#dc2626",
+                                "gradientEnd": ""
+                              }
+                            },
+                            {
+                              "advanced": {
+                                "connectNulls": false,
+                                "step": "",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 0
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Cooling",
+                              "line": {
+                                "type": "solid",
+                                "width": 0,
+                                "color": "#0284c7"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": false,
+                              "value": "bandCool",
+                              "visible": true,
+                              "area": {
+                                "fillStyle": "solid",
+                                "color": "#0284c7",
+                                "opacity": 0.12,
+                                "gradientMode": "fade",
+                                "gradientStart": "#0284c7",
+                                "gradientEnd": ""
+                              }
+                            },
                             {
                               "advanced": {
                                 "connectNulls": true,
@@ -858,6 +1373,79 @@
                               },
                               "smooth": true,
                               "value": "ror",
+                              "visible": true,
+                              "area": {
+                                "fillStyle": "solid",
+                                "color": "#14b8a6",
+                                "opacity": 0.0,
+                                "gradientMode": "fade",
+                                "gradientStart": "#14b8a6",
+                                "gradientEnd": ""
+                              }
+                            },
+                            {
+                              "advanced": {
+                                "connectNulls": true,
+                                "step": "",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 0
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Projection",
+                              "line": {
+                                "type": "dashed",
+                                "width": 2,
+                                "color": "#f59e0b"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": true,
+                              "value": "proj",
                               "visible": true
                             }
                           ],
@@ -1091,7 +1679,7 @@
                               "bidirectional": false
                             }
                           },
-                          "props.series[3].referenceLines.items": {
+                          "props.series[7].referenceLines.items": {
                             "binding": {
                               "type": "tag",
                               "config": {
@@ -1107,12 +1695,544 @@
                                 }
                               ]
                             }
+                          },
+                          "props.series[7].line.width": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispBtWidth",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[7].line.type": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispBtStyle",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[8].line.width": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispRorWidth",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[8].line.type": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispRorStyle",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[4].line.width": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispGhostWidth",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[4].line.type": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispGhostStyle",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[5].line.width": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispGhostWidth",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[5].line.type": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispGhostStyle",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[8].area.opacity": {
+                            "binding": {
+                              "type": "expr",
+                              "config": {
+                                "expression": "if({[default]Roastery/CurrentBatch/DispRorFill}, 0.22, 0.0)"
+                              }
+                            }
+                          },
+                          "props.series[7].referenceLines.endpoints.points[0].size": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispMarkerSize",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
                           }
                         },
                         "position": {
                           "grow": 1,
                           "shrink": 1,
                           "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "StatsLine"
+                        },
+                        "props": {
+                          "text": "",
+                          "style": {
+                            "classes": "roast-stats-line"
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "20px"
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "expr",
+                              "config": {
+                                "expression": "'Dry ' + if({[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/DryEndElapsedSec} / 60), '0') + ':' + numberFormat({[default]Roastery/CurrentBatch/DryEndElapsedSec} % 60, '00'), '--:--') + ' ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0, {[default]Roastery/CurrentBatch/DryEndElapsedSec} * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) * 100.0 / if((if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})) > 0, (if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), 1)), '0') + '% \u00b7 ' + 'Mai ' + if({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0 && {[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, numberFormat(floor(({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) / 60), '0') + ':' + numberFormat(({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) % 60, '00'), '--:--') + ' ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) * 100.0 / if((if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})) > 0, (if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), 1)), '0') + '% \u00b7 ' + 'Dev ' + if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, numberFormat(floor(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) / 60), '0') + ':' + numberFormat(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) % 60, '00'), '--:--') + ' ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec}) * 100.0 / if((if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})) > 0, (if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), 1)), '0') + '% \u00b7 ' + 'DTR ' + if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, numberFormat(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, '0') + '%', '--')"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "AnalyzerStrip"
+                        },
+                        "props": {
+                          "direction": "column",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.container.flex",
+                            "meta": {
+                              "name": "AnalyzerControls"
+                            },
+                            "props": {
+                              "direction": "row",
+                              "alignItems": "center",
+                              "style": {
+                                "classes": "roast-gap-8"
+                              }
+                            },
+                            "children": [
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerCap"
+                                },
+                                "props": {
+                                  "text": "Analyzer",
+                                  "style": {
+                                    "classes": "roast-caption"
+                                  }
+                                },
+                                "position": {
+                                  "grow": 0,
+                                  "shrink": 0,
+                                  "basis": "64px"
+                                }
+                              },
+                              {
+                                "type": "ia.input.button",
+                                "meta": {
+                                  "name": "AnalyzerMinus"
+                                },
+                                "props": {
+                                  "text": "-10s",
+                                  "style": {
+                                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                                  }
+                                },
+                                "events": {
+                                  "dom": {
+                                    "onClick": {
+                                      "scope": "G",
+                                      "type": "script",
+                                      "config": {
+                                        "script": "\timport roastery.core, roastery.batches\n\troastery.core.analyzer_step(-10)\n"
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerTime"
+                                },
+                                "props": {
+                                  "text": "--:--",
+                                  "style": {
+                                    "classes": "roast-value-strong"
+                                  }
+                                },
+                                "position": {
+                                  "grow": 0,
+                                  "shrink": 0,
+                                  "basis": "52px"
+                                },
+                                "propConfig": {
+                                  "props.text": {
+                                    "binding": {
+                                      "type": "tag",
+                                      "config": {
+                                        "tagPath": "[default]Roastery/CurrentBatch/AnalyzerTimeText",
+                                        "mode": "direct",
+                                        "bidirectional": false
+                                      },
+                                      "bidirectional": false
+                                    }
+                                  }
+                                }
+                              },
+                              {
+                                "type": "ia.input.button",
+                                "meta": {
+                                  "name": "AnalyzerPlus"
+                                },
+                                "props": {
+                                  "text": "+10s",
+                                  "style": {
+                                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                                  }
+                                },
+                                "events": {
+                                  "dom": {
+                                    "onClick": {
+                                      "scope": "G",
+                                      "type": "script",
+                                      "config": {
+                                        "script": "\timport roastery.core, roastery.batches\n\troastery.core.analyzer_step(10)\n"
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              {
+                                "type": "ia.input.button",
+                                "meta": {
+                                  "name": "AnalyzerLatest"
+                                },
+                                "props": {
+                                  "text": "Latest",
+                                  "style": {
+                                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                                  }
+                                },
+                                "events": {
+                                  "dom": {
+                                    "onClick": {
+                                      "scope": "G",
+                                      "type": "script",
+                                      "config": {
+                                        "script": "\timport roastery.core, roastery.batches\n\troastery.core.analyzer_latest()\n"
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            ],
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "36px"
+                            }
+                          },
+                          {
+                            "type": "ia.container.flex",
+                            "meta": {
+                              "name": "AnalyzerValues"
+                            },
+                            "props": {
+                              "direction": "row",
+                              "style": {
+                                "classes": "roast-gap-8"
+                              }
+                            },
+                            "children": [
+                              {
+                                "type": "ia.container.flex",
+                                "meta": {
+                                  "name": "AnalyzerBt"
+                                },
+                                "props": {
+                                  "direction": "column",
+                                  "style": {
+                                    "classes": "roast-gap-8"
+                                  }
+                                },
+                                "children": [
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerBtCap"
+                                    },
+                                    "props": {
+                                      "text": "BT (F)",
+                                      "style": {
+                                        "classes": "roast-caption"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerBtVal"
+                                    },
+                                    "props": {
+                                      "text": "--",
+                                      "style": {
+                                        "classes": "roast-value"
+                                      }
+                                    },
+                                    "propConfig": {
+                                      "props.text": {
+                                        "binding": {
+                                          "type": "tag",
+                                          "config": {
+                                            "tagPath": "[default]Roastery/CurrentBatch/AnalyzerBtText",
+                                            "mode": "direct",
+                                            "bidirectional": false
+                                          },
+                                          "bidirectional": false
+                                        }
+                                      }
+                                    }
+                                  }
+                                ],
+                                "position": {
+                                  "grow": 1,
+                                  "shrink": 1,
+                                  "basis": "0px"
+                                }
+                              },
+                              {
+                                "type": "ia.container.flex",
+                                "meta": {
+                                  "name": "AnalyzerRor"
+                                },
+                                "props": {
+                                  "direction": "column",
+                                  "style": {
+                                    "classes": "roast-gap-8"
+                                  }
+                                },
+                                "children": [
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerRorCap"
+                                    },
+                                    "props": {
+                                      "text": "RoR",
+                                      "style": {
+                                        "classes": "roast-caption"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerRorVal"
+                                    },
+                                    "props": {
+                                      "text": "--",
+                                      "style": {
+                                        "classes": "roast-value"
+                                      }
+                                    },
+                                    "propConfig": {
+                                      "props.text": {
+                                        "binding": {
+                                          "type": "tag",
+                                          "config": {
+                                            "tagPath": "[default]Roastery/CurrentBatch/AnalyzerRorText",
+                                            "mode": "direct",
+                                            "bidirectional": false
+                                          },
+                                          "bidirectional": false
+                                        }
+                                      }
+                                    }
+                                  }
+                                ],
+                                "position": {
+                                  "grow": 1,
+                                  "shrink": 1,
+                                  "basis": "0px"
+                                }
+                              },
+                              {
+                                "type": "ia.container.flex",
+                                "meta": {
+                                  "name": "AnalyzerBg"
+                                },
+                                "props": {
+                                  "direction": "column",
+                                  "style": {
+                                    "classes": "roast-gap-8"
+                                  }
+                                },
+                                "children": [
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerBgCap"
+                                    },
+                                    "props": {
+                                      "text": "Ghost BT (F)",
+                                      "style": {
+                                        "classes": "roast-caption"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerBgVal"
+                                    },
+                                    "props": {
+                                      "text": "--",
+                                      "style": {
+                                        "classes": "roast-value"
+                                      }
+                                    },
+                                    "propConfig": {
+                                      "props.text": {
+                                        "binding": {
+                                          "type": "tag",
+                                          "config": {
+                                            "tagPath": "[default]Roastery/CurrentBatch/AnalyzerBgText",
+                                            "mode": "direct",
+                                            "bidirectional": false
+                                          },
+                                          "bidirectional": false
+                                        }
+                                      }
+                                    }
+                                  }
+                                ],
+                                "position": {
+                                  "grow": 1,
+                                  "shrink": 1,
+                                  "basis": "0px"
+                                }
+                              },
+                              {
+                                "type": "ia.container.flex",
+                                "meta": {
+                                  "name": "AnalyzerDev"
+                                },
+                                "props": {
+                                  "direction": "column",
+                                  "style": {
+                                    "classes": "roast-gap-8"
+                                  }
+                                },
+                                "children": [
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerDevCap"
+                                    },
+                                    "props": {
+                                      "text": "Dev (F)",
+                                      "style": {
+                                        "classes": "roast-caption"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerDevVal"
+                                    },
+                                    "props": {
+                                      "text": "--",
+                                      "style": {
+                                        "classes": "roast-value"
+                                      }
+                                    },
+                                    "propConfig": {
+                                      "props.text": {
+                                        "binding": {
+                                          "type": "tag",
+                                          "config": {
+                                            "tagPath": "[default]Roastery/CurrentBatch/AnalyzerDevText",
+                                            "mode": "direct",
+                                            "bidirectional": false
+                                          },
+                                          "bidirectional": false
+                                        }
+                                      }
+                                    }
+                                  }
+                                ],
+                                "position": {
+                                  "grow": 1,
+                                  "shrink": 1,
+                                  "basis": "0px"
+                                }
+                              }
+                            ],
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "44px"
+                            }
+                          }
+                        ],
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "88px"
                         }
                       },
                       {
@@ -1516,7 +2636,7 @@
                     "position": {
                       "grow": 0,
                       "shrink": 0,
-                      "basis": "660px"
+                      "basis": "748px"
                     }
                   },
                   {
@@ -1822,6 +2942,109 @@
                             }
                           }
                         }
+                      },
+                      {
+                        "type": "ia.display.view",
+                        "meta": {
+                          "name": "TpTile"
+                        },
+                        "props": {
+                          "path": "Views/Tile",
+                          "params": {
+                            "title": "Turning Point",
+                            "valueText": "--",
+                            "unit": "deg F",
+                            "accent": "#f59e0b"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "148px"
+                        },
+                        "propConfig": {
+                          "props.params.valueText": {
+                            "binding": {
+                              "type": "expr",
+                              "config": {
+                                "expression": "if({[default]Roastery/CurrentBatch/TurningPointElapsedSec} >= 0, numberFormat({[default]Roastery/CurrentBatch/TurningPointTempF}, '0') + ' @ ' + numberFormat(floor({[default]Roastery/CurrentBatch/TurningPointElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/TurningPointElapsedSec} % 60, '00'), '--')"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.view",
+                        "meta": {
+                          "name": "AucTile"
+                        },
+                        "props": {
+                          "path": "Views/Tile",
+                          "params": {
+                            "title": "AUC",
+                            "valueText": "--",
+                            "unit": "F min",
+                            "accent": "#8b5cf6"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "148px"
+                        },
+                        "propConfig": {
+                          "props.params.valueText": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/AucLiveFMin",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.view",
+                        "meta": {
+                          "name": "BgDevTile"
+                        },
+                        "props": {
+                          "path": "Views/Tile",
+                          "params": {
+                            "title": "Bg Deviation",
+                            "valueText": "--",
+                            "unit": "",
+                            "accent": "#64748b"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "148px"
+                        },
+                        "propConfig": {
+                          "props.params.valueText": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/BgDeviationText",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          }
+                        }
                       }
                     ],
                     "position": {
@@ -1971,7 +3194,97 @@
                 "binding": {
                   "type": "expr",
                   "config": {
-                    "expression": "if(({[default]Roastery/CurrentBatch/AlarmHighTempEnabled} && {[default]Roastery/CurrentBatch/BeanTempF} >= {[default]Roastery/CurrentBatch/AlarmHighTempF}) || ({[default]Roastery/CurrentBatch/AlarmDropEnabled} && {[default]Roastery/CurrentBatch/State} = 'Roasting' && {[default]Roastery/CurrentBatch/BeanTempF} >= {[default]Roastery/CurrentBatch/TargetDropTempF} - {[default]Roastery/CurrentBatch/AlarmDropDeltaF}) || ({[default]Roastery/CurrentBatch/AlarmFCWatchEnabled} && {[default]Roastery/CurrentBatch/State} = 'Roasting' && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} < 0 && ((now() - {[default]Roastery/CurrentBatch/StartTime}) / 1000) >= ({[default]Roastery/CurrentBatch/TargetFCSec} - {[default]Roastery/CurrentBatch/AlarmFCWindowSec}) && ((now() - {[default]Roastery/CurrentBatch/StartTime}) / 1000) <= ({[default]Roastery/CurrentBatch/TargetFCSec} + {[default]Roastery/CurrentBatch/AlarmFCWindowSec})), '#991b1b', 'rgba(0,0,0,0)')"
+                    "expression": "if({[default]Roastery/CurrentBatch/AlarmActive}, '#991b1b', 'rgba(0,0,0,0)')"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "PromptStripM"
+            },
+            "props": {
+              "direction": "row",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-banner"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "PromptStripMText"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-banner-text"
+                  }
+                },
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "0px"
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "view.custom.promptText"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "PromptStripMDismiss"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive} || {[default]Roastery/CurrentBatch/SuggestionActive}, 'Dismiss', '')"
+                      }
+                    }
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core, roastery.batches\n\troastery.core.dismiss_prompt()\n"
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "38px"
+            },
+            "propConfig": {
+              "props.style.backgroundColor": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive}, '#92400e', if({[default]Roastery/CurrentBatch/SuggestionActive}, '#1e40af', 'rgba(0,0,0,0)'))"
                   }
                 }
               }
@@ -2078,6 +3391,118 @@
                     }
                   },
                   {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "BgRow"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "alignItems": "center",
+                      "wrap": "wrap",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "BgFileLabel"
+                        },
+                        "props": {
+                          "text": "Background .alog",
+                          "style": {
+                            "classes": "roast-note"
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "104px"
+                        }
+                      },
+                      {
+                        "type": "ia.input.fileupload",
+                        "meta": {
+                          "name": "BgUpload"
+                        },
+                        "props": {
+                          "maxUploads": 1,
+                          "supportedFileTypes": [
+                            "alog"
+                          ],
+                          "fileSizeLimit": 5
+                        },
+                        "events": {
+                          "component": {
+                            "onFileReceived": {
+                              "scope": "G",
+                              "type": "script",
+                              "config": {
+                                "script": "\timport roastery.artisan\n\troastery.artisan.stage_background_upload(self, event)\n"
+                              }
+                            }
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 1,
+                          "basis": "170px"
+                        }
+                      },
+                      {
+                        "type": "ia.input.button",
+                        "meta": {
+                          "name": "BgClearButton"
+                        },
+                        "props": {
+                          "text": "Clear ghost",
+                          "style": {
+                            "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                          }
+                        },
+                        "events": {
+                          "dom": {
+                            "onClick": {
+                              "scope": "G",
+                              "type": "script",
+                              "config": {
+                                "script": "\timport roastery.core, roastery.batches\n\troastery.core.clear_background()\n"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "BgNote"
+                        },
+                        "props": {
+                          "text": "",
+                          "style": {
+                            "classes": "roast-note"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.bgNote"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
                     "type": "ia.canvas-charts.line",
                     "meta": {
                       "name": "RoastChart"
@@ -2099,11 +3524,16 @@
                         },
                         "backgroundColor": "",
                         "colorPalette": [
+                          "#eab308",
+                          "#f97316",
+                          "#dc2626",
+                          "#0284c7",
                           "#64748b",
                           "#64748b",
                           "#94a3b8",
                           "#3b82f6",
-                          "#14b8a6"
+                          "#14b8a6",
+                          "#f59e0b"
                         ]
                       },
                       "axisPointer": {
@@ -2129,6 +3559,298 @@
                       },
                       "liveData": false,
                       "series": [
+                        {
+                          "advanced": {
+                            "connectNulls": false,
+                            "step": "",
+                            "tooltip": {
+                              "enabled": true,
+                              "formatter": {
+                                "template": "",
+                                "type": "value",
+                                "value": ""
+                              }
+                            },
+                            "yAxis": 0
+                          },
+                          "dataLabels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "format": "{value}",
+                            "position": "top",
+                            "visible": false
+                          },
+                          "label": "Drying",
+                          "line": {
+                            "type": "solid",
+                            "width": 0,
+                            "color": "#eab308"
+                          },
+                          "points": {
+                            "fillColor": "",
+                            "outlineColor": "transparent",
+                            "outlineWidth": 0,
+                            "shape": "circle",
+                            "size": 4,
+                            "visible": false
+                          },
+                          "referenceLines": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "delay": 0,
+                                "duration": 1000,
+                                "easing": "cubicOut"
+                              },
+                              "transition": {
+                                "delay": 0,
+                                "duration": 300,
+                                "easing": "cubicOut"
+                              }
+                            },
+                            "endpoints": {
+                              "points": [
+                                {
+                                  "shape": "circle",
+                                  "size": 4
+                                }
+                              ],
+                              "visible": true
+                            },
+                            "items": []
+                          },
+                          "smooth": false,
+                          "value": "bandDry",
+                          "visible": true,
+                          "area": {
+                            "fillStyle": "solid",
+                            "color": "#eab308",
+                            "opacity": 0.12,
+                            "gradientMode": "fade",
+                            "gradientStart": "#eab308",
+                            "gradientEnd": ""
+                          }
+                        },
+                        {
+                          "advanced": {
+                            "connectNulls": false,
+                            "step": "",
+                            "tooltip": {
+                              "enabled": true,
+                              "formatter": {
+                                "template": "",
+                                "type": "value",
+                                "value": ""
+                              }
+                            },
+                            "yAxis": 0
+                          },
+                          "dataLabels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "format": "{value}",
+                            "position": "top",
+                            "visible": false
+                          },
+                          "label": "Maillard",
+                          "line": {
+                            "type": "solid",
+                            "width": 0,
+                            "color": "#f97316"
+                          },
+                          "points": {
+                            "fillColor": "",
+                            "outlineColor": "transparent",
+                            "outlineWidth": 0,
+                            "shape": "circle",
+                            "size": 4,
+                            "visible": false
+                          },
+                          "referenceLines": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "delay": 0,
+                                "duration": 1000,
+                                "easing": "cubicOut"
+                              },
+                              "transition": {
+                                "delay": 0,
+                                "duration": 300,
+                                "easing": "cubicOut"
+                              }
+                            },
+                            "endpoints": {
+                              "points": [
+                                {
+                                  "shape": "circle",
+                                  "size": 4
+                                }
+                              ],
+                              "visible": true
+                            },
+                            "items": []
+                          },
+                          "smooth": false,
+                          "value": "bandMai",
+                          "visible": true,
+                          "area": {
+                            "fillStyle": "solid",
+                            "color": "#f97316",
+                            "opacity": 0.12,
+                            "gradientMode": "fade",
+                            "gradientStart": "#f97316",
+                            "gradientEnd": ""
+                          }
+                        },
+                        {
+                          "advanced": {
+                            "connectNulls": false,
+                            "step": "",
+                            "tooltip": {
+                              "enabled": true,
+                              "formatter": {
+                                "template": "",
+                                "type": "value",
+                                "value": ""
+                              }
+                            },
+                            "yAxis": 0
+                          },
+                          "dataLabels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "format": "{value}",
+                            "position": "top",
+                            "visible": false
+                          },
+                          "label": "Development",
+                          "line": {
+                            "type": "solid",
+                            "width": 0,
+                            "color": "#dc2626"
+                          },
+                          "points": {
+                            "fillColor": "",
+                            "outlineColor": "transparent",
+                            "outlineWidth": 0,
+                            "shape": "circle",
+                            "size": 4,
+                            "visible": false
+                          },
+                          "referenceLines": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "delay": 0,
+                                "duration": 1000,
+                                "easing": "cubicOut"
+                              },
+                              "transition": {
+                                "delay": 0,
+                                "duration": 300,
+                                "easing": "cubicOut"
+                              }
+                            },
+                            "endpoints": {
+                              "points": [
+                                {
+                                  "shape": "circle",
+                                  "size": 4
+                                }
+                              ],
+                              "visible": true
+                            },
+                            "items": []
+                          },
+                          "smooth": false,
+                          "value": "bandDev",
+                          "visible": true,
+                          "area": {
+                            "fillStyle": "solid",
+                            "color": "#dc2626",
+                            "opacity": 0.12,
+                            "gradientMode": "fade",
+                            "gradientStart": "#dc2626",
+                            "gradientEnd": ""
+                          }
+                        },
+                        {
+                          "advanced": {
+                            "connectNulls": false,
+                            "step": "",
+                            "tooltip": {
+                              "enabled": true,
+                              "formatter": {
+                                "template": "",
+                                "type": "value",
+                                "value": ""
+                              }
+                            },
+                            "yAxis": 0
+                          },
+                          "dataLabels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "format": "{value}",
+                            "position": "top",
+                            "visible": false
+                          },
+                          "label": "Cooling",
+                          "line": {
+                            "type": "solid",
+                            "width": 0,
+                            "color": "#0284c7"
+                          },
+                          "points": {
+                            "fillColor": "",
+                            "outlineColor": "transparent",
+                            "outlineWidth": 0,
+                            "shape": "circle",
+                            "size": 4,
+                            "visible": false
+                          },
+                          "referenceLines": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "delay": 0,
+                                "duration": 1000,
+                                "easing": "cubicOut"
+                              },
+                              "transition": {
+                                "delay": 0,
+                                "duration": 300,
+                                "easing": "cubicOut"
+                              }
+                            },
+                            "endpoints": {
+                              "points": [
+                                {
+                                  "shape": "circle",
+                                  "size": 4
+                                }
+                              ],
+                              "visible": true
+                            },
+                            "items": []
+                          },
+                          "smooth": false,
+                          "value": "bandCool",
+                          "visible": true,
+                          "area": {
+                            "fillStyle": "solid",
+                            "color": "#0284c7",
+                            "opacity": 0.12,
+                            "gradientMode": "fade",
+                            "gradientStart": "#0284c7",
+                            "gradientEnd": ""
+                          }
+                        },
                         {
                           "advanced": {
                             "connectNulls": true,
@@ -2452,6 +4174,79 @@
                           },
                           "smooth": true,
                           "value": "ror",
+                          "visible": true,
+                          "area": {
+                            "fillStyle": "solid",
+                            "color": "#14b8a6",
+                            "opacity": 0.0,
+                            "gradientMode": "fade",
+                            "gradientStart": "#14b8a6",
+                            "gradientEnd": ""
+                          }
+                        },
+                        {
+                          "advanced": {
+                            "connectNulls": true,
+                            "step": "",
+                            "tooltip": {
+                              "enabled": true,
+                              "formatter": {
+                                "template": "",
+                                "type": "value",
+                                "value": ""
+                              }
+                            },
+                            "yAxis": 0
+                          },
+                          "dataLabels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "format": "{value}",
+                            "position": "top",
+                            "visible": false
+                          },
+                          "label": "Projection",
+                          "line": {
+                            "type": "dashed",
+                            "width": 2,
+                            "color": "#f59e0b"
+                          },
+                          "points": {
+                            "fillColor": "",
+                            "outlineColor": "transparent",
+                            "outlineWidth": 0,
+                            "shape": "circle",
+                            "size": 4,
+                            "visible": false
+                          },
+                          "referenceLines": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "delay": 0,
+                                "duration": 1000,
+                                "easing": "cubicOut"
+                              },
+                              "transition": {
+                                "delay": 0,
+                                "duration": 300,
+                                "easing": "cubicOut"
+                              }
+                            },
+                            "endpoints": {
+                              "points": [
+                                {
+                                  "shape": "circle",
+                                  "size": 4
+                                }
+                              ],
+                              "visible": true
+                            },
+                            "items": []
+                          },
+                          "smooth": true,
+                          "value": "proj",
                           "visible": true
                         }
                       ],
@@ -2687,7 +4482,7 @@
                           "bidirectional": false
                         }
                       },
-                      "props.series[3].referenceLines.items": {
+                      "props.series[7].referenceLines.items": {
                         "binding": {
                           "type": "tag",
                           "config": {
@@ -2703,6 +4498,113 @@
                             }
                           ]
                         }
+                      },
+                      "props.series[7].line.width": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispBtWidth",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[7].line.type": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispBtStyle",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[8].line.width": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispRorWidth",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[8].line.type": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispRorStyle",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[4].line.width": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispGhostWidth",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[4].line.type": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispGhostStyle",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[5].line.width": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispGhostWidth",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[5].line.type": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispGhostStyle",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[8].area.opacity": {
+                        "binding": {
+                          "type": "expr",
+                          "config": {
+                            "expression": "if({[default]Roastery/CurrentBatch/DispRorFill}, 0.22, 0.0)"
+                          }
+                        }
+                      },
+                      "props.series[7].referenceLines.endpoints.points[0].size": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispMarkerSize",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
                       }
                     },
                     "position": {
@@ -2710,12 +4612,437 @@
                       "shrink": 1,
                       "basis": "0px"
                     }
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "StatsLine"
+                    },
+                    "props": {
+                      "text": "",
+                      "style": {
+                        "classes": "roast-stats-line"
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "20px"
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "expr",
+                          "config": {
+                            "expression": "'Dry ' + if({[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/DryEndElapsedSec} / 60), '0') + ':' + numberFormat({[default]Roastery/CurrentBatch/DryEndElapsedSec} % 60, '00'), '--:--') + ' ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0, {[default]Roastery/CurrentBatch/DryEndElapsedSec} * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) * 100.0 / if((if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})) > 0, (if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), 1)), '0') + '% \u00b7 ' + 'Mai ' + if({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0 && {[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, numberFormat(floor(({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) / 60), '0') + ':' + numberFormat(({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) % 60, '00'), '--:--') + ' ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) * 100.0 / if((if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})) > 0, (if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), 1)), '0') + '% \u00b7 ' + 'Dev ' + if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, numberFormat(floor(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) / 60), '0') + ':' + numberFormat(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) % 60, '00'), '--:--') + ' ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec}) * 100.0 / if((if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})) > 0, (if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), 1)), '0') + '% \u00b7 ' + 'DTR ' + if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, numberFormat(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, '0') + '%', '--')"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "AnalyzerStrip"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "AnalyzerControls"
+                        },
+                        "props": {
+                          "direction": "row",
+                          "alignItems": "center",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "AnalyzerCap"
+                            },
+                            "props": {
+                              "text": "Analyzer",
+                              "style": {
+                                "classes": "roast-caption"
+                              }
+                            },
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "64px"
+                            }
+                          },
+                          {
+                            "type": "ia.input.button",
+                            "meta": {
+                              "name": "AnalyzerMinus"
+                            },
+                            "props": {
+                              "text": "-10s",
+                              "style": {
+                                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                              }
+                            },
+                            "events": {
+                              "dom": {
+                                "onClick": {
+                                  "scope": "G",
+                                  "type": "script",
+                                  "config": {
+                                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.analyzer_step(-10)\n"
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "AnalyzerTime"
+                            },
+                            "props": {
+                              "text": "--:--",
+                              "style": {
+                                "classes": "roast-value-strong"
+                              }
+                            },
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "52px"
+                            },
+                            "propConfig": {
+                              "props.text": {
+                                "binding": {
+                                  "type": "tag",
+                                  "config": {
+                                    "tagPath": "[default]Roastery/CurrentBatch/AnalyzerTimeText",
+                                    "mode": "direct",
+                                    "bidirectional": false
+                                  },
+                                  "bidirectional": false
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "type": "ia.input.button",
+                            "meta": {
+                              "name": "AnalyzerPlus"
+                            },
+                            "props": {
+                              "text": "+10s",
+                              "style": {
+                                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                              }
+                            },
+                            "events": {
+                              "dom": {
+                                "onClick": {
+                                  "scope": "G",
+                                  "type": "script",
+                                  "config": {
+                                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.analyzer_step(10)\n"
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          {
+                            "type": "ia.input.button",
+                            "meta": {
+                              "name": "AnalyzerLatest"
+                            },
+                            "props": {
+                              "text": "Latest",
+                              "style": {
+                                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                              }
+                            },
+                            "events": {
+                              "dom": {
+                                "onClick": {
+                                  "scope": "G",
+                                  "type": "script",
+                                  "config": {
+                                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.analyzer_latest()\n"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ],
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "36px"
+                        }
+                      },
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "AnalyzerValues"
+                        },
+                        "props": {
+                          "direction": "row",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.container.flex",
+                            "meta": {
+                              "name": "AnalyzerBt"
+                            },
+                            "props": {
+                              "direction": "column",
+                              "style": {
+                                "classes": "roast-gap-8"
+                              }
+                            },
+                            "children": [
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerBtCap"
+                                },
+                                "props": {
+                                  "text": "BT (F)",
+                                  "style": {
+                                    "classes": "roast-caption"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerBtVal"
+                                },
+                                "props": {
+                                  "text": "--",
+                                  "style": {
+                                    "classes": "roast-value"
+                                  }
+                                },
+                                "propConfig": {
+                                  "props.text": {
+                                    "binding": {
+                                      "type": "tag",
+                                      "config": {
+                                        "tagPath": "[default]Roastery/CurrentBatch/AnalyzerBtText",
+                                        "mode": "direct",
+                                        "bidirectional": false
+                                      },
+                                      "bidirectional": false
+                                    }
+                                  }
+                                }
+                              }
+                            ],
+                            "position": {
+                              "grow": 1,
+                              "shrink": 1,
+                              "basis": "0px"
+                            }
+                          },
+                          {
+                            "type": "ia.container.flex",
+                            "meta": {
+                              "name": "AnalyzerRor"
+                            },
+                            "props": {
+                              "direction": "column",
+                              "style": {
+                                "classes": "roast-gap-8"
+                              }
+                            },
+                            "children": [
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerRorCap"
+                                },
+                                "props": {
+                                  "text": "RoR",
+                                  "style": {
+                                    "classes": "roast-caption"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerRorVal"
+                                },
+                                "props": {
+                                  "text": "--",
+                                  "style": {
+                                    "classes": "roast-value"
+                                  }
+                                },
+                                "propConfig": {
+                                  "props.text": {
+                                    "binding": {
+                                      "type": "tag",
+                                      "config": {
+                                        "tagPath": "[default]Roastery/CurrentBatch/AnalyzerRorText",
+                                        "mode": "direct",
+                                        "bidirectional": false
+                                      },
+                                      "bidirectional": false
+                                    }
+                                  }
+                                }
+                              }
+                            ],
+                            "position": {
+                              "grow": 1,
+                              "shrink": 1,
+                              "basis": "0px"
+                            }
+                          },
+                          {
+                            "type": "ia.container.flex",
+                            "meta": {
+                              "name": "AnalyzerBg"
+                            },
+                            "props": {
+                              "direction": "column",
+                              "style": {
+                                "classes": "roast-gap-8"
+                              }
+                            },
+                            "children": [
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerBgCap"
+                                },
+                                "props": {
+                                  "text": "Ghost BT (F)",
+                                  "style": {
+                                    "classes": "roast-caption"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerBgVal"
+                                },
+                                "props": {
+                                  "text": "--",
+                                  "style": {
+                                    "classes": "roast-value"
+                                  }
+                                },
+                                "propConfig": {
+                                  "props.text": {
+                                    "binding": {
+                                      "type": "tag",
+                                      "config": {
+                                        "tagPath": "[default]Roastery/CurrentBatch/AnalyzerBgText",
+                                        "mode": "direct",
+                                        "bidirectional": false
+                                      },
+                                      "bidirectional": false
+                                    }
+                                  }
+                                }
+                              }
+                            ],
+                            "position": {
+                              "grow": 1,
+                              "shrink": 1,
+                              "basis": "0px"
+                            }
+                          },
+                          {
+                            "type": "ia.container.flex",
+                            "meta": {
+                              "name": "AnalyzerDev"
+                            },
+                            "props": {
+                              "direction": "column",
+                              "style": {
+                                "classes": "roast-gap-8"
+                              }
+                            },
+                            "children": [
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerDevCap"
+                                },
+                                "props": {
+                                  "text": "Dev (F)",
+                                  "style": {
+                                    "classes": "roast-caption"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerDevVal"
+                                },
+                                "props": {
+                                  "text": "--",
+                                  "style": {
+                                    "classes": "roast-value"
+                                  }
+                                },
+                                "propConfig": {
+                                  "props.text": {
+                                    "binding": {
+                                      "type": "tag",
+                                      "config": {
+                                        "tagPath": "[default]Roastery/CurrentBatch/AnalyzerDevText",
+                                        "mode": "direct",
+                                        "bidirectional": false
+                                      },
+                                      "bidirectional": false
+                                    }
+                                  }
+                                }
+                              }
+                            ],
+                            "position": {
+                              "grow": 1,
+                              "shrink": 1,
+                              "basis": "0px"
+                            }
+                          }
+                        ],
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "44px"
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "88px"
+                    }
                   }
                 ],
                 "position": {
                   "grow": 0,
                   "shrink": 0,
-                  "basis": "430px"
+                  "basis": "518px"
                 }
               },
               {

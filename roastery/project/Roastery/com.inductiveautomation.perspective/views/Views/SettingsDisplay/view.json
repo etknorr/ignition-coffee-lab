@@ -1,0 +1,835 @@
+{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 900,
+      "height": 520
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "root"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-gap-12"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "DisplaySection"
+        },
+        "props": {
+          "direction": "column",
+          "style": {
+            "classes": "roast-card roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "DisplaySectionHead"
+            },
+            "props": {
+              "text": "Curve Display",
+              "style": {
+                "classes": "roast-section-title"
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "DisplaySectionDesc"
+            },
+            "props": {
+              "text": "How the live curves are drawn, Artisan CurveStyles style: line width and style per curve, an optional fill under the rate of rise curve, and the size of the event markers on the bean curve. Colors do not change here; they stay the app palette in both themes.",
+              "style": {
+                "classes": "roast-section-desc"
+              }
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "DispRow1"
+            },
+            "props": {
+              "direction": "row",
+              "wrap": "wrap",
+              "style": {
+                "classes": "roast-gap-12"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "DispBtWField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "DispBtWFieldCap"
+                    },
+                    "props": {
+                      "text": "Bean temp width",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.dropdown",
+                    "meta": {
+                      "name": "DispBtWDrop"
+                    },
+                    "props": {
+                      "options": [
+                        {
+                          "value": 1,
+                          "label": "1 px"
+                        },
+                        {
+                          "value": 2,
+                          "label": "2 px"
+                        },
+                        {
+                          "value": 3,
+                          "label": "3 px"
+                        },
+                        {
+                          "value": 4,
+                          "label": "4 px"
+                        },
+                        {
+                          "value": 5,
+                          "label": "5 px"
+                        }
+                      ],
+                      "value": 1,
+                      "style": {
+                        "classes": "roast-input"
+                      }
+                    },
+                    "propConfig": {
+                      "props.value": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispBtWidth",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "170px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "DispBtSField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "DispBtSFieldCap"
+                    },
+                    "props": {
+                      "text": "Bean temp style",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.dropdown",
+                    "meta": {
+                      "name": "DispBtSDrop"
+                    },
+                    "props": {
+                      "options": [
+                        {
+                          "value": "solid",
+                          "label": "Solid"
+                        },
+                        {
+                          "value": "dashed",
+                          "label": "Dashed"
+                        },
+                        {
+                          "value": "dotted",
+                          "label": "Dotted"
+                        }
+                      ],
+                      "value": "solid",
+                      "style": {
+                        "classes": "roast-input"
+                      }
+                    },
+                    "propConfig": {
+                      "props.value": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispBtStyle",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "170px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "DispRorWField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "DispRorWFieldCap"
+                    },
+                    "props": {
+                      "text": "Rate of rise width",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.dropdown",
+                    "meta": {
+                      "name": "DispRorWDrop"
+                    },
+                    "props": {
+                      "options": [
+                        {
+                          "value": 1,
+                          "label": "1 px"
+                        },
+                        {
+                          "value": 2,
+                          "label": "2 px"
+                        },
+                        {
+                          "value": 3,
+                          "label": "3 px"
+                        },
+                        {
+                          "value": 4,
+                          "label": "4 px"
+                        },
+                        {
+                          "value": 5,
+                          "label": "5 px"
+                        }
+                      ],
+                      "value": 1,
+                      "style": {
+                        "classes": "roast-input"
+                      }
+                    },
+                    "propConfig": {
+                      "props.value": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispRorWidth",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "170px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "DispRorSField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "DispRorSFieldCap"
+                    },
+                    "props": {
+                      "text": "Rate of rise style",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.dropdown",
+                    "meta": {
+                      "name": "DispRorSDrop"
+                    },
+                    "props": {
+                      "options": [
+                        {
+                          "value": "solid",
+                          "label": "Solid"
+                        },
+                        {
+                          "value": "dashed",
+                          "label": "Dashed"
+                        },
+                        {
+                          "value": "dotted",
+                          "label": "Dotted"
+                        }
+                      ],
+                      "value": "solid",
+                      "style": {
+                        "classes": "roast-input"
+                      }
+                    },
+                    "propConfig": {
+                      "props.value": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispRorStyle",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "170px"
+                }
+              }
+            ]
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "DispRow2"
+            },
+            "props": {
+              "direction": "row",
+              "wrap": "wrap",
+              "style": {
+                "classes": "roast-gap-12"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "DispGhostWField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "DispGhostWFieldCap"
+                    },
+                    "props": {
+                      "text": "Ghost width",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.dropdown",
+                    "meta": {
+                      "name": "DispGhostWDrop"
+                    },
+                    "props": {
+                      "options": [
+                        {
+                          "value": 1,
+                          "label": "1 px"
+                        },
+                        {
+                          "value": 2,
+                          "label": "2 px"
+                        },
+                        {
+                          "value": 3,
+                          "label": "3 px"
+                        },
+                        {
+                          "value": 4,
+                          "label": "4 px"
+                        },
+                        {
+                          "value": 5,
+                          "label": "5 px"
+                        }
+                      ],
+                      "value": 1,
+                      "style": {
+                        "classes": "roast-input"
+                      }
+                    },
+                    "propConfig": {
+                      "props.value": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispGhostWidth",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "170px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "DispGhostSField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "DispGhostSFieldCap"
+                    },
+                    "props": {
+                      "text": "Ghost style",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.dropdown",
+                    "meta": {
+                      "name": "DispGhostSDrop"
+                    },
+                    "props": {
+                      "options": [
+                        {
+                          "value": "solid",
+                          "label": "Solid"
+                        },
+                        {
+                          "value": "dashed",
+                          "label": "Dashed"
+                        },
+                        {
+                          "value": "dotted",
+                          "label": "Dotted"
+                        }
+                      ],
+                      "value": "solid",
+                      "style": {
+                        "classes": "roast-input"
+                      }
+                    },
+                    "propConfig": {
+                      "props.value": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispGhostStyle",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "170px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "DispFillField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "DispFillFieldCap"
+                    },
+                    "props": {
+                      "text": "Fill under RoR",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.checkbox",
+                    "meta": {
+                      "name": "DispFillCheck"
+                    },
+                    "props": {
+                      "selected": false,
+                      "text": "",
+                      "style": {
+                        "classes": "roast-checkbox"
+                      }
+                    },
+                    "propConfig": {
+                      "props.selected": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispRorFill",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "150px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "DispMarkerField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "DispMarkerFieldCap"
+                    },
+                    "props": {
+                      "text": "Event marker size",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.dropdown",
+                    "meta": {
+                      "name": "DispMarkerDrop"
+                    },
+                    "props": {
+                      "options": [
+                        {
+                          "value": 2,
+                          "label": "2 px"
+                        },
+                        {
+                          "value": 4,
+                          "label": "4 px"
+                        },
+                        {
+                          "value": 6,
+                          "label": "6 px"
+                        },
+                        {
+                          "value": 8,
+                          "label": "8 px"
+                        },
+                        {
+                          "value": 10,
+                          "label": "10 px"
+                        }
+                      ],
+                      "value": 2,
+                      "style": {
+                        "classes": "roast-input"
+                      }
+                    },
+                    "propConfig": {
+                      "props.value": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispMarkerSize",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "170px"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "BgPhaseSection"
+        },
+        "props": {
+          "direction": "column",
+          "style": {
+            "classes": "roast-card roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "BgPhaseSectionHead"
+            },
+            "props": {
+              "text": "Phases From Background",
+              "style": {
+                "classes": "roast-section-title"
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "BgPhaseSectionDesc"
+            },
+            "props": {
+              "text": "Phase bands shade the live chart behind the curves (Drying, Maillard, Development, Cooling), following the stamped phases and the targets for the phase still ahead. With this option on, the bands and the phase bar follow the loaded ghost phase boundaries instead of the saved targets. The saved target values are never overwritten; clearing the ghost clears the staged boundaries.",
+              "style": {
+                "classes": "roast-section-desc"
+              }
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "BgPhaseRow1"
+            },
+            "props": {
+              "direction": "row",
+              "wrap": "wrap",
+              "style": {
+                "classes": "roast-gap-12"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "BgPhaseToggleField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "BgPhaseToggleFieldCap"
+                    },
+                    "props": {
+                      "text": "Use ghost phases",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.checkbox",
+                    "meta": {
+                      "name": "BgPhaseCheck"
+                    },
+                    "props": {
+                      "selected": false,
+                      "text": "",
+                      "style": {
+                        "classes": "roast-checkbox"
+                      }
+                    },
+                    "propConfig": {
+                      "props.selected": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/PhaseFromBg",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "170px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "BgPhaseStagedField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "BgPhaseStagedFieldCap"
+                    },
+                    "props": {
+                      "text": "Staged ghost phases",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "BgPhaseReadout"
+                    },
+                    "props": {
+                      "text": "",
+                      "style": {
+                        "classes": "roast-value"
+                      }
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "expr",
+                          "config": {
+                            "expression": "if({[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0, 'Ghost phases staged: Dry End ' + numberFormat(floor({[default]Roastery/CurrentBatch/BgPhaseDrySec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/BgPhaseDrySec} % 60, '00') + ', FC Start ' + numberFormat(floor({[default]Roastery/CurrentBatch/BgPhaseFcSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/BgPhaseFcSec} % 60, '00') + ', Drop ' + numberFormat(floor({[default]Roastery/CurrentBatch/BgPhaseDropSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/BgPhaseDropSec} % 60, '00'), 'No ghost phase boundaries staged (load a background first).')"
+                          }
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "380px"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
