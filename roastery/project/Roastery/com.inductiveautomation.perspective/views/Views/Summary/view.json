@@ -532,6 +532,666 @@
       {
         "type": "ia.container.flex",
         "meta": {
+          "name": "DefLoss"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "baseline",
+          "style": {
+            "classes": "roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "DefLossCap"
+            },
+            "props": {
+              "text": "Defects loss",
+              "style": {
+                "classes": "roast-caption"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "DefLossVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-value-right"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/WeightOutG} > 0 && {[default]Roastery/CurrentBatch/DefectsWeightG} > 0 && {[default]Roastery/CurrentBatch/DefectsWeightG} < {[default]Roastery/CurrentBatch/WeightOutG}, numberFormat({[default]Roastery/CurrentBatch/DefectsWeightG} * 100.0 / {[default]Roastery/CurrentBatch/WeightOutG}, '0.0') + '%', '--')"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "TotLoss"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "baseline",
+          "style": {
+            "classes": "roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "TotLossCap"
+            },
+            "props": {
+              "text": "Total loss",
+              "style": {
+                "classes": "roast-caption"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "TotLossVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-value-right"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/ChargeWeightG} > 0 && {[default]Roastery/CurrentBatch/WeightOutG} > 0, numberFormat(({[default]Roastery/CurrentBatch/ChargeWeightG} - ({[default]Roastery/CurrentBatch/WeightOutG} - {[default]Roastery/CurrentBatch/DefectsWeightG})) * 100.0 / {[default]Roastery/CurrentBatch/ChargeWeightG}, '0.0') + '%', '--')"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Yield"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "baseline",
+          "style": {
+            "classes": "roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "YieldCap"
+            },
+            "props": {
+              "text": "Total yield",
+              "style": {
+                "classes": "roast-caption"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "YieldVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-value-right"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/ChargeWeightG} > 0 && {[default]Roastery/CurrentBatch/WeightOutG} > 0, numberFormat(({[default]Roastery/CurrentBatch/WeightOutG} - {[default]Roastery/CurrentBatch/DefectsWeightG}) * 100.0 / {[default]Roastery/CurrentBatch/ChargeWeightG}, '0.0') + '%', '--')"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "VolGain"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "baseline",
+          "style": {
+            "classes": "roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "VolGainCap"
+            },
+            "props": {
+              "text": "Volume gain",
+              "style": {
+                "classes": "roast-caption"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "VolGainVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-value-right"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/VolumeInMl} > 0 && {[default]Roastery/CurrentBatch/VolumeOutMl} >= {[default]Roastery/CurrentBatch/VolumeInMl}, numberFormat(({[default]Roastery/CurrentBatch/VolumeOutMl} - {[default]Roastery/CurrentBatch/VolumeInMl}) * 100.0 / {[default]Roastery/CurrentBatch/VolumeInMl}, '0.0') + '%', '--')"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "MoistLoss"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "baseline",
+          "style": {
+            "classes": "roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "MoistLossCap"
+            },
+            "props": {
+              "text": "Moisture loss",
+              "style": {
+                "classes": "roast-caption"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "MoistLossVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-value-right"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/MoisturePct} > 0 && {[default]Roastery/CurrentBatch/RoastedMoisturePct} > 0, numberFormat({[default]Roastery/CurrentBatch/MoisturePct} - {[default]Roastery/CurrentBatch/RoastedMoisturePct}, '0.0') + '%', '--')"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "OrgLoss"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "baseline",
+          "style": {
+            "classes": "roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "OrgLossCap"
+            },
+            "props": {
+              "text": "Organic loss",
+              "style": {
+                "classes": "roast-caption"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "OrgLossVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-value-right"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/MoisturePct} > 0 && {[default]Roastery/CurrentBatch/RoastedMoisturePct} > 0 && {[default]Roastery/CurrentBatch/WeightOutG} > 0 && {[default]Roastery/CurrentBatch/ChargeWeightG} > 0, numberFormat(({[default]Roastery/CurrentBatch/ChargeWeightG} - {[default]Roastery/CurrentBatch/WeightOutG}) * 100.0 / {[default]Roastery/CurrentBatch/ChargeWeightG} - ({[default]Roastery/CurrentBatch/MoisturePct} - {[default]Roastery/CurrentBatch/RoastedMoisturePct}), '0.0') + '%', '--')"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "GreenDens"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "baseline",
+          "style": {
+            "classes": "roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "GreenDensCap"
+            },
+            "props": {
+              "text": "Green density",
+              "style": {
+                "classes": "roast-caption"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "GreenDensVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-value-right"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/ChargeWeightG} > 0 && {[default]Roastery/CurrentBatch/VolumeInMl} > 0, numberFormat({[default]Roastery/CurrentBatch/ChargeWeightG} * 1000.0 / {[default]Roastery/CurrentBatch/VolumeInMl}, '0') + ' g/L', '--')"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "RoastDens"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "baseline",
+          "style": {
+            "classes": "roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "RoastDensCap"
+            },
+            "props": {
+              "text": "Roasted density",
+              "style": {
+                "classes": "roast-caption"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "RoastDensVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-value-right"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/WeightOutG} > 0 && {[default]Roastery/CurrentBatch/VolumeOutMl} > 0, numberFormat({[default]Roastery/CurrentBatch/WeightOutG} * 1000.0 / {[default]Roastery/CurrentBatch/VolumeOutMl}, '0') + ' g/L', '--')"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "BgDev"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "baseline",
+          "style": {
+            "classes": "roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "BgDevCap"
+            },
+            "props": {
+              "text": "Deviation vs background",
+              "style": {
+                "classes": "roast-caption"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "BgDevVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-value-right"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/BgDeviationText}"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Auc"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "baseline",
+          "style": {
+            "classes": "roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "AucCap"
+            },
+            "props": {
+              "text": "AUC (F min)",
+              "style": {
+                "classes": "roast-caption"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "AucVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-value-right"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/AucLiveFMin} > 0, numberFormat({[default]Roastery/CurrentBatch/AucLiveFMin}, '0'), '--')"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "AucFc"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "baseline",
+          "style": {
+            "classes": "roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "AucFcCap"
+            },
+            "props": {
+              "text": "AUC since FC (F min)",
+              "style": {
+                "classes": "roast-caption"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "AucFcVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-value-right"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/AucSinceFcFMin} > 0, numberFormat({[default]Roastery/CurrentBatch/AucSinceFcFMin}, '0'), '--')"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "AucGuide"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "baseline",
+          "style": {
+            "classes": "roast-gap-10"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "AucGuideCap"
+            },
+            "props": {
+              "text": "AUC target reached at",
+              "style": {
+                "classes": "roast-caption"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "AucGuideVal"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-value-right"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/AucGuideElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/AucGuideElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/AucGuideElapsedSec} % 60, '00'), '--:--')"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
           "name": "FootRow"
         },
         "props": {

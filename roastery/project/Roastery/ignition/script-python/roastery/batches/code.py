@@ -20,6 +20,8 @@
 #   the series back through Series/SelectByBatch, so every batch
 #   carries its own curve like an Artisan roast file.
 
+import math
+
 import roastery.core as core
 
 NQ_SELECT_ALL = 'Roastery/Batches/SelectAll'
@@ -142,6 +144,9 @@ def build_document():
     members += ['TargetChargeTempF', 'TargetDryEndSec',
                 'TargetDryEndTempF', 'TargetFCSec', 'TargetFCTempF',
                 'TargetDropSec', 'TargetDropTempF']
+    members += ['TurningPointElapsedSec', 'TurningPointTempF',
+                'AucLiveFMin', 'AucSinceFcFMin', 'AucBaseTempF',
+                'AucBegin', 'AucTargetFMin']
     vals = core.read_members(members)
     total = vals['DropElapsedSec'] or 0
     dry = vals['DryEndElapsedSec']
@@ -150,8 +155,11 @@ def build_document():
     fc = fc if fc is not None and fc >= 0 else total
     charge_w = vals['ChargeWeightG'] or 0.0
     out_w = vals['WeightOutG'] or 0.0
-    loss = ((charge_w - out_w) * 100.0 / charge_w) if out_w > 0 and charge_w > 0 else 0.0
-    return {
+    lossd = loss_yield_density(vals)
+    loss = lossd.get('weightLossPct')
+    if loss is None:
+        loss = ((charge_w - out_w) * 100.0 / charge_w) if out_w > 0 and charge_w > 0 else 0.0
+    doc = {
         'batchNumber': vals['BatchNumber'],
         'beanName': vals['BeanName'],
         'roastStart': _iso(vals['ChargeTime']),
@@ -163,6 +171,16 @@ def build_document():
                    'developmentSec': total - fc,
                    'dtrPct': ((total - fc) * 100.0 / total) if total > 0 else 0.0},
         'auc': curve_auc(core.curve_points(), vals['ChargeTempF']),
+        'aucDetail': {'valueFMin': vals['AucLiveFMin'],
+                      'sinceFcFMin': vals['AucSinceFcFMin'],
+                      'baseF': vals['AucBaseTempF'],
+                      'begin': vals['AucBegin'],
+                      'targetFMin': vals['AucTargetFMin']},
+        'turningPoint': (
+            {'t': vals['TurningPointElapsedSec'],
+             'tempF': vals['TurningPointTempF']}
+            if vals['TurningPointElapsedSec'] is not None
+            and vals['TurningPointElapsedSec'] >= 0 else None),
         'weightLossPct': loss,
         'source': vals['ActiveSource'],
         'metadata': dict((m, vals[m]) for m in core.FORM_MEMBERS),
@@ -191,6 +209,21 @@ def build_document():
                    'dropSec': vals['TargetDropSec'],
                    'dropTempF': vals['TargetDropTempF']},
         'fanHeatTrace': _trace_summary()}
+    # Between batch protocol (Tier 3 item 20, BT only): the
+    # metrics staged at this batch CHARGE from the previous
+    # roast DROP window, when a window was finalized. Batches
+    # with no preceding drop carry no bbp key at all.
+    _bbp = core.bbp_staged_metrics()
+    if _bbp is not None:
+        doc['bbp'] = _bbp
+    # The saved target document carries the full variable
+    # length plan (Tier 3 item 17) beside the legacy fields.
+    doc['target']['points'] = [
+        [float(t), float(v)] for t, v in core.target_plan_points()]
+    doc['loss'] = lossd
+    pts = [(float(p['t']), float(p['bt'])) for p in core.curve_points()]
+    doc['phaseAnalysis'] = phase_analysis(doc, pts)
+    return doc
 
 
 # ---------------------------------------------------------------- CRUD
@@ -269,6 +302,10 @@ def save_current_batch(self):
         'drop_temp_f': vals['DropTempF'],
         'data': system.util.jsonEncode(doc)})
     _insert_series(vals['BatchNumber'], core.curve_points())
+    # The staged BBP metrics were written into this batch
+    # document by build_document; consume them so a later
+    # save cannot inherit them (Tier 3 item 20).
+    core.bbp_clear_staged()
     core.record_press('Save Batch')
     self.view.custom.saveNote = 'Saved batch %d to the database.' % vals['BatchNumber']
     return vals['BatchNumber']
@@ -315,13 +352,21 @@ def edit_form_data_for(self):
     from charge) and event temps."""
     create = system.tag.readBlocking([EDITOR_CREATE_TAG])[0].value
     if create:
-        return {'BeanName': '', 'Origin': '', 'Region': '', 'Farm': '',
-                'Altitude': '', 'Variety': '', 'Process': '',
-                'HarvestYear': 2025, 'MoisturePct': 0.0,
-                'DensityGL': 0.0, 'ChargeWeightG': 200.0,
-                'TargetDropTempF': 415.0, 'RoastLevel': '',
-                'OperatorName': '', 'Notes': '', 'WeightOutG': 0.0,
-                'BatchNumber': 0}
+        data = {}
+        for m in core.FORM_MEMBERS:
+            if m in core.FORM_BOOLS:
+                data[m] = False
+            elif m in core.FORM_INTS:
+                data[m] = 0
+            elif m in core.FORM_FLOATS:
+                data[m] = 0.0
+            else:
+                data[m] = ''
+        data.update({'HarvestYear': 2025, 'ChargeWeightG': 200.0,
+                     'TargetDropTempF': 415.0,
+                     'RoasterType': 'FreshRoast SR800',
+                     'RoasterSizeKg': 0.25, 'BatchNumber': 0})
+        return data
     number = int(system.tag.readBlocking([SELECTED_TAG])[0].value or 0)
     batch = get_batch(number)
     if batch is None:
@@ -332,7 +377,9 @@ def edit_form_data_for(self):
     for m in core.FORM_MEMBERS:
         v = meta.get(m)
         if v is None:
-            v = 0 if m in core.FORM_INTS else (0.0 if m in core.FORM_FLOATS else '')
+            v = (False if m in core.FORM_BOOLS else
+                 0 if m in core.FORM_INTS else
+                 (0.0 if m in core.FORM_FLOATS else ''))
         data[m] = v
     data['BatchNumber'] = batch['batchNumber']
     events = doc.get('events') or {}
@@ -523,19 +570,142 @@ def set_background(self):
         return
     ds = _run(NQ_SERIES_SELECT, {'batch_number': batch_number})
     pairs = []
+    levels = []
     for r in range(ds.rowCount):
         pairs.append([ds.getValueAt(r, 't_offset_sec'),
                       ds.getValueAt(r, 'bean_temp_f')])
+        levels.append((ds.getValueAt(r, 't_offset_sec'),
+                       ds.getValueAt(r, 'fan_level'),
+                       ds.getValueAt(r, 'heat_level')))
     batch = get_batch(batch_number)
     label = 'Batch %d' % batch_number
     if batch is not None and batch['beanName']:
         label += ' - ' + batch['beanName']
+    drop_sec = -1.0
+    if batch is not None:
+        ev = (batch['document'].get('events') or {}).get('drop')
+        if ev and ev.get('t') is not None:
+            drop_sec = float(ev['t'])
+        elif batch['document'].get('totalSec'):
+            drop_sec = float(batch['document']['totalSec'])
+    # Playback events for Tier 2 item 11 ride along with the
+    # ghost: the Fan and Heat changes in its own series plus
+    # its drop time, derived by roastery.core.
+    events = core.build_background_events(levels, drop_sec)
+    # Phase boundaries for Tier 3 item 16 stage with the ghost
+    # too, from its stamped document events (session level
+    # staging tags; the saved Settings targets stay untouched).
+    if batch is not None:
+        _ev = batch['document'].get('events') or {}
+        core.stage_bg_phases(
+            (_ev.get('dryEnd') or {}).get('t'),
+            (_ev.get('fcStart') or {}).get('t'),
+            (_ev.get('drop') or {}).get('t'))
     system.tag.writeBlocking(
-        [core.BACKGROUND_JSON, BACKGROUND_LABEL],
-        [system.util.jsonEncode(pairs), label])
+        [core.BACKGROUND_JSON, BACKGROUND_LABEL,
+         core.BACKGROUND_DROP_TAG, core.BACKGROUND_EVENTS_TAG],
+        [system.util.jsonEncode(pairs), label, drop_sec,
+         system.util.jsonEncode(events)])
     core.build_overlays()
     system.perspective.navigate(page='/')
 
+
+
+# ---------------------------------------------------------------- compare
+# Multi curve comparison on the Log page (Tier 1 item 2): up to
+# three saved batches overlaid on one canvas chart, BT solid and
+# RoR dashed per batch. RoR is recomputed from each batch's
+# stored temps with the current parameters, the same offline
+# path stage_detail uses, so compared curves can never disagree
+# with the detail view.
+
+COMPARE_COLS = ['t_stamp', 'btA', 'rorA', 'btB', 'rorB',
+                'btC', 'rorC']
+COMPARE_SLOTS = ('A', 'B', 'C')
+
+
+def compare_options():
+    """Dropdown options for the compare pickers, from the
+    SelectAll named query (the table's own source)."""
+    ds = _run(NQ_SELECT_ALL)
+    out = [{'value': 0, 'label': 'None'}]
+    for r in range(ds.rowCount):
+        n = ds.getValueAt(r, 'batch_number')
+        bean = ds.getValueAt(r, 'bean_name') or ''
+        out.append({'value': int(n),
+                    'label': 'Batch %s - %s' % (n, bean)})
+    return out
+
+
+def compare_startup(self):
+    """BatchesPanel onStartup: fill the three compare pickers
+    and default A and B to the two newest batches."""
+    opts = compare_options()
+    root = self.getChild('root')
+    if root is None:
+        root = self.view.getChild('root')
+    for slot in COMPARE_SLOTS:
+        root.getChild('CompareRow').getChild(
+            'Cmp' + slot).props.options = opts
+    nums = [o['value'] for o in opts if o['value']]
+    c = self.view.custom
+    if len(nums) >= 2:
+        c.cmpA, c.cmpB = nums[0], nums[1]
+    elif nums:
+        c.cmpA = nums[0]
+
+
+def _compare_points(batch_number):
+    ds = _run(NQ_SERIES_SELECT, {'batch_number': int(batch_number)})
+    points = []
+    for r in range(ds.rowCount):
+        bt = ds.getValueAt(r, 'bean_temp_f')
+        if bt is not None:
+            points.append((float(ds.getValueAt(r, 't_offset_sec')),
+                           float(bt)))
+    points.sort()
+    return points
+
+
+def build_compare(self):
+    """Compare button: build the wide compare dataset on the
+    elapsed axis (timestamp union, nulls elsewhere, the live
+    chart's merge shape) and the caption naming each slot."""
+    from java.util import Date
+    c = self.view.custom
+    chosen = [('A', int(c.cmpA or 0)), ('B', int(c.cmpB or 0)),
+              ('C', int(c.cmpC or 0))]
+    merged = {}
+    captions = []
+    for slot, number in chosen:
+        if number <= 0:
+            continue
+        points = _compare_points(number)
+        if not points:
+            continue
+        rors = core.compute_ror_series(points, core.ror_params(),
+                                       offline=True)
+        ror_by_t = dict((t, r) for t, r in rors)
+        for t, bt in points:
+            ms = long(t * 1000)
+            row = merged.get(ms)
+            if row is None:
+                row = {}
+                merged[ms] = row
+            row['bt' + slot] = bt
+            row['ror' + slot] = ror_by_t.get(t)
+        batch = get_batch(number)
+        bean = (batch['beanName'] if batch else '') or ''
+        captions.append('%s = Batch %d %s' % (slot, number, bean))
+    rows = []
+    for ms in sorted(merged):
+        m = merged[ms]
+        rows.append([Date(ms), m.get('btA'), m.get('rorA'),
+                     m.get('btB'), m.get('rorB'),
+                     m.get('btC'), m.get('rorC')])
+    c.compareDs = system.dataset.toDataSet(COMPARE_COLS, rows)
+    c.compareCaption = (' - '.join(captions) if captions
+                        else 'Pick at least one batch to compare.')
 
 
 # ---------------------------------------------------------------- event editing
@@ -693,7 +863,84 @@ def stage_detail(batch_number):
         [DETAIL_DS, DETAIL_MARKS],
         [system.dataset.toDataSet(['t_stamp', 'bt', 'ror'], rows),
          core.marks_dataset(evs)])
+    # The detail analyzer (Tier 2 item 13) restages with the
+    # batch: selection back to Latest, readout recomputed.
+    system.tag.writeBlocking(
+        [core.DETAIL_ANALYZER + '/Sec'], [-1])
+    detail_analyzer_refresh()
     return True
+
+
+# ------------------------------------------------------- detail analyzer
+# Tier 2 item 13 on BatchDetail: the same crosshair readout as
+# the live chart, computed over the staged DetailDS (stored
+# temps with RoR recomputed on read by stage_detail, the one
+# implementation) plus the staged ghost for the ghost BT and
+# deviation columns. Values publish to the DetailAnalyzer
+# tags the detail strip binds; selection moves through the
+# strip steppers, never through floating chart text.
+
+def _detail_analyzer_paths():
+    names = {'timeText': 'TimeText', 'btText': 'BtText',
+             'rorText': 'RorText', 'bgText': 'BgText',
+             'devText': 'DevText', 'btF': 'BtF', 'rorF': 'RorF',
+             'bgF': 'BgF', 'devF': 'DevF', 'hasBg': 'HasBg'}
+    return dict((k, core.DETAIL_ANALYZER + '/' + v)
+                for k, v in names.items())
+
+
+def _detail_points():
+    ds = system.tag.readBlocking([DETAIL_DS])[0].value
+    points = []
+    rors = []
+    if ds is None:
+        return points, rors
+    for r in range(ds.rowCount):
+        ts = ds.getValueAt(r, 't_stamp')
+        bt = ds.getValueAt(r, 'bt')
+        if ts is None or bt is None:
+            continue
+        t = ts.getTime() / 1000.0
+        points.append((t, float(bt)))
+        rors.append((t, ds.getValueAt(r, 'ror')))
+    return points, rors
+
+
+def detail_analyzer_refresh():
+    """Recompute the BatchDetail analyzer readout at the
+    selected time (DetailAnalyzer/Sec, -1 is Latest)."""
+    points, rors = _detail_points()
+    if not points:
+        return
+    sec = system.tag.readBlocking(
+        [core.DETAIL_ANALYZER + '/Sec'])[0].value
+    t = points[-1][0] if sec is None or int(sec) < 0 else float(sec)
+    t = max(points[0][0], min(points[-1][0], t))
+    core._analyzer_write(
+        _detail_analyzer_paths(),
+        core.analyzer_values(points, rors, t))
+
+
+def detail_analyzer_step(delta):
+    """Detail analyzer stepper (thin handler target)."""
+    points, _rors = _detail_points()
+    if not points:
+        return
+    sec = system.tag.readBlocking(
+        [core.DETAIL_ANALYZER + '/Sec'])[0].value
+    base = points[-1][0] if sec is None or int(sec) < 0         else float(sec)
+    new = max(points[0][0], min(points[-1][0],
+                                base + float(delta)))
+    system.tag.writeBlocking(
+        [core.DETAIL_ANALYZER + '/Sec'], [int(new)])
+    detail_analyzer_refresh()
+
+
+def detail_analyzer_latest():
+    """Detail analyzer Latest button."""
+    system.tag.writeBlocking(
+        [core.DETAIL_ANALYZER + '/Sec'], [-1])
+    detail_analyzer_refresh()
 
 
 def detail_reference_lines():
@@ -737,14 +984,202 @@ def open_detail(self):
                                        scope='session')
 
 
+# Tier 2 items 7, 8 and 10b: phase analytics completion, loss /
+# yield / density, and the BT similarity score. Definitions are
+# Artisan 5.0.0 main.py: RoR(TP_index, dryEndIndex),
+# computedProfileInformation() (phase RoRs, delta temps, total
+# RoR, fcs_ror, per phase AUC through ts(), cool phase time from
+# calcStatistics), weight_loss(), volume_increase(), and
+# curveSimilarity() (BT half).
+
+
+def _weight_loss(green, roasted):
+    """Artisan weight_loss: percent, 0 when green is 0 or the
+    roasted weight exceeds the green weight."""
+    green = float(green or 0.0)
+    roasted = float(roasted or 0.0)
+    if green == 0.0 or green < roasted:
+        return 0.0
+    return 100.0 * ((green - roasted) / green)
+
+
+def _volume_increase(green, roasted):
+    """Artisan volume_increase: percent, 0 when green is 0 or
+    the roasted volume is smaller than the green volume."""
+    green = float(green or 0.0)
+    roasted = float(roasted or 0.0)
+    if green == 0.0 or green > roasted:
+        return 0.0
+    return 100.0 * ((roasted - green) / green)
+
+
+def loss_yield_density(meta):
+    """The full Artisan loss, yield and density set from the
+    batch metadata (Tier 1 item 3 fields). Every value is
+    guarded: when an input is absent or the Artisan formula
+    would divide by zero or read a negative yield, the key is
+    simply not stored, never a fabricated number. Keys:
+    weightLossPct, defectsLossPct, totalLossPct, totalYieldG,
+    totalYieldPct, volumeGainPct, moistureLossPct,
+    organicLossPct, greenDensityGL, roastedDensityGL.
+    Densities are weight over volume in g per L (Artisan
+    converts weight to g and volume to L; Roastery stores g
+    and ml, so density is weight * 1000 / volume_ml).
+    totalYieldG is Artisan's computed total_yield (the yield
+    weight in grams, weight out minus defects); totalYieldPct
+    is the same yield as a percent of the green weight."""
+    meta = meta or {}
+    out = {}
+
+    def _f(key):
+        v = meta.get(key)
+        try:
+            return float(v) if v is not None else 0.0
+        except Exception:
+            return 0.0
+
+    win = _f('ChargeWeightG')
+    wout = _f('WeightOutG')
+    defects = _f('DefectsWeightG')
+    vin = _f('VolumeInMl')
+    vout = _f('VolumeOutMl')
+    gmoist = _f('MoisturePct')
+    rmoist = _f('RoastedMoisturePct')
+    wl = _weight_loss(win, wout) if win > 0 and wout > 0 else 0.0
+    if wl > 0:
+        out['weightLossPct'] = wl
+    if wout > 0 and defects > 0 and defects < wout:
+        dl = _weight_loss(wout, wout - defects)
+        if dl > 0:
+            out['defectsLossPct'] = dl
+    if vin > 0 and vout > 0:
+        vg = _volume_increase(vin, vout)
+        if vg > 0:
+            out['volumeGainPct'] = vg
+    if gmoist > 0 and rmoist > 0:
+        ml = gmoist - rmoist
+        out['moistureLossPct'] = ml
+        if wl > 0:
+            out['organicLossPct'] = wl - ml
+    if win > 0 and (wout > 0 or defects > 0):
+        res = (wout - defects) if wout > 0 else (win - defects)
+        if res > 0:
+            out['totalYieldG'] = res
+            out['totalYieldPct'] = res * 100.0 / win
+            tl = _weight_loss(win, res)
+            if tl > 0:
+                out['totalLossPct'] = tl
+    if win > 0 and vin > 0:
+        out['greenDensityGL'] = win * 1000.0 / vin
+    if wout > 0 and vout > 0:
+        out['roastedDensityGL'] = wout * 1000.0 / vout
+    return out
+
+
+def _auc_range(points, start, end, base):
+    """Trapezoid area between the bean curve and the base temp
+    over [start, end] only, in degree F minutes (Artisan ts()
+    per phase shape, calcAUC trapezoids). Segments are clipped
+    to the range with interpolated endpoint temps."""
+    if end is None or start is None or end <= start or not points:
+        return None
+    auc = 0.0
+    for i in range(len(points) - 1):
+        t0, v0 = points[i]
+        t1, v1 = points[i + 1]
+        if t1 <= start or t0 >= end or t1 <= t0:
+            continue
+        a = max(t0, start)
+        b = min(t1, end)
+        va = v0 + (v1 - v0) * (a - t0) / (t1 - t0)
+        vb = v0 + (v1 - v0) * (b - t0) / (t1 - t0)
+        avg = (va + vb) / 2.0
+        if avg > base:
+            auc += (avg - base) * (b - a) / 60.0
+    return auc
+
+
+def _interp_pairs(pairs, t):
+    if not pairs or t < pairs[0][0] or t > pairs[-1][0]:
+        return None
+    for i in range(len(pairs) - 1):
+        t0, v0 = pairs[i]
+        t1, v1 = pairs[i + 1]
+        if t0 <= t <= t1:
+            if t1 <= t0:
+                return v1
+            return v0 + (v1 - v0) * (t - t0) / (t1 - t0)
+    return pairs[-1][1]
+
+
+def bt_similarity(fg_points, fg_drop_t, bg_points, bg_drop_t,
+                  fg_dry_t=None):
+    """BT similarity against the background, Artisan main.py
+    curveSimilarity() BT half only (the dbt value): the RMSE
+    in F between the foreground BT and the background BT
+    interpolated at the same times, over the stretch from
+    DRY to DROP, with the background time axis shifted so the
+    two DROP times align (dropTimeDelta). The ET half is
+    skipped (single sensor). Roastery adaptation: Artisan
+    locates its dry index by scanning back from DROP for the
+    phases dry boundary temperature; Roastery uses its
+    recorded Dry End event as the same phase boundary.
+    Returns None when either curve lacks a DROP or there is
+    no overlap to compare."""
+    if (not fg_points or not bg_points or fg_drop_t is None
+            or bg_drop_t is None):
+        return None
+    start = float(fg_dry_t) if fg_dry_t is not None else 0.0
+    shift = float(fg_drop_t) - float(bg_drop_t)
+    sq = []
+    for t, bt in fg_points:
+        if t < start or t > float(fg_drop_t):
+            continue
+        b = _interp_pairs(bg_points, t - shift)
+        if b is None:
+            continue
+        sq.append((float(bt) - b) ** 2)
+    if not sq:
+        return None
+    return math.sqrt(sum(sq) / len(sq))
+
+
+def phase_analysis(doc, points):
+    """Structured phase analytics for the saved document
+    (Tier 2 item 7): per phase duration, share, delta temp,
+    average RoR and AUC, plus fcsRorFMin, totalRorFMin and
+    coolSec. Only values the data actually supports are
+    stored. See _phase_analysis for the definitions."""
+    rows, _tp_text, extra = _phase_analysis(doc, points)
+    out = {'phases': {}}
+    for name, vals in extra['phases'].items():
+        out['phases'][name] = vals
+    if extra.get('fcsRor') is not None:
+        out['fcsRorFMin'] = extra['fcsRor']
+    if extra.get('totalRor') is not None:
+        out['totalRorFMin'] = extra['totalRor']
+    if extra.get('coolSec') is not None:
+        out['coolSec'] = extra['coolSec']
+    return out
+
+
 def _phase_analysis(doc, points):
-    """Analyzer style phase readouts for the detail view, in the
-    spirit of Artisan's computed block: per phase duration, share
-    of the roast, bean temp gain between the bounding events and
-    the average rate of rise over the phase (gain per minute),
-    plus the turning point (the bean temp minimum between charge
-    and dry end) read off the stored curve."""
+    """Analyzer style phase readouts for the detail view,
+    aligned to Artisan's computed block (Tier 2 item 7):
+    per phase duration and share (dry phase time still runs
+    charge to dry end, as in Artisan calcStatistics), the per
+    phase delta temp and average RoR from Artisan RoR() (the
+    DRY phase RoR and delta are measured from the TURNING
+    POINT, or from the greens temp when one is recorded, not
+    from charge), per phase AUC (Artisan ts() ranges: charge
+    to dry, dry to FC start, FC start to drop, above the AUC
+    base), the RoR at FC START (fcs_ror, the RoR series value
+    at the FC sample), the total RoR (TP to drop), and a cool
+    phase line (drop to the cool end: the imported Artisan
+    COOL time when present, else the last stored sample).
+    Returns (table rows, turning point text, extra dict)."""
     events = doc.get('events') or {}
+    meta = doc.get('metadata') or {}
 
     def ev(key, field):
         e = events.get(key)
@@ -752,36 +1187,125 @@ def _phase_analysis(doc, points):
 
     total = doc.get('totalSec') or (points[-1][0] if points else 0)
     dry_t = ev('dryEnd', 't')
+    fc_t = ev('fcStart', 't')
+    drop_t = ev('drop', 't')
+    saved_tp = doc.get('turningPoint') or {}
     tp = None
-    for (t, bt) in points:
-        if t <= 0:
-            continue
-        if dry_t is not None and t >= dry_t:
-            break
-        if dry_t is None and total and t > total * 0.5:
-            break
-        if tp is None or bt < tp[1]:
-            tp = (t, bt)
+    if (saved_tp.get('t') is not None
+            and saved_tp.get('tempF') is not None):
+        # The live detected turning point, saved with the batch
+        # (roastery.core._track_turning_point); it wins over the
+        # offline curve scan below.
+        tp = (saved_tp['t'], saved_tp['tempF'])
+    else:
+        for (t, bt) in points:
+            if t <= 0:
+                continue
+            if dry_t is not None and t >= dry_t:
+                break
+            if dry_t is None and total and t > total * 0.5:
+                break
+            if tp is None or bt < tp[1]:
+                tp = (t, bt)
+    # AUC base: the saved AUC detail base when present, else
+    # the charge temp (the base curve_auc uses for the batch).
+    auc_detail = doc.get('aucDetail') or {}
+    base = auc_detail.get('baseF')
+    if base is None:
+        base = ev('charge', 'tempF') or 0.0
+    greens = 0.0
+    try:
+        greens = float(meta.get('GreensTempF') or 0.0)
+    except Exception:
+        greens = 0.0
+    dry_temp = ev('dryEnd', 'tempF')
+    # Drying delta and RoR, Artisan RoR() first two branches.
+    dry_gain = None
+    dry_ror = None
+    if dry_temp is not None and greens > 0:
+        dry_gain = dry_temp - greens
+        if dry_t:
+            dry_ror = dry_gain / (dry_t / 60.0)
+    elif dry_temp is not None and tp is not None and dry_t is not None and dry_t > tp[0]:
+        dry_gain = dry_temp - tp[1]
+        dry_ror = dry_gain / ((dry_t - tp[0]) / 60.0)
+    bounds = (('Drying', 0, dry_t, dry_gain, dry_ror),
+              ('Maillard', dry_t, fc_t, None, None),
+              ('Development', fc_t, drop_t, None, None))
+    phases = {}
     rows = []
-    for name, a, b in (('Drying', 'charge', 'dryEnd'),
-                       ('Maillard', 'dryEnd', 'fcStart'),
-                       ('Development', 'fcStart', 'drop')):
-        ta, tb = ev(a, 't'), ev(b, 't')
+    for name, ta, tb, gain, ror in bounds:
         if ta is None or tb is None or tb <= ta:
             continue
         dur = tb - ta
-        fa, fb = ev(a, 'tempF'), ev(b, 'tempF')
-        gain = (fb - fa) if (fa is not None and fb is not None)             else None
-        ror = (gain / (dur / 60.0)) if gain is not None else None
+        if gain is None:
+            fa = _interp_pairs(points, float(ta))
+            fb = _interp_pairs(points, float(tb))
+            # Event temps are the recorded truth when present;
+            # the curve interpolation is the fallback.
+            ea = ev('charge' if name == 'Drying' else
+                    'dryEnd' if name == 'Maillard' else 'fcStart',
+                    'tempF')
+            eb = ev('dryEnd' if name == 'Drying' else
+                    'fcStart' if name == 'Maillard' else 'drop',
+                    'tempF')
+            if ea is not None:
+                fa = ea
+            if eb is not None:
+                fb = eb
+            gain = (fb - fa) if (fa is not None
+                                 and fb is not None) else None
+            ror = (gain / (dur / 60.0)) if gain is not None else None
+        auc = _auc_range(points, float(ta), float(tb), float(base))
+        phases[name] = {'sec': dur,
+                        'sharePct': (dur * 100.0 / total)
+                        if total else None,
+                        'deltaF': gain, 'rorFMin': ror,
+                        'aucFMin': auc}
         rows.append([name, _mmss(dur),
                      ('%.0f%%' % (dur * 100.0 / total))
                      if total else '--',
                      ('%+.0f F' % gain) if gain is not None
                      else '--',
                      ('%.1f F/min' % ror) if ror is not None
-                     else '--'])
+                     else '--',
+                     ('%.0f' % auc) if auc is not None else '--'])
+    # Cool phase: drop to cool end.
+    cool_sec = None
+    cool_end = None
+    sub = (doc.get('artisan') or {}).get('events') or {}
+    if sub.get('coolEndSec') is not None:
+        cool_end = float(sub['coolEndSec'])
+    elif points and drop_t is not None and points[-1][0] > drop_t:
+        cool_end = float(points[-1][0])
+    if cool_end is not None and drop_t is not None and cool_end > drop_t:
+        cool_sec = cool_end - drop_t
+        span = total + cool_sec
+        rows.append(['Cool', _mmss(cool_sec),
+                     ('%.0f%%' % (cool_sec * 100.0 / span))
+                     if span else '--', '--', '--', '--'])
+    # RoR at FC START from the one RoR implementation.
+    fcs_ror = None
+    if fc_t is not None and points:
+        rors = core.compute_ror_series(points, core.ror_params(),
+                                       offline=True)
+        best = None
+        for t, r in rors:
+            if r is None:
+                continue
+            if best is None or abs(t - fc_t) < abs(best[0] - fc_t):
+                best = (t, r)
+        if best is not None:
+            fcs_ror = best[1]
+    total_ror = None
+    drop_temp = ev('drop', 'tempF')
+    if (tp is not None and drop_t is not None and drop_temp is not None
+            and drop_t > tp[0]):
+        total_ror = (drop_temp - tp[1]) / ((drop_t - tp[0]) / 60.0)
+    extra = {'phases': phases, 'fcsRor': fcs_ror,
+             'totalRor': total_ror, 'coolSec': cool_sec}
     tp_text = ('%.0f F at %s' % (tp[1], _mmss(tp[0]))) if tp         else '--'
-    return rows, tp_text
+    return rows, tp_text, extra
 
 
 def detail_startup(self):
@@ -797,6 +1321,7 @@ def detail_startup(self):
     doc = system.util.jsonDecode(raw)
     meta = doc.get('metadata') or {}
     phases = doc.get('phases') or {}
+    calculator_seed(doc)
     self.view.custom.titleText = 'Batch %s - %s' % (
         doc.get('batchNumber'), doc.get('beanName') or '')
     self.view.custom.subText = '%s - %s' % (
@@ -818,6 +1343,30 @@ def detail_startup(self):
             _mmss(phases.get('dryingSec')),
             _mmss(phases.get('maillardSec')),
             _mmss(phases.get('developmentSec'))))
+    # Statistics summary line (Tier 3 item 19): the same phase
+    # values in the compact under chart form, percents of the
+    # total roast time. No new math: the phase seconds and the
+    # DTR percent come straight from the document phases block.
+    _tot = float(doc.get('totalSec') or 0)
+
+    def _share(sec):
+        if not _tot or sec is None:
+            return '--'
+        return '%d%%' % int(round(float(sec) * 100.0 / _tot))
+    def _ms(sec):
+        sec = int(max(0, float(sec or 0)))
+        return '%d:%02d' % (sec // 60, sec % 60)
+    _sep = ' ' + chr(183) + ' '
+    self.view.custom.dStatsLine = _sep.join([
+        'Dry %s %s' % (_ms(phases.get('dryingSec')),
+                       _share(phases.get('dryingSec'))),
+        'Mai %s %s' % (_ms(phases.get('maillardSec')),
+                       _share(phases.get('maillardSec'))),
+        'Dev %s %s' % (_ms(phases.get('developmentSec')),
+                       _share(phases.get('developmentSec'))),
+        'DTR %s' % (('%.0f%%' % phases['dtrPct'])
+                    if phases.get('dtrPct') is not None
+                    else '--')])
     pts = []
     try:
         sds = _run(NQ_SERIES_SELECT, {'batch_number': number})
@@ -830,10 +1379,64 @@ def detail_startup(self):
     except Exception:
         pts = []
     pts.sort()
-    seg_rows, tp_text = _phase_analysis(doc, pts)
+    seg_rows, tp_text, extra = _phase_analysis(doc, pts)
     self.view.custom.analysisDs = system.dataset.toDataSet(
-        ['phase', 'time', 'share', 'gain', 'avgRor'], seg_rows)
+        ['phase', 'time', 'share', 'gain', 'avgRor', 'auc'],
+        seg_rows)
     self.view.custom.dTp = tp_text
+    fcs = extra.get('fcsRor')
+    self.view.custom.dFcsRor = ('%.1f F/min' % fcs)         if fcs is not None else '--'
+    tror = extra.get('totalRor')
+    self.view.custom.dTotalRor = ('%.1f F/min' % tror)         if tror is not None else '--'
+    cool = extra.get('coolSec')
+    self.view.custom.dCool = _mmss(cool)         if cool is not None else '--'
+    lossd = doc.get('loss') or loss_yield_density(meta)
+    def _pct(key):
+        v = lossd.get(key)
+        return ('%.1f%%' % v) if v is not None else '--'
+    def _dens(key):
+        v = lossd.get(key)
+        return ('%.0f g/L' % v) if v is not None else '--'
+    self.view.custom.dDefectsLoss = _pct('defectsLossPct')
+    self.view.custom.dTotalLoss = _pct('totalLossPct')
+    self.view.custom.dVolumeGain = _pct('volumeGainPct')
+    self.view.custom.dMoistureLoss = _pct('moistureLossPct')
+    self.view.custom.dOrganicLoss = _pct('organicLossPct')
+    self.view.custom.dGreenDensity = _dens('greenDensityGL')
+    self.view.custom.dRoastedDensity = _dens('roastedDensityGL')
+    yld = lossd.get('totalYieldPct')
+    self.view.custom.dYield = ('%.1f%%' % yld)         if yld is not None else '--'
+    # BT similarity against the currently staged ghost
+    # (Tier 2 item 10b), when the ghost carries a drop time.
+    sim = None
+    try:
+        bg_pairs = core.background_points()
+        bg_drop = system.tag.readBlocking(
+            [core.BACKGROUND_DROP_TAG])[0].value
+        evs = doc.get('events') or {}
+        drop_ev = evs.get('drop') or {}
+        dry_ev = evs.get('dryEnd') or {}
+        if bg_pairs and bg_drop is not None and float(bg_drop) >= 0:
+            sim = bt_similarity(pts, drop_ev.get('t'), bg_pairs,
+                                float(bg_drop), dry_ev.get('t'))
+    except Exception:
+        sim = None
+    self.view.custom.dSimilarity = ('%.1f F RMSE' % sim)         if sim is not None else '--'
+    # Between batch line (Tier 3 item 20): one line carrying
+    # the four BBP values when the document has them, and an
+    # empty string when it does not, so batches with no
+    # preceding drop show nothing.
+    _bbp_doc = doc.get('bbp') or {}
+    if _bbp_doc:
+        self.view.custom.dBbp = (
+            'Between batch (BBP): %s, bottom %.0f F, '
+            'RoR in %.1f F/min, RoR out %.1f F/min' % (
+                _mmss(_bbp_doc.get('time_sec')),
+                float(_bbp_doc.get('bottom_temp_f') or 0),
+                float(_bbp_doc.get('ror_in_f_min') or 0),
+                float(_bbp_doc.get('ror_out_f_min') or 0)))
+    else:
+        self.view.custom.dBbp = ''
     ev_rows = []
     events = doc.get('events') or {}
     for key, lbl in (('charge', 'Charge'), ('dryEnd', 'Dry End'),
@@ -975,3 +1578,288 @@ def seed_from_roastlog():
         _insert_series(number, points)
         inserted += 1
     return inserted
+
+# ---------------------------------------------------------------- Tier 3
+# Item 18: batch export beyond .alog (CSV, JSON, printable HTML
+# summary), and item 21: the yield and conversion calculator
+# seeding. The export builders are pure library functions over
+# the stored document (SelectById) and the stored series
+# (Series/SelectByBatch, named queries only); the download
+# handlers are thin one purpose wrappers around
+# system.perspective.download, exactly like the .alog export in
+# roastery.artisan. Ranking and production reports are skipped,
+# per the Tier 3 inventory.
+
+CALC_TAG = '[default]Roastery/Calculator'
+
+
+def _series_rows(batch_number):
+    """Stored series for one batch as plain dicts, in time order.
+    RoR, fan and heat are the stored columns (RoR was derived by
+    the one implementation at save time)."""
+    ds = _run(NQ_SERIES_SELECT, {'batch_number': int(batch_number)})
+    rows = []
+    for r in range(ds.rowCount):
+        rows.append({
+            't': ds.getValueAt(r, 't_offset_sec'),
+            'bt': ds.getValueAt(r, 'bean_temp_f'),
+            'ror': ds.getValueAt(r, 'rate_of_rise_f'),
+            'fan': ds.getValueAt(r, 'fan_level'),
+            'heat': ds.getValueAt(r, 'heat_level')})
+    rows.sort(key=lambda row: (row['t'] is None, row['t']))
+    return rows
+
+
+def _fmt_num(v, places=2):
+    if v is None:
+        return ''
+    try:
+        return ('%.' + str(places) + 'f') % float(v)
+    except Exception:
+        return str(v)
+
+
+def _csv_cell(v):
+    s = '' if v is None else str(v)
+    if ',' in s or '"' in s or chr(10) in s:
+        return '"' + s.replace('"', '""') + '"'
+    return s
+
+
+def _html_escape(v):
+    s = '' if v is None else str(v)
+    return (s.replace('&', '&amp;').replace('<', '&lt;')
+             .replace('>', '&gt;'))
+
+
+def build_csv_text(batch_number):
+    """CSV export (Tier 3 item 18): a metadata header section
+    (comment lines prefixed with # carrying the batch document
+    key fields), then the series table with elapsed seconds,
+    elapsed mm:ss, bean temp, RoR, fan and heat."""
+    batch = get_batch(int(batch_number))
+    if batch is None:
+        raise ValueError('Batch %s is not in the log.' % batch_number)
+    doc = batch['document']
+    meta = doc.get('metadata') or {}
+    lines = []
+    header = [
+        ('Batch', doc.get('batchNumber')),
+        ('Bean', doc.get('beanName')),
+        ('Origin', meta.get('Origin')),
+        ('Roast start', doc.get('roastStart')),
+        ('Roast end', doc.get('roastEnd')),
+        ('Roast degree', doc.get('roastDegree')),
+        ('Drop temp F', _fmt_num(doc.get('dropTempF'), 1)),
+        ('Total sec', doc.get('totalSec')),
+        ('Charge weight g', _fmt_num(meta.get('ChargeWeightG'), 1)),
+        ('Weight out g', _fmt_num(meta.get('WeightOutG'), 1)),
+        ('Weight loss pct', _fmt_num(doc.get('weightLossPct'), 1)),
+        ('AUC', _fmt_num(doc.get('auc'), 1)),
+        ('Source', doc.get('source')),
+    ]
+    lines.append('# Roastery batch export')
+    for k, v in header:
+        if v not in (None, ''):
+            lines.append('# ' + _csv_cell(k) + ',' + _csv_cell(v))
+    lines.append('')
+    lines.append('time_sec,time_mmss,bean_temp_f,'
+                 'rate_of_rise_f_per_min,fan_level,heat_level')
+    for row in _series_rows(batch_number):
+        t = row['t']
+        fan = row['fan']
+        heat = row['heat']
+        lines.append(','.join([
+            _fmt_num(t, 1),
+            _mmss(t) if t is not None else '',
+            _fmt_num(row['bt']),
+            _fmt_num(row['ror']),
+            (('%d' % int(fan)) if fan is not None else ''),
+            (('%d' % int(heat)) if heat is not None else '')]))
+    return 'roastery-batch-%d.csv' % int(batch_number), chr(10).join(lines) + chr(10)
+
+
+def build_json_text(batch_number):
+    """JSON export (Tier 3 item 18): the full batch document
+    plus the full stored series, one object."""
+    batch = get_batch(int(batch_number))
+    if batch is None:
+        raise ValueError('Batch %s is not in the log.' % batch_number)
+    payload = {
+        'batchNumber': int(batch_number),
+        'beanName': batch['beanName'],
+        'roastStart': _iso(batch['roastStart']),
+        'roastEnd': _iso(batch['roastEnd']),
+        'dropTempF': batch['dropTempF'],
+        'document': batch['document'],
+        'series': _series_rows(batch_number)}
+    return ('roastery-batch-%d.json' % int(batch_number),
+            system.util.jsonEncode(payload))
+
+
+def build_summary_html(batch_number):
+    """Printable summary (Tier 3 item 18): a standalone HTML
+    file that reads well printed, with the batch metadata, the
+    summary and phase analysis, the loss block, the events
+    timeline and simple series statistics. Inline CSS lives in
+    the generated file only (it is a print document, not a
+    Perspective view, so the style class rule does not apply)."""
+    batch = get_batch(int(batch_number))
+    if batch is None:
+        raise ValueError('Batch %s is not in the log.' % batch_number)
+    doc = batch['document']
+    meta = doc.get('metadata') or {}
+    phases = doc.get('phases') or {}
+    rows = _series_rows(batch_number)
+    pts = [(float(r['t']), float(r['bt'])) for r in rows
+           if r['t'] is not None and r['bt'] is not None]
+    seg_rows, tp_text, extra = _phase_analysis(doc, pts)
+    lossd = doc.get('loss') or loss_yield_density(meta)
+    max_bt = max([bt for _t, bt in pts]) if pts else None
+    dur = pts[-1][0] if pts else None
+    e = _html_escape
+    out = []
+    out.append('<!DOCTYPE html>')
+    out.append('<html><head><meta charset="utf-8">')
+    out.append('<title>Roastery Batch %s Summary</title>' % e(doc.get('batchNumber')))
+    out.append('<style>body{font-family:Arial,sans-serif;margin:32px;'
+               'color:#111}h1{font-size:22px;margin:0 0 4px}'
+               'h2{font-size:15px;margin:24px 0 8px;color:#0c7bb3}'
+               'table{border-collapse:collapse;min-width:320px}'
+               'td,th{border:1px solid #999;padding:5px 10px;'
+               'font-size:13px;text-align:left}'
+               '.sub{color:#555;font-size:13px}</style></head><body>')
+    out.append('<h1>Batch %s - %s</h1>' % (e(doc.get('batchNumber')), e(doc.get('beanName'))))
+    out.append('<p class="sub">%s - %s</p>' % (
+        e((doc.get('roastStart') or '')[:16].replace('T', ' ')),
+        e(doc.get('roastDegree'))))
+    out.append('<h2>Summary</h2><table>')
+    summary = [
+        ('Total time', _mmss(doc.get('totalSec'))),
+        ('Drop temp', ('%.0f F' % doc['dropTempF']) if doc.get('dropTempF') else '--'),
+        ('Weight loss', ('%.1f%%' % doc['weightLossPct']) if doc.get('weightLossPct') else '--'),
+        ('Dev ratio (DTR)', ('%.1f%%' % phases['dtrPct']) if phases.get('dtrPct') is not None else '--'),
+        ('AUC', ('%.0f' % doc['auc']) if doc.get('auc') else '--'),
+        ('Turning point', tp_text),
+        ('RoR at FC start', ('%.1f F/min' % extra['fcsRor']) if extra.get('fcsRor') is not None else '--'),
+        ('Total RoR (TP to drop)', ('%.1f F/min' % extra['totalRor']) if extra.get('totalRor') is not None else '--'),
+        ('Source', doc.get('source') or '--'),
+    ]
+    for k, v in summary:
+        out.append('<tr><td>%s</td><td>%s</td></tr>' % (e(k), e(v)))
+    out.append('</table>')
+    loss_labels = {'weightLossPct': 'Weight loss',
+                   'defectsLossPct': 'Defects loss',
+                   'totalLossPct': 'Total loss',
+                   'totalYieldPct': 'Total yield',
+                   'volumeGainPct': 'Volume gain',
+                   'moistureLossPct': 'Moisture loss',
+                   'organicLossPct': 'Organic loss',
+                   'greenDensityGL': 'Green density',
+                   'roastedDensityGL': 'Roasted density'}
+    if lossd:
+        out.append('<h2>Loss, Yield and Density</h2><table>')
+        for k in ('weightLossPct', 'defectsLossPct', 'totalLossPct',
+                  'totalYieldPct', 'volumeGainPct', 'moistureLossPct',
+                  'organicLossPct'):
+            if lossd.get(k) is not None:
+                out.append('<tr><td>%s</td><td>%.1f%%</td></tr>' % (e(loss_labels.get(k, k)), lossd[k]))
+        for k in ('greenDensityGL', 'roastedDensityGL'):
+            if lossd.get(k) is not None:
+                out.append('<tr><td>%s</td><td>%.0f g/L</td></tr>' % (e(loss_labels.get(k, k)), lossd[k]))
+        out.append('</table>')
+    out.append('<h2>Phase Analysis</h2><table>')
+    out.append('<tr><th>Phase</th><th>Time</th><th>Share</th>'
+               '<th>Gain</th><th>Avg RoR</th><th>AUC</th></tr>')
+    for r in seg_rows:
+        out.append('<tr>' + ''.join('<td>%s</td>' % e(c) for c in r) + '</tr>')
+    out.append('</table>')
+    out.append('<h2>Events</h2><table>')
+    out.append('<tr><th>Event</th><th>Time</th><th>Temp</th></tr>')
+    events = doc.get('events') or {}
+    for key, lbl in (('charge', 'Charge'), ('dryEnd', 'Dry End'),
+                     ('fcStart', 'FC Start'), ('fcEnd', 'FC End'),
+                     ('scStart', 'SC Start'), ('scEnd', 'SC End'),
+                     ('drop', 'Drop')):
+        ev = events.get(key)
+        if ev:
+            out.append('<tr><td>%s</td><td>%s</td><td>%s</td></tr>' % (
+                e(lbl), e(_mmss(ev.get('t'))),
+                e(('%.0f F' % ev['tempF']) if ev.get('tempF') is not None else '--')))
+    for c in events.get('custom') or []:
+        out.append('<tr><td>%s</td><td>%s</td><td>%s</td></tr>' % (
+            e(c.get('name') or 'Custom'), e(_mmss(c.get('t'))),
+            e(('%.0f F' % c['tempF']) if c.get('tempF') is not None else '--')))
+    out.append('</table>')
+    out.append('<h2>Metadata</h2><table>')
+    for m in core.FORM_MEMBERS:
+        if meta.get(m) not in (None, ''):
+            out.append('<tr><td>%s</td><td>%s</td></tr>' % (e(m), e(meta[m])))
+    out.append('</table>')
+    out.append('<h2>Curve Statistics</h2><table>')
+    stats = [
+        ('Samples', str(len(pts))),
+        ('Duration', _mmss(dur) if dur is not None else '--'),
+        ('Max bean temp', ('%.1f F' % max_bt) if max_bt is not None else '--'),
+    ]
+    for k, v in stats:
+        out.append('<tr><td>%s</td><td>%s</td></tr>' % (e(k), e(v)))
+    out.append('</table>')
+    out.append('</body></html>')
+    return ('roastery-batch-%d-summary.html' % int(batch_number),
+            chr(10).join(out))
+
+
+def export_csv_download(self):
+    """BatchDetail Export CSV button (thin)."""
+    number = system.tag.readBlocking([SELECTED_TAG])[0].value
+    if not number:
+        return
+    filename, text = build_csv_text(int(number))
+    system.perspective.download(filename, text)
+
+
+def export_json_download(self):
+    """BatchDetail Export JSON button (thin)."""
+    number = system.tag.readBlocking([SELECTED_TAG])[0].value
+    if not number:
+        return
+    filename, text = build_json_text(int(number))
+    system.perspective.download(filename, text)
+
+
+def export_summary_download(self):
+    """BatchDetail Print Summary button (thin): downloads the
+    printable HTML summary; open it and print from the browser."""
+    number = system.tag.readBlocking([SELECTED_TAG])[0].value
+    if not number:
+        return
+    filename, text = build_summary_html(int(number))
+    system.perspective.download(filename, text)
+
+
+def calculator_seed(doc):
+    """Tier 3 item 21: seed the calculator tags from the staged
+    batch, so the calculator on BatchDetail starts from this
+    batch's own weights. The math itself lives on expression
+    tags in the Calculator folder (expected out, actual loss,
+    and the F/C and g/oz conversions), so the readouts update
+    live as the bidirectional tag bound inputs are edited."""
+    meta = (doc or {}).get('metadata') or {}
+    writes = []
+    try:
+        charge = float(meta.get('ChargeWeightG') or 0)
+    except Exception:
+        charge = 0
+    try:
+        out_w = float(meta.get('WeightOutG') or 0)
+    except Exception:
+        out_w = 0
+    if charge > 0:
+        writes.append((CALC_TAG + '/ChargeG', charge))
+        writes.append((CALC_TAG + '/ConvG', charge))
+    if out_w > 0:
+        writes.append((CALC_TAG + '/OutG', out_w))
+    if writes:
+        system.tag.writeBlocking([p for p, _v in writes],
+                                 [v for _p, v in writes])

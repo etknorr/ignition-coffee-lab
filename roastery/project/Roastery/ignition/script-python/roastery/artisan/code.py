@@ -98,6 +98,14 @@ IDENTITY_KEYS = (
 
 GRAMS = {'g': 1.0, 'kg': 1000.0, 'lb': 453.59237,
          'lbs': 453.59237, 'oz': 28.349523125}
+VOLUMES = {'ml': 1.0, 'l': 1000.0, 'oz': 29.5735,
+           'fl oz': 29.5735, 'floz': 29.5735}
+DEFECT_FIELDS = (
+    ('DefectHeavyFC', 'heavyFC'), ('DefectLowFC', 'lowFC'),
+    ('DefectLightCut', 'lightCut'), ('DefectDarkCut', 'darkCut'),
+    ('DefectDrops', 'drops'), ('DefectOily', 'oily'),
+    ('DefectUneven', 'uneven'), ('DefectTipping', 'tipping'),
+    ('DefectScorching', 'scorching'), ('DefectDivots', 'divots'))
 
 
 # ---------------------------------------------------------------- parse
@@ -285,9 +293,10 @@ def _weight_g(p, idx):
     return _num(w[idx]) * GRAMS.get(unit, 1.0)
 
 
-def _density_gl(p):
-    d = p.get('density') or []
-    if len(d) < 4:
+def _density_from_list(d):
+    """Grams per litre from an Artisan density list of the
+    shape [amount, amountUnit, volume, volumeUnit]."""
+    if not d or len(d) < 4:
         return 0.0
     amount = _num(d[0]) * GRAMS.get(str(d[1]).lower(), 1.0)
     vol = _num(d[2])
@@ -296,6 +305,10 @@ def _density_gl(p):
     if amount > 0 and liters > 0:
         return amount / liters
     return 0.0
+
+
+def _density_gl(p):
+    return _density_from_list(p.get('density') or [])
 
 
 def _fan_heat_series(p, timex, t0, mode):
@@ -462,12 +475,45 @@ def profile_to_batch(p, batch_number):
     meta['MoisturePct'] = _num(p.get('moisture_greens'))
     meta['DensityGL'] = _density_gl(p)
     meta['OperatorName'] = p.get('operator') or ''
-    notes = p.get('roastingnotes') or ''
-    if p.get('cuppingnotes'):
-        notes = (notes + '\n' if notes else '') + \
-            'Cupping: ' + p['cuppingnotes']
-    meta['Notes'] = notes
+    meta['Notes'] = p.get('roastingnotes') or ''
+    meta['CuppingNotes'] = p.get('cuppingnotes') or ''
     meta['TargetDropTempF'] = drop_temp or 0.0
+    meta['RoastTitle'] = p.get('title') or ''
+    meta['RoasterType'] = p.get('roastertype') or ''
+    meta['RoasterSizeKg'] = _num(p.get('roastersize'))
+    meta['RoasterHeating'] = int(_num(p.get('roasterheating')))
+    meta['Organization'] = p.get('organization') or ''
+    vol = p.get('volume') or []
+    vol_unit = str(vol[2]).lower() if len(vol) > 2 else 'ml'
+    vol_factor = VOLUMES.get(vol_unit, 1.0)
+    meta['VolumeInMl'] = _num(vol[0]) * vol_factor \
+        if len(vol) > 0 else 0.0
+    meta['VolumeOutMl'] = _num(vol[1]) * vol_factor \
+        if len(vol) > 1 else 0.0
+    weight = p.get('weight') or []
+    weight_unit = str(weight[2]).lower() \
+        if len(weight) > 2 else 'g'
+    meta['DefectsWeightG'] = _num(p.get('defects_weight')) * \
+        GRAMS.get(weight_unit, 1.0)
+    meta['RoastedDensityGL'] = _density_from_list(
+        p.get('density_roasted') or [])
+    meta['BeanSizeMinMm'] = _num(p.get('beansize_min'))
+    if p.get('beansize_max') not in (None, ''):
+        meta['BeanSizeMaxMm'] = _num(p.get('beansize_max'))
+    else:
+        meta['BeanSizeMaxMm'] = _num(p.get('beansize'))
+    for member, key in DEFECT_FIELDS:
+        meta[member] = bool(p.get(key))
+    meta['WholeColor'] = _num(p.get('whole_color'))
+    meta['GroundColor'] = _num(p.get('ground_color'))
+    meta['ColorSystem'] = p.get('color_system') or ''
+    meta['AmbientTempF'] = _to_f(p.get('ambientTemp'), mode) \
+        or 0.0
+    meta['AmbientHumidityPct'] = _num(p.get('ambient_humidity'))
+    meta['AmbientPressureHPa'] = _num(p.get('ambient_pressure'))
+    meta['RoastedMoisturePct'] = _num(p.get('moisture_roasted'))
+    meta['GreensTempF'] = _to_f(p.get('greens_temp'), mode) \
+        or 0.0
 
     end_ms = None
     if charge_ms is not None:
@@ -502,10 +548,16 @@ def profile_to_batch(p, batch_number):
             'dropSec': total,
             'dropTempF': drop_temp or 0.0},
         'fanHeatTrace': trace}
+    doc['loss'] = batches.loss_yield_density(meta)
     sub = _classify(p)
     sub['events']['coolEndSec'] = cool_sec
     sub['events']['etTempsF'] = et_temps
     doc['artisan'] = sub
+    # Phase analysis runs after the artisan subdocument is
+    # attached: its cool phase reads the imported COOL time
+    # from sub['events']['coolEndSec'].
+    doc['phaseAnalysis'] = batches.phase_analysis(
+        doc, [(pt['t'], pt['bt']) for pt in points])
     params = {
         'batch_number': int(batch_number),
         'roast_start': java.util.Date(long(charge_ms))
@@ -616,6 +668,58 @@ def import_upload(self, event):
         note = 'Import failed: %s' % e
     try:
         self.view.custom.importNote = note
+    except Exception:
+        pass
+    return note
+
+
+def stage_background_upload(self, event):
+    """Roast page FileUpload onFileReceived handler (thin):
+    stage the uploaded profile's bean curve as the Roast page
+    background overlay. Nothing is saved to the log."""
+    note = ''
+    try:
+        f = event.file
+        if f is None:
+            raise ValueError('No file arrived with the event.')
+        raw = f.getBytes()
+        text = str(java.lang.String(raw, 'UTF-8'))
+        profile = parse_alog(text)
+        doc, points, params = profile_to_batch(profile, 0)
+        pairs = [[pt['t'], pt['bt']] for pt in points]
+        if not pairs:
+            raise ValueError('The file has no bean curve '
+                             'samples at or after charge.')
+        # Playback events (Tier 2 item 11) stage with the
+        # ghost, derived from the imported per sample levels
+        # by the same roastery.core builder the saved batch
+        # route uses.
+        levels = [(pt['t'], pt.get('fan'), pt.get('heat'))
+                  for pt in points]
+        events = core.build_background_events(
+            levels, float(doc.get('totalSec') or -1))
+        # Phase boundaries for Tier 3 item 16 stage with the
+        # ghost, from the imported document events.
+        _ev = doc.get('events') or {}
+        core.stage_bg_phases((_ev.get('dryEnd') or {}).get('t'),
+                             (_ev.get('fcStart') or {}).get('t'),
+                             (_ev.get('drop') or {}).get('t'))
+        system.tag.writeBlocking(
+            [core.BACKGROUND_JSON, batches.BACKGROUND_LABEL,
+             core.BACKGROUND_DROP_TAG, core.BACKGROUND_EVENTS_TAG],
+            [system.util.jsonEncode(pairs),
+             'File: ' + (f.name or 'profile.alog'),
+             float(doc.get('totalSec') or -1),
+             system.util.jsonEncode(events)])
+        core.build_overlays()
+        note = 'Background staged from %s: %d samples. ' \
+            'Nothing was saved to the log.' % (
+                f.name or 'file', len(pairs))
+    except Exception as e:
+        LOG.error('Artisan background staging failed: %s' % e)
+        note = 'Background failed: %s' % e
+    try:
+        self.view.custom.bgNote = note
     except Exception:
         pass
     return note
@@ -1047,12 +1151,71 @@ def batch_to_profile(batch):
     else:
         profile['weight'] = [_num(meta.get('ChargeWeightG')),
                              _num(meta.get('WeightOutG')), 'g']
+    if 'RoasterType' in meta:
+        profile['roastertype'] = str(meta.get('RoasterType')
+                                      or '')
+    if 'RoasterSizeKg' in meta:
+        profile['roastersize'] = _num(meta.get('RoasterSizeKg'))
+    if 'RoasterHeating' in meta:
+        profile['roasterheating'] = int(_num(
+            meta.get('RoasterHeating')))
+    if 'Organization' in meta:
+        profile['organization'] = str(meta.get('Organization')
+                                      or '')
+    for member, key in DEFECT_FIELDS:
+        if member in meta:
+            profile[key] = bool(meta.get(member))
+    volume_in = _num(meta.get('VolumeInMl'))
+    volume_out = _num(meta.get('VolumeOutMl'))
+    if volume_in > 0 or volume_out > 0:
+        profile['volume'] = [volume_in, volume_out, 'ml']
+    if _num(meta.get('DefectsWeightG')) > 0:
+        profile['defects_weight'] = _num(
+            meta.get('DefectsWeightG'))
+    if _num(meta.get('RoastedDensityGL')) > 0 \
+            and _num(meta.get('WeightOutG')) > 0 \
+            and volume_out > 0:
+        profile['density_roasted'] = [
+            _num(meta.get('WeightOutG')), 'g', volume_out, 'ml']
+    if _num(meta.get('BeanSizeMinMm')) > 0:
+        profile['beansize_min'] = str(int(round(
+            _num(meta.get('BeanSizeMinMm')))))
+    if _num(meta.get('BeanSizeMaxMm')) > 0:
+        profile['beansize_max'] = str(int(round(
+            _num(meta.get('BeanSizeMaxMm')))))
+    if _num(meta.get('WholeColor')) > 0:
+        profile['whole_color'] = _num(meta.get('WholeColor'))
+    if _num(meta.get('GroundColor')) > 0:
+        profile['ground_color'] = _num(meta.get('GroundColor'))
+    if meta.get('ColorSystem'):
+        profile['color_system'] = meta.get('ColorSystem')
+    if _num(meta.get('AmbientTempF')) > 0:
+        profile['ambientTemp'] = _from_f(
+            meta.get('AmbientTempF'), mode)
+    if _num(meta.get('AmbientHumidityPct')) > 0:
+        profile['ambient_humidity'] = _num(
+            meta.get('AmbientHumidityPct'))
+    if _num(meta.get('AmbientPressureHPa')) > 0:
+        profile['ambient_pressure'] = _num(
+            meta.get('AmbientPressureHPa'))
+    if _num(meta.get('RoastedMoisturePct')) > 0:
+        profile['moisture_roasted'] = _num(
+            meta.get('RoastedMoisturePct'))
+    if _num(meta.get('GreensTempF')) > 0:
+        profile['greens_temp'] = _from_f(
+            meta.get('GreensTempF'), mode)
+    if meta.get('Notes'):
+        profile['roastingnotes'] = meta.get('Notes')
+    if meta.get('CuppingNotes'):
+        profile['cuppingnotes'] = meta.get('CuppingNotes')
     profile['beans'] = meta.get('BeanName') or doc.get('beanName') \
         or ''
     identity = sub.get('identity') or {}
     profile['title'] = identity.get('title') or (
         doc.get('beanName') or 'Roastery batch %d'
         % batch['batchNumber'])
+    if meta.get('RoastTitle'):
+        profile['title'] = meta.get('RoastTitle')
     profile['roastbatchnr'] = int(batch['batchNumber'])
     profile['roastbatchprefix'] = identity.get(
         'roastbatchprefix', '')

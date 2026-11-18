@@ -227,6 +227,9 @@ CURVE_SAMPLES = '[default]Roastery/CurveSamples'
 TARGET_DS = '[default]Roastery/TargetProfileDS'
 BACKGROUND_DS = '[default]Roastery/BackgroundDS'
 BACKGROUND_JSON = '[default]Roastery/BackgroundCurveJson'
+BACKGROUND_DROP_TAG = '[default]Roastery/BackgroundDropSec'
+BACKGROUND_EVENTS_TAG = '[default]Roastery/BackgroundEventsJson'
+DETAIL_ANALYZER = '[default]Roastery/DetailAnalyzer'
 MARKS_DS = '[default]Roastery/EventMarksDS'
 BGROR_DS = '[default]Roastery/BackgroundRorDS'
 LIVE_DS = '[default]Roastery/LiveCurveDS'
@@ -234,17 +237,50 @@ LIVE_DS = '[default]Roastery/LiveCurveDS'
 # EventsLog doubles the v4 strip chart read; the stored
 # CurveSamples keep Integer levels.
 LIVE_COLS = ['t_stamp', 'bean', 'ror', 'fan', 'heat',
-             'bg', 'bgRor', 'plan']
+             'bg', 'bgRor', 'plan', 'proj',
+             'bandDry', 'bandMai', 'bandDev', 'bandCool']
 SELECTED_TAG = '[default]Roastery/SelectedBatchNumber'
 NQ_EVENTS_INSERT = 'Roastery/Events/InsertPress'
+# Tier 3 item 17: the target plan list lives in the TargetPlanJson
+# member (JSON list of [sec, tempF] pairs); the editor staging
+# tags follow the AlarmEditor precedent.
+TARGET_EDITOR = '[default]Roastery/TargetEditor'
+# Tier 3 item 20: between batch protocol staging (BT only). The
+# scalar staging tags live in the Bbp folder (Calculator folder
+# precedent) and the samples in their own dataset tag, so the
+# window survives a batch save. Reset discards the window.
+BBP_ROOT = '[default]Roastery/Bbp'
+BBP_DS = '[default]Roastery/BbpSamplesDS'
+BBP_COLS = ['t_offset_sec', 't_stamp', 'bean_temp_f']
+BBP_SEED = [0.0, None, 0.0]
 
 FORM_MEMBERS = ['BeanName', 'Origin', 'Region', 'Farm', 'Altitude',
                 'Variety', 'Process', 'HarvestYear', 'MoisturePct',
                 'DensityGL', 'ChargeWeightG', 'TargetDropTempF',
-                'RoastLevel', 'OperatorName', 'Notes', 'WeightOutG']
-FORM_INTS = ('HarvestYear',)
+                'RoastLevel', 'OperatorName', 'Notes', 'WeightOutG',
+                'RoastTitle', 'RoasterType', 'RoasterSizeKg',
+                'RoasterHeating', 'Organization', 'VolumeInMl',
+                'VolumeOutMl', 'DefectsWeightG', 'RoastedDensityGL',
+                'BeanSizeMinMm', 'BeanSizeMaxMm', 'WholeColor',
+                'GroundColor', 'ColorSystem', 'AmbientTempF',
+                'AmbientHumidityPct', 'AmbientPressureHPa',
+                'RoastedMoisturePct', 'GreensTempF', 'CuppingNotes',
+                'DefectHeavyFC', 'DefectLowFC', 'DefectLightCut',
+                'DefectDarkCut', 'DefectDrops', 'DefectOily',
+                'DefectUneven', 'DefectTipping', 'DefectScorching',
+                'DefectDivots']
+FORM_INTS = ('HarvestYear', 'RoasterHeating')
 FORM_FLOATS = ('MoisturePct', 'DensityGL', 'ChargeWeightG',
-               'TargetDropTempF', 'WeightOutG')
+               'TargetDropTempF', 'WeightOutG', 'RoasterSizeKg',
+               'VolumeInMl', 'VolumeOutMl', 'DefectsWeightG',
+               'RoastedDensityGL', 'BeanSizeMinMm', 'BeanSizeMaxMm',
+               'WholeColor', 'GroundColor', 'AmbientTempF',
+               'AmbientHumidityPct', 'AmbientPressureHPa',
+               'RoastedMoisturePct', 'GreensTempF')
+FORM_BOOLS = ('DefectHeavyFC', 'DefectLowFC', 'DefectLightCut',
+              'DefectDarkCut', 'DefectDrops', 'DefectOily',
+              'DefectUneven', 'DefectTipping', 'DefectScorching',
+              'DefectDivots')
 
 EVENT_STEMS = ('DryEnd', 'FirstCrackStart', 'FirstCrackEnd',
                'SecondCrackStart', 'SecondCrackEnd', 'Drop')
@@ -306,7 +342,8 @@ def empty_live_dataset():
     # value per LIVE_COLS entry (growing the columns without
     # growing the seed made charge() abort here, v4.4).
     return typed_empty_dataset(
-        LIVE_COLS, [None, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        LIVE_COLS, [None, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0, 0.0, 0.0])
 
 
 def empty_log_dataset():
@@ -714,6 +751,467 @@ def on_bean_temp(tag_path, current_value, initial_change):
         append_curve_sample(elapsed, now, temp,
                             ror if ror is not None else 0.0,
                             vals['FanLevel'], vals['HeatLevel'])
+    try:
+        # Between batch capture (Tier 3 item 20) rides the same
+        # change path: after DROP, samples stage into the BBP
+        # window until the next CHARGE finalizes them.
+        _bbp_capture(float(temp), now, now_ms)
+    except Exception:
+        pass
+    try:
+        _live_analytics(float(temp), now_ms, ror)
+    except Exception:
+        # Turning point, AUC and alarms ride on the temp change;
+        # a failure here must never break RoR or sampling.
+        pass
+
+
+# ------------------------------------------------------- live analytics
+# Turning point, AUC and the alarm table, all computed on the
+# bean temp change path from the same stored samples and tags
+# the rest of the app reads (single sensor: the one BT curve).
+
+TP_RISE_F = 5.0
+
+
+def _track_turning_point(temp, elapsed):
+    """Live turning point: the running bean temp minimum after
+    charge, confirmed once the temp has risen TP_RISE_F above
+    that minimum. Artisan reads the TP off a finished curve as
+    the minimum between charge and first crack (findTPint);
+    live, the same point is published as soon as the rise
+    confirms it, and a lower minimum before first crack moves
+    it, matching the offline read."""
+    vals = read_members(['_TpMinTempF', '_TpMinElapsedSec',
+                         'TurningPointElapsedSec',
+                         'TurningPointTempF'])
+    min_t = vals['_TpMinTempF']
+    min_e = vals['_TpMinElapsedSec']
+    if min_e is None or min_e < 0 or temp < min_t:
+        min_t, min_e = temp, elapsed
+        write_members([('_TpMinTempF', min_t),
+                       ('_TpMinElapsedSec', min_e)])
+    if temp >= min_t + TP_RISE_F:
+        if (vals['TurningPointElapsedSec'] != min_e
+                or vals['TurningPointTempF'] != min_t):
+            write_members([('TurningPointElapsedSec', int(min_e)),
+                           ('TurningPointTempF', float(min_t))])
+            build_marks()
+
+
+def auc_between(points, begin_sec, base):
+    """Trapezoid area between the bean curve and the base temp,
+    from begin_sec on, in degree minutes. Per segment the
+    average of the two endpoint temps above the base times the
+    segment minutes; segments at or below the base contribute
+    nothing (Artisan calcAUC shape). points: [(t_sec, temp)]
+    oldest first."""
+    pts = [(float(t), float(v)) for t, v in points if t >= begin_sec]
+    auc = 0.0
+    for i in range(len(pts) - 1):
+        dt = (pts[i + 1][0] - pts[i][0]) / 60.0
+        if dt <= 0:
+            continue
+        avg = (pts[i][1] + pts[i + 1][1]) / 2.0
+        if avg > base:
+            auc += (avg - base) * dt
+    return auc
+
+
+def _auc_begin(vals):
+    """Resolve the AUC begin setting to (begin_sec, base_temp).
+    begin_sec is None while the chosen begin event has not
+    happened yet. With AucBaseFromEvent the base is the bean
+    temp at the begin event (Artisan's AUCbaseFlag)."""
+    name = vals['AucBegin'] or 'TP'
+    base = float(vals['AucBaseTempF'] or 0.0)
+    if name == 'Charge':
+        if vals['AucBaseFromEvent']:
+            base = float(vals['ChargeTempF'] or base)
+        return 0, base
+    if name == 'Dry End':
+        sec, tmp = vals['DryEndElapsedSec'], vals['DryEndTempF']
+    elif name == 'FC Start':
+        sec, tmp = (vals['FirstCrackStartElapsedSec'],
+                    vals['FirstCrackStartTempF'])
+    else:
+        sec, tmp = (vals['TurningPointElapsedSec'],
+                    vals['TurningPointTempF'])
+    if sec is None or sec < 0:
+        return None, base
+    if vals['AucBaseFromEvent']:
+        base = float(tmp or base)
+    return int(sec), base
+
+
+def update_live_auc(ror):
+    """Recompute the live AUC readouts from the recorded curve
+    samples: temps are the truth, the integral is recomputed
+    from them on every change and never accumulated, so it
+    cannot drift. The guide projects when the AUC target is
+    reached at the current RoR, solving Artisan's quadratic
+    (RoR/2) t^2 + (BT - base) t + (AUC - target) = 0 for its
+    smallest positive root (updateAUCguide)."""
+    vals = read_members(['State', 'StartTime', 'AucBegin',
+                         'AucBaseTempF', 'AucBaseFromEvent',
+                         'AucTargetFMin', 'AucGuideEnabled',
+                         'ChargeTempF', 'DryEndElapsedSec',
+                         'DryEndTempF', 'FirstCrackStartElapsedSec',
+                         'FirstCrackStartTempF',
+                         'TurningPointElapsedSec',
+                         'TurningPointTempF', 'DropElapsedSec',
+                         'BeanTempF'])
+    if vals['StartTime'] is None or vals['State'] == 'Idle':
+        return
+    begin_sec, base = _auc_begin(vals)
+    points = [(float(p['t']), float(p['bt']))
+              for p in curve_points()]
+    drop_sec = vals['DropElapsedSec']
+    if drop_sec is not None and drop_sec >= 0:
+        points = [p for p in points if p[0] <= drop_sec]
+    auc = (auc_between(points, begin_sec, base)
+           if begin_sec is not None else 0.0)
+    fc_sec = vals['FirstCrackStartElapsedSec']
+    since_fc = (auc_between(points, int(fc_sec), base)
+                if fc_sec is not None and fc_sec >= 0 else 0.0)
+    guide = -1
+    target = float(vals['AucTargetFMin'] or 0.0)
+    bt = float(vals['BeanTempF'] or 0.0)
+    if (vals['AucGuideEnabled'] and ror is not None and ror > 0
+            and 0 < auc < target):
+        disc = (bt - base) ** 2 - 2.0 * ror * (auc - target)
+        if disc >= 0:
+            t_min = (-(bt - base) + math.sqrt(disc)) / ror
+            if t_min > 0:
+                guide = (elapsed_sec(vals['StartTime'])
+                         + int(t_min * 60))
+    write_members([('AucLiveFMin', auc),
+                   ('AucSinceFcFMin', since_fc),
+                   ('AucGuideElapsedSec', guide)])
+
+
+ALARM_GUARD_MEMBERS = {'Dry End': 'DryEndElapsedSec',
+                       'FC Start': 'FirstCrackStartElapsedSec',
+                       'FC End': 'FirstCrackEndElapsedSec',
+                       'SC Start': 'SecondCrackStartElapsedSec',
+                       'SC End': 'SecondCrackEndElapsedSec',
+                       'Drop': 'DropElapsedSec'}
+
+
+def alarm_definitions():
+    """The alarm table from the AlarmDefsJson tag: a JSON list
+    of Artisan style definitions {name, enabled, guard,
+    offsetSec, source, cond, value, message, action}, where
+    guard is an event the alarm arms after, source is BT, RoR
+    or Time (elapsed seconds), cond is >= or <=, and action is
+    Banner (shows while the condition holds) or Message
+    (latches until the next charge or reset)."""
+    raw = read_members(['AlarmDefsJson'])['AlarmDefsJson']
+    if not raw:
+        return []
+    try:
+        defs = system.util.jsonDecode(raw)
+    except Exception:
+        return []
+    return defs if isinstance(defs, list) else []
+
+
+def _alarm_guard_elapsed(guard, vals):
+    if guard in (None, '', 'None', 'Charge'):
+        return 0
+    if guard == 'TP':
+        v = vals['TurningPointElapsedSec']
+    else:
+        member = ALARM_GUARD_MEMBERS.get(guard)
+        if member is None:
+            return None
+        v = vals[member]
+    if v is None or v < 0:
+        return None
+    return int(v)
+
+
+def evaluate_alarms():
+    """Evaluate the alarm table against the live tags and
+    publish AlarmText / AlarmActive for the Roast page banner.
+    An alarm arms only once its guard event has happened plus
+    its offset seconds."""
+    members = ['State', 'StartTime', 'BeanTempF', 'RateOfRiseF',
+               '_AlarmFiredJson', 'TurningPointElapsedSec']
+    members += list(ALARM_GUARD_MEMBERS.values())
+    vals = read_members(members)
+    if (vals['State'] not in ('Roasting', 'Dropped', 'Cooling')
+            or vals['StartTime'] is None):
+        if vals['State'] == 'Idle':
+            write_members([('AlarmText', ''), ('AlarmActive', False)])
+        return
+    elapsed = elapsed_sec(vals['StartTime'])
+    fired = []
+    if vals['_AlarmFiredJson']:
+        try:
+            fired = system.util.jsonDecode(vals['_AlarmFiredJson'])
+        except Exception:
+            fired = []
+    texts = []
+    fired_changed = False
+    for i, a in enumerate(alarm_definitions()):
+        if not a.get('enabled', True):
+            continue
+        g = _alarm_guard_elapsed(a.get('guard'), vals)
+        if g is None or elapsed < g + int(a.get('offsetSec') or 0):
+            continue
+        src = a.get('source') or 'BT'
+        if src == 'RoR':
+            v = float(vals['RateOfRiseF'] or 0.0)
+        elif src == 'Time':
+            v = float(elapsed)
+        else:
+            v = float(vals['BeanTempF'] or 0.0)
+        try:
+            target = float(a.get('value'))
+        except Exception:
+            continue
+        hit = (v >= target if (a.get('cond') or '>=') == '>='
+               else v <= target)
+        msg = a.get('message') or a.get('name') or 'Alarm'
+        if a.get('action') == 'Message':
+            if hit and i not in fired:
+                fired.append(i)
+                fired_changed = True
+            if i in fired:
+                texts.append(msg)
+        elif hit:
+            texts.append(msg)
+    pairs = [('AlarmText', ' | '.join(texts)),
+             ('AlarmActive', bool(texts))]
+    if fired_changed:
+        pairs.append(('_AlarmFiredJson',
+                      system.util.jsonEncode(fired)))
+    write_members(pairs)
+
+
+def _live_analytics(temp, now_ms, ror):
+    try:
+        # The deviation tile reads the variable length target
+        # plan (Tier 3 item 17), which a view expression cannot
+        # do; the library publishes the text instead, the same
+        # pattern as BgDeviationText.
+        update_plan_deviation(temp)
+    except Exception:
+        pass
+    vals = read_members(['State', 'StartTime',
+                         'FirstCrackStartElapsedSec'])
+    state = vals['State']
+    if (state not in ('Roasting', 'Cooling', 'Dropped')
+            or vals['StartTime'] is None):
+        return
+    elapsed = int((now_ms - vals['StartTime'].getTime()) / 1000)
+    if (state == 'Roasting'
+            and (vals['FirstCrackStartElapsedSec'] or -1) < 0):
+        _track_turning_point(temp, elapsed)
+    update_live_auc(ror)
+    evaluate_alarms()
+    update_bg_deviation(temp, elapsed)
+    # Tier 2 items 11, 13 and 14 ride the same temp change path.
+    # Each is isolated: a failure in one must never break the
+    # others or the RoR and sampling work above.
+    for fn in (evaluate_playback, evaluate_suggestions):
+        try:
+            fn(temp, elapsed)
+        except Exception:
+            pass
+    try:
+        update_analyzer()
+    except Exception:
+        pass
+
+
+def _reset_live_analytics():
+    write_members([('TurningPointElapsedSec', -1),
+                   ('TurningPointTempF', 0.0),
+                   ('_TpMinTempF', 0.0), ('_TpMinElapsedSec', -1),
+                   ('AucLiveFMin', 0.0), ('AucSinceFcFMin', 0.0),
+                   ('AucGuideElapsedSec', -1),
+                   ('AlarmText', ''), ('AlarmActive', False),
+                   ('_AlarmFiredJson', ''),
+                   ('BgDeviationText', '--'),
+                   ('PlaybackText', ''), ('PlaybackActive', False),
+                   ('_PlaybackFiredJson', ''),
+                   ('SuggestionText', ''),
+                   ('SuggestionActive', False),
+                   ('SuggestionKind', ''),
+                   ('_DrySuggested', False),
+                   ('_FcSuggested', False),
+                   ('AnalyzerSec', -1),
+                   ('AnalyzerTimeText', '--:--'),
+                   ('AnalyzerBtText', '--'),
+                   ('AnalyzerRorText', '--'),
+                   ('AnalyzerBgText', '--'),
+                   ('AnalyzerDevText', '--'),
+                   ('AnalyzerHasBg', False)])
+
+
+def clear_background():
+    """Clear the staged background ghost (Roast page chart
+    card Clear button): drop the staged points and label and
+    rebuild the overlays. Pending playback prompts die with
+    the ghost (Tier 2 item 11)."""
+    system.tag.writeBlocking(
+        [BACKGROUND_JSON, '[default]Roastery/BackgroundLabel',
+         BACKGROUND_DROP_TAG, BACKGROUND_EVENTS_TAG],
+        ['', '', -1.0, ''])
+    write_members([('BgPhaseDrySec', -1), ('BgPhaseFcSec', -1),
+                   ('BgPhaseDropSec', -1),
+                   ('BgDeviationText', '--'),
+                   ('PlaybackText', ''), ('PlaybackActive', False),
+                   ('_PlaybackFiredJson', '')])
+    build_overlays()
+
+
+# ------------------------------------------------------- alarm editor
+# The Settings Alarms section edits the AlarmDefsJson table
+# through these functions: a read only table dataset plus a
+# per alarm editor on view custom props (the same custom prop
+# plus library pattern the batch editor uses).
+
+ALARM_EDITOR_COLS = ['idx', 'name', 'enabled', 'guard',
+                     'offsetSec', 'source', 'cond', 'value',
+                     'message', 'action']
+ALARM_GUARDS = ['None', 'Charge', 'TP', 'Dry End', 'FC Start',
+                'FC End', 'SC Start', 'SC End', 'Drop']
+ALARM_SOURCES = ['BT', 'RoR', 'Time']
+ALARM_ACTIONS = ['Banner', 'Message']
+
+
+def alarms_table_dataset():
+    rows = []
+    for i, a in enumerate(alarm_definitions()):
+        rows.append([i, a.get('name') or '',
+                     bool(a.get('enabled', True)),
+                     a.get('guard') or 'None',
+                     int(a.get('offsetSec') or 0),
+                     a.get('source') or 'BT',
+                     a.get('cond') or '>=',
+                     a.get('value') if a.get('value') is not None
+                     else '',
+                     a.get('message') or '',
+                     a.get('action') or 'Banner'])
+    return system.dataset.toDataSet(ALARM_EDITOR_COLS, rows)
+
+
+def alarms_startup(self):
+    self.view.custom.alarmsDs = alarms_table_dataset()
+    self.view.custom.alarmCount = len(alarm_definitions())
+    if alarm_definitions():
+        alarm_editor_load(self, 0)
+
+
+ALARM_EDITOR = '[default]Roastery/AlarmEditor'
+ALARM_EDITOR_FIELDS = ('Idx', 'Name', 'Message', 'Enabled',
+                       'Guard', 'OffsetSec', 'Source', 'Cond',
+                       'Value', 'Action')
+
+
+def _ed_paths():
+    return [ALARM_EDITOR + '/' + f for f in ALARM_EDITOR_FIELDS]
+
+
+def alarm_editor_load(self, idx):
+    defs = alarm_definitions()
+    idx = int(idx)
+    if idx < 0 or idx >= len(defs):
+        return
+    a = defs[idx]
+    self.view.custom.alarmIdx = idx
+    system.tag.writeBlocking(
+        _ed_paths(),
+        [idx, a.get('name') or '', a.get('message') or '',
+         bool(a.get('enabled', True)), a.get('guard') or 'None',
+         int(a.get('offsetSec') or 0), a.get('source') or 'BT',
+         a.get('cond') or '>=', float(a.get('value') or 0),
+         a.get('action') or 'Banner'])
+
+
+def alarm_editor_load_idx(self):
+    """Load whichever alarm the index dropdown currently
+    shows (its value lives in the AlarmEditor/Idx tag)."""
+    idx = system.tag.readBlocking(
+        [ALARM_EDITOR + '/Idx'])[0].value
+    alarm_editor_load(self, int(idx or 0))
+
+
+def _alarm_editor_idx(self):
+    idx = system.tag.readBlocking(
+        [ALARM_EDITOR + '/Idx'])[0].value
+    return int(idx or 0)
+
+
+def _alarm_from_editor(self):
+    # The editor fields are bound to the AlarmEditor staging
+    # tags: view.custom property bindings push library values
+    # into components but never write user edits back in this
+    # build (proven in the Tier 1 verify round), while tag
+    # bindings are the app's proven bidirectional path.
+    vals = system.tag.readBlocking(_ed_paths())
+    d = dict((f, v.value) for f, v in
+             zip(ALARM_EDITOR_FIELDS, vals))
+    return {'name': d.get('Name') or 'Alarm',
+            'enabled': bool(d.get('Enabled')),
+            'guard': d.get('Guard') or 'None',
+            'offsetSec': int(d.get('OffsetSec') or 0),
+            'source': d.get('Source') or 'BT',
+            'cond': d.get('Cond') or '>=',
+            'value': float(d.get('Value') or 0),
+            'message': d.get('Message') or '',
+            'action': d.get('Action') or 'Banner'}
+
+
+def _save_alarm_defs(self, defs):
+    system.tag.writeBlocking([path('AlarmDefsJson')],
+                             [system.util.jsonEncode(defs)])
+    self.view.custom.alarmsDs = alarms_table_dataset()
+    self.view.custom.alarmCount = len(defs)
+    try:
+        evaluate_alarms()
+    except Exception:
+        pass
+
+
+def alarm_editor_save(self):
+    defs = alarm_definitions()
+    idx = _alarm_editor_idx(self)
+    entry = _alarm_from_editor(self)
+    if 0 <= idx < len(defs):
+        defs[idx] = entry
+    else:
+        defs.append(entry)
+        idx = len(defs) - 1
+    _save_alarm_defs(self, defs)
+    self.view.custom.alarmIdx = idx
+    self.view.custom.alarmNote = ('Saved alarm %d: %s'
+                                  % (idx + 1, entry['name']))
+
+
+def alarm_editor_add(self):
+    defs = alarm_definitions()
+    entry = _alarm_from_editor(self)
+    defs.append(entry)
+    _save_alarm_defs(self, defs)
+    alarm_editor_load(self, len(defs) - 1)
+    self.view.custom.alarmNote = ('Added alarm %d: %s'
+                                  % (len(defs), entry['name']))
+
+
+def alarm_editor_delete(self):
+    defs = alarm_definitions()
+    idx = _alarm_editor_idx(self)
+    if 0 <= idx < len(defs):
+        gone = defs.pop(idx)
+        _save_alarm_defs(self, defs)
+        self.view.custom.alarmNote = ('Deleted alarm: %s'
+                                      % (gone.get('name') or ''))
+        if defs:
+            alarm_editor_load(self, min(idx, len(defs) - 1))
 
 
 # ---------------------------------------------------------------- press capture
@@ -753,6 +1251,12 @@ def record_press(action):
         # shows the step at once (build_live_curve is also called
         # on every appended curve sample).
         build_live_curve()
+    except Exception:
+        pass
+    try:
+        # A press can stamp the event an alarm guards on; let
+        # the table see it without waiting for a temp change.
+        evaluate_alarms()
     except Exception:
         pass
     return counter
@@ -812,7 +1316,7 @@ def _live_events():
     label) pairs, charge first: the single source both marker
     representations read (the EventMarksDS dataset and the
     canvas charts' reference lines)."""
-    members = ['StartTime', 'State']
+    members = ['StartTime', 'State', 'TurningPointElapsedSec']
     for stem, _lbl in MARK_EVENTS[1:]:
         members.append(stem + 'ElapsedSec')
     for i in (1, 2, 3, 4):
@@ -822,6 +1326,12 @@ def _live_events():
     evs = []
     if vals['StartTime'] is not None and vals['State'] != 'Idle':
         evs = [(0, 'CHARGE')]
+        tp = vals['TurningPointElapsedSec']
+        if tp is not None and tp >= 0:
+            # 'TP' has no column of its own in MARK_COLS, so the
+            # marks dataset files it under notes; the canvas
+            # reference lines carry the label.
+            evs.append((int(tp), 'TP'))
         for stem, lbl in MARK_EVENTS[1:]:
             e = vals[stem + 'ElapsedSec']
             if e is not None and e >= 0:
@@ -935,6 +1445,531 @@ def append_curve_sample(elapsed, t_stamp, temp, ror, fan, heat):
     build_live_curve()
 
 
+
+# ------------------------------------------------------- Tier 2: projection
+# BT projection lines (item 9) and live deviation from the
+# background (item 10a).
+
+PROJECTION_HORIZON_SEC = 120
+PROJECTION_STEP_SEC = 15
+
+
+def projection_points(points, rors):
+    """BT projection, Artisan canvas.py updateProjection shape.
+    Linear mode extends the curve forward at the current RoR.
+    Quadratic mode (only after five minutes elapsed, as in
+    Artisan) lets the RoR itself drift linearly: the RoR trend
+    over the lookback window gives deltadelta in F/sec/sec,
+    clamped to Artisan's deltadeltalimit of 0.002, and the
+    projection integrates it step by step. points and rors are
+    the aligned live curve lists from build_live_curve.
+    Display only: the points merge into LiveCurveDS and are
+    never stored. Returns [(t_sec, temp)] including the anchor
+    point, or [] when projection is off, the roast is not
+    running (Artisan draws projections only after CHARGE and
+    before DROP), or the current RoR is zero or unknown."""
+    vals = read_members(['ProjectionEnabled', 'ProjectionMode',
+                         'State'])
+    if not vals['ProjectionEnabled'] or vals['State'] != 'Roasting':
+        return []
+    if len(points) < 2:
+        return []
+    t_last, bt_last = points[-1]
+    ror_last = None
+    for _t, r in reversed(rors):
+        if r is not None:
+            ror_last = r
+            break
+    if ror_last is None or ror_last == 0:
+        return []
+    quad = ((vals['ProjectionMode'] or 'Linear') == 'Quadratic'
+            and t_last > 300)
+    deltadelta = 0.0
+    if quad:
+        old = None
+        for i in range(len(rors) - 1, -1, -1):
+            if (rors[i][1] is not None and rors[i][0] <= t_last - 30
+                    and i <= len(rors) - 11):
+                old = rors[i]
+                break
+        if old is None or old[1] <= 0 or ror_last <= 0:
+            quad = False
+        else:
+            deltadelta = ((ror_last - old[1]) / 60.0) / (t_last - old[0])
+            deltadelta = max(-0.002, min(0.002, deltadelta))
+    out = [(t_last, bt_last)]
+    temp = float(bt_last)
+    delta_sec = ror_last / 60.0
+    steps = PROJECTION_HORIZON_SEC // PROJECTION_STEP_SEC
+    for k in range(1, steps + 1):
+        temp += delta_sec * PROJECTION_STEP_SEC
+        if quad:
+            delta_sec += deltadelta * PROJECTION_STEP_SEC
+        out.append((t_last + k * PROJECTION_STEP_SEC, temp))
+    return out
+
+
+def background_points():
+    """The staged ghost curve as sorted [(t_sec, temp)] pairs,
+    from the BackgroundCurveJson tag both ghost routes write
+    (saved batch via roastery.batches.set_background, file via
+    roastery.artisan.stage_background_upload)."""
+    raw = system.tag.readBlocking([BACKGROUND_JSON])[0].value
+    if not raw:
+        return []
+    try:
+        pairs = system.util.jsonDecode(raw)
+    except Exception:
+        return []
+    out = [(float(p[0]), float(p[1])) for p in pairs]
+    out.sort()
+    return out
+
+
+def interp_at(pairs, t):
+    """Piecewise linear interpolation over sorted (t, v) pairs;
+    None outside the covered range."""
+    if not pairs or t < pairs[0][0] or t > pairs[-1][0]:
+        return None
+    for i in range(len(pairs) - 1):
+        t0, v0 = pairs[i]
+        t1, v1 = pairs[i + 1]
+        if t0 <= t <= t1:
+            if t1 <= t0:
+                return v1
+            return v0 + (v1 - v0) * (t - t0) / (t1 - t0)
+    return pairs[-1][1]
+
+
+def update_bg_deviation(temp, elapsed):
+    """Live deviation from the background (Tier 2 item 10a):
+    live BT minus the ghost BT at the same elapsed time,
+    published as text on the BgDeviationText tag for the Roast
+    page tile and summary. '--' when no ghost is staged or the
+    elapsed time is outside the ghost's range."""
+    bg = interp_at(background_points(), float(elapsed))
+    text = '--' if bg is None else '%+.1f F' % (float(temp) - bg)
+    write_members([('BgDeviationText', text)])
+
+
+# ------------------------------------------------------- Tier 2 items 11 to 14
+# Background playback prompts (11), display smoothing for the
+# BT line (12), the analyzer crosshair readout (13) and auto
+# event suggestions for Dry End and FC Start (14). All four are
+# advisory or display only: nothing in this section ever writes
+# FanLevel, HeatLevel or an event tag. Control stays manual.
+
+
+def build_background_events(rows, drop_sec):
+    """Derive the playback event list for a staged ghost from
+    its per sample levels. rows: [(t_sec, fan, heat)] oldest
+    first (batch_series rows for a saved batch, imported
+    samples for an .alog). The first row sets the starting
+    levels (no prompt: the roaster sets those before charge);
+    every later change of Fan or Heat becomes one event, and
+    the ghost DROP time becomes a Drop event when known.
+    Returns [{'t': sec, 'kind': 'Fan'|'Heat'|'Drop',
+    'level': int or None}] sorted by time. Both ghost staging
+    routes (roastery.batches.set_background and
+    roastery.artisan.stage_background_upload) store the result
+    as JSON on the BackgroundEventsJson tag."""
+    events = []
+    prev_fan = prev_heat = None
+    for t, fan, heat in sorted(rows):
+        if fan is not None:
+            fan = int(float(fan))
+            if prev_fan is not None and fan != prev_fan:
+                events.append({'t': float(t), 'kind': 'Fan',
+                               'level': fan})
+            prev_fan = fan
+        if heat is not None:
+            heat = int(float(heat))
+            if prev_heat is not None and heat != prev_heat:
+                events.append({'t': float(t), 'kind': 'Heat',
+                               'level': heat})
+            prev_heat = heat
+    if drop_sec is not None and float(drop_sec) > 0:
+        events.append({'t': float(drop_sec), 'kind': 'Drop',
+                       'level': None})
+    events.sort(key=lambda e: e['t'])
+    return events
+
+
+def background_events():
+    """The staged ghost's playback events from the
+    BackgroundEventsJson tag ([] when no ghost is staged)."""
+    raw = system.tag.readBlocking([BACKGROUND_EVENTS_TAG])[0].value
+    if not raw:
+        return []
+    try:
+        evs = system.util.jsonDecode(raw)
+    except Exception:
+        return []
+    return evs if isinstance(evs, list) else []
+
+
+def evaluate_playback(temp, elapsed):
+    """Background playback prompts (item 11). Artisan
+    background.py / canvas.py playbackevent() replays the
+    background profile's slider events by time, each exactly
+    once (its replayedBackgroundEvents set), with DROP behind
+    its own flag (backgroundPlaybackDROP); the
+    backgroundReproduceBeep option beeps. Roastery keeps the
+    by time, once each shape and the DROP event, but the
+    prompt is ALL that happens: the suggested level is shown
+    on the PlaybackText tag for the Roast page prompt strip
+    and FanLevel / HeatLevel are never written from here.
+    Sound: the PlaybackSound setting is stored and shown, but
+    Perspective has no clean beep API reachable from the
+    client scripting layer (no system.perspective audio call
+    and no media component in this project), so the prompt
+    itself is the signal; the flag changes nothing audible in
+    this build, which the Settings section states plainly."""
+    vals = read_members(['PlaybackEnabled', 'State',
+                         '_PlaybackFiredJson', 'PlaybackActive'])
+    if not vals['PlaybackEnabled'] or vals['State'] != 'Roasting':
+        return
+    if vals['PlaybackActive']:
+        # A prompt is already showing: later events queue
+        # behind it instead of overwriting it, so each prompt
+        # stays readable until it is dismissed (the next one
+        # fires on the first temp change after the dismiss).
+        return
+    events = background_events()
+    if not events:
+        return
+    fired = []
+    if vals['_PlaybackFiredJson']:
+        try:
+            fired = system.util.jsonDecode(vals['_PlaybackFiredJson'])
+        except Exception:
+            fired = []
+    for i, e in enumerate(events):
+        if i in fired or float(e.get('t') or 0) > elapsed:
+            continue
+        # Fire the earliest due event only; the next temp
+        # change fires the next one, so prompts never stack.
+        fired.append(i)
+        if e.get('kind') == 'Drop':
+            text = 'Background: Drop now'
+        else:
+            text = 'Background: %s %d' % (e.get('kind'),
+                                          int(e.get('level')))
+        write_members([('PlaybackText', text),
+                       ('PlaybackActive', True),
+                       ('_PlaybackFiredJson',
+                        system.util.jsonEncode(fired))])
+        return
+
+
+def evaluate_suggestions(temp, elapsed):
+    """Auto event suggestions (item 14). Artisan canvas.py
+    checks on every sample: with autoDRYflag set, once CHARGE
+    and the turning point exist and neither DRY nor FCs is
+    stamped, BT at or above phases[1] marks DRY; with
+    autoFCsFlag set, once FCs and FCe are unstamped, BT at or
+    above phases[2] marks FCs (main.py findDryEnd locates the
+    same crossing on a finished curve). Roastery's phase
+    boundary temperatures are the Settings Targets temps
+    (TargetDryEndTempF, TargetFCTempF). The Artisan build
+    STAMPS the event; Roastery only suggests: the text lands
+    on SuggestionText and Eric confirms with the normal event
+    button, whose stamp path clears the suggestion. Each
+    crossing suggests once per roast (the _DrySuggested /
+    _FcSuggested latches, reset at charge)."""
+    vals = read_members(['State', 'SuggestDryEndEnabled',
+                         'SuggestFcEnabled', 'DryEndElapsedSec',
+                         'FirstCrackStartElapsedSec',
+                         'TargetDryEndTempF', 'TargetFCTempF',
+                         '_DrySuggested', '_FcSuggested',
+                         'SuggestionActive'])
+    if vals['State'] != 'Roasting' or vals['SuggestionActive']:
+        return
+    if (vals['SuggestDryEndEnabled']
+            and not vals['_DrySuggested']
+            and (vals['DryEndElapsedSec'] or -1) < 0
+            and (vals['FirstCrackStartElapsedSec'] or -1) < 0
+            and temp >= float(vals['TargetDryEndTempF'] or 0)):
+        write_members([
+            ('SuggestionText',
+             'BT crossed %g F, stamp Dry End?'
+             % float(vals['TargetDryEndTempF'])),
+            ('SuggestionActive', True),
+            ('SuggestionKind', 'DryEnd'),
+            ('_DrySuggested', True)])
+        return
+    if (vals['SuggestFcEnabled']
+            and not vals['_FcSuggested']
+            and (vals['FirstCrackStartElapsedSec'] or -1) < 0
+            and temp >= float(vals['TargetFCTempF'] or 0)):
+        write_members([
+            ('SuggestionText',
+             'BT crossed %g F, stamp FC Start?'
+             % float(vals['TargetFCTempF'])),
+            ('SuggestionActive', True),
+            ('SuggestionKind', 'FCStart'),
+            ('_FcSuggested', True)])
+
+
+def dismiss_prompt():
+    """Prompt strip Dismiss button (thin handler target):
+    clear whichever prompt is showing. A dismissed playback
+    event stays fired (it does not re-prompt) and a dismissed
+    suggestion stays latched for this roast; stamping the
+    event is the other way a suggestion clears."""
+    write_members([('PlaybackText', ''), ('PlaybackActive', False),
+                   ('SuggestionText', ''),
+                   ('SuggestionActive', False),
+                   ('SuggestionKind', '')])
+
+
+def _clear_suggestion(kind):
+    vals = read_members(['SuggestionActive', 'SuggestionKind'])
+    if vals['SuggestionActive'] and vals['SuggestionKind'] == kind:
+        write_members([('SuggestionText', ''),
+                       ('SuggestionActive', False),
+                       ('SuggestionKind', '')])
+
+
+def display_smoothed(temps):
+    """Display smoothing for the BT line (item 12). Artisan
+    canvas.py smoothETBT smooths the DRAWN temperature curves
+    with the curve filter, separate from the delta math.
+    Roastery applies the same trailing decay filter family
+    compute_ror_series uses (_decay_smooth_series) to the
+    bean column of LiveCurveDS only, at the DisplaySmoothing
+    level (0 is off, 1 to 5 map to internal windows 3 to 11).
+    Stored CurveSamples stay raw and the RoR column is
+    computed from the raw temps before this runs, so RoR and
+    every saved value are untouched."""
+    try:
+        level = int(read_members(['DisplaySmoothing'])
+                    ['DisplaySmoothing'] or 0)
+    except Exception:
+        level = 0
+    level = max(0, min(5, level))
+    if level <= 0 or len(temps) < 2:
+        return list(temps)
+    return _decay_smooth_series(
+        [float(v) for v in temps],
+        _decay_weights(2 * level + 1))
+
+
+def _mmss(sec):
+    sec = int(max(0, sec))
+    return '%02d:%02d' % (sec // 60, sec % 60)
+
+
+def analyzer_values(points, rors, t_sec):
+    """Analyzer readout values at one elapsed time (item 13):
+    BT and RoR interpolated over the curve's own samples and
+    its one RoR implementation output, ghost BT interpolated
+    over the staged background, and the deviation between
+    them. points: [(t, bt)], rors: [(t, ror_or_None)] aligned
+    with points. Returns a dict with None where a value does
+    not exist at that time."""
+    bt = interp_at([(float(t), float(v)) for t, v in points],
+                   float(t_sec))
+    ror_pairs = [(float(t), float(r)) for t, r in rors
+                 if r is not None]
+    ror = interp_at(ror_pairs, float(t_sec)) if ror_pairs else None
+    bg = interp_at(background_points(), float(t_sec))
+    return {'t': float(t_sec), 'bt': bt, 'ror': ror, 'bg': bg,
+            'dev': (bt - bg) if (bt is not None and bg is not None)
+            else None}
+
+
+def _analyzer_write(prefix_paths, vals):
+    """Publish one analyzer readout to a set of tags. Paths are
+    full tag paths (the live readout lives on CurrentBatch
+    members, the detail readout on the DetailAnalyzer folder),
+    so this takes an explicit path map."""
+    def fmt(v, suffix=''):
+        return '--' if v is None else '%.1f%s' % (v, suffix)
+    system.tag.writeBlocking(
+        [prefix_paths['timeText'], prefix_paths['btText'],
+         prefix_paths['rorText'], prefix_paths['bgText'],
+         prefix_paths['devText'], prefix_paths['btF'],
+         prefix_paths['rorF'], prefix_paths['bgF'],
+         prefix_paths['devF'], prefix_paths['hasBg']],
+        [_mmss(vals['t']), fmt(vals['bt']), fmt(vals['ror']),
+         fmt(vals['bg']),
+         '--' if vals['dev'] is None else '%+.1f' % vals['dev'],
+         float(vals['bt'] or 0.0), float(vals['ror'] or 0.0),
+         float(vals['bg'] or 0.0), float(vals['dev'] or 0.0),
+         vals['bg'] is not None])
+
+
+def _live_analyzer_paths():
+    names = {'timeText': 'AnalyzerTimeText', 'btText': 'AnalyzerBtText',
+             'rorText': 'AnalyzerRorText', 'bgText': 'AnalyzerBgText',
+             'devText': 'AnalyzerDevText', 'btF': 'AnalyzerBtF',
+             'rorF': 'AnalyzerRorF', 'bgF': 'AnalyzerBgF',
+             'devF': 'AnalyzerDevF', 'hasBg': 'AnalyzerHasBg'}
+    return dict((k, path(v)) for k, v in names.items())
+
+
+def update_analyzer():
+    """Recompute the live analyzer readout (item 13) from the
+    recorded curve samples. AnalyzerSec -1 means Latest: the
+    readout follows the newest sample. Called on every temp
+    change through _live_analytics and by the strip steppers.
+    The readout is a fixed strip under the chart (values on
+    tags the strip labels bind), never floating chart text,
+    so it cannot collide with axis labels or marker labels
+    and it fits 360px as four short fields."""
+    points = curve_points()
+    if not points:
+        return
+    pts = [(float(p['t']), float(p['bt'])) for p in points]
+    rors = compute_ror_series(pts, ror_params(), offline=False)
+    sec = read_members(['AnalyzerSec'])['AnalyzerSec']
+    t = pts[-1][0] if sec is None or int(sec) < 0 else float(sec)
+    t = max(pts[0][0], min(pts[-1][0], t))
+    _analyzer_write(_live_analyzer_paths(),
+                    analyzer_values(pts, rors, t))
+
+
+def analyzer_step(delta):
+    """Analyzer strip stepper (thin handler target): move the
+    selected time by delta seconds, clamped to the recorded
+    curve, and republish the readout."""
+    points = curve_points()
+    if not points:
+        return
+    sec = read_members(['AnalyzerSec'])['AnalyzerSec']
+    base = float(points[-1]['t']) if sec is None or int(sec) < 0 \
+        else float(sec)
+    new = max(float(points[0]['t']),
+              min(float(points[-1]['t']), base + float(delta)))
+    write_members([('AnalyzerSec', int(new))])
+    update_analyzer()
+
+
+def analyzer_latest():
+    """Analyzer strip Latest button: back to following the
+    newest sample."""
+    write_members([('AnalyzerSec', -1)])
+    update_analyzer()
+
+
+# ------------------------------------------------------- Tier 3 items 15, 16
+# Curve display options (item 15) and phases from background with
+# phase band shading (item 16).
+#
+# Item 15 lives mostly in the chart prop bindings (the Settings
+# Display tags bind straight onto the canvas series line width,
+# line type, RoR area opacity and reference line endpoint size in
+# the view), because series props are view data. The defaults on
+# those tags (BT width 3 solid, RoR width 2 solid, ghost width 2
+# solid, RoR fill off, marker size 4) reproduce the pre Tier 3
+# look exactly. What the library owns for item 15 is the RoR fill
+# and band AREA data below: the canvas line component honors a
+# series area block (proven live in the 2026-11-17 probe round:
+# a line series with an area block fills exactly like the area
+# component), and the band series are dataset columns, composed
+# here like every other overlay.
+#
+# Item 16 phase bands: the canvas line chart exposes no markArea
+# config in this build (its series schema has visible, value,
+# label, dataLabels, referenceLines, line, smooth, points and
+# advanced only), so bands use the closest honest mechanism the
+# app already uses for overlays: extra LiveCurveDS columns built
+# here. Each band column holds the bean axis top (460 F) at every
+# row inside its phase range and null outside it; the chart draws
+# it as a width 0 series with a low opacity solid area fill, so
+# the filled strip IS the band, behind the curves (the band
+# series sit first in the series list). No text lives in the
+# bands: the phase names are already in the PhasesBar, and band
+# labels would collide at 360px.
+#
+# Band ranges follow the PhasesBar: stamped event times for the
+# phases that have happened, and the effective targets for the
+# phase still ahead. Effective targets are the saved Settings
+# phase duration targets (PhaseDryTargetSec and friends), or,
+# when PhaseFromBg is on and a ghost with ordered stamped events
+# is staged, the ghost boundaries staged on the BgPhase tags by
+# stage_bg_phases. The saved target tags are never written by
+# the from background path: staging is session level only, and
+# clearing the ghost clears the staged boundaries.
+
+BAND_TOP_F = 460.0
+BAND_COLS = ('bandDry', 'bandMai', 'bandDev', 'bandCool')
+
+
+def stage_bg_phases(dry_sec, fc_sec, drop_sec):
+    """Stage the loaded ghost phase boundaries (Tier 3 item 16)
+    from its stamped event times, in elapsed seconds since its
+    charge. Called by both ghost routes (roastery.batches
+    set_background from the saved document events, and
+    roastery.artisan stage_background_upload from the imported
+    document events). -1 means the ghost has no such event.
+    These are staged tags only: the saved SettingsTargets values
+    are never touched here."""
+    def _i(v):
+        return int(float(v)) if v is not None and float(v) >= 0 else -1
+    write_members([('BgPhaseDrySec', _i(dry_sec)),
+                   ('BgPhaseFcSec', _i(fc_sec)),
+                   ('BgPhaseDropSec', _i(drop_sec))])
+
+
+def phase_band_ranges():
+    """The phase band ranges for the live chart, as
+    [(column, start_sec, end_sec)] with elapsed seconds since
+    charge. Drying runs charge to dry end, Maillard dry end to
+    FC start, Development FC start to drop, and Cooling drop to
+    the latest sample. A phase that has been stamped ends at
+    its stamp; a phase still ahead ends at its effective target
+    boundary (the ghost boundaries when phases from background
+    is on and staged, else the saved phase duration targets).
+    Empty when idle or when no samples exist yet."""
+    points = curve_points()
+    if not points:
+        return []
+    vals = read_members([
+        'State', 'DryEndElapsedSec', 'FirstCrackStartElapsedSec',
+        'DropElapsedSec', 'PhaseDryTargetSec',
+        'PhaseMaillardTargetSec', 'PhaseDevTargetSec',
+        'PhaseFromBg', 'BgPhaseDrySec', 'BgPhaseFcSec',
+        'BgPhaseDropSec'])
+    if vals['State'] == 'Idle':
+        return []
+    last = float(points[-1]['t'])
+    dry_s = vals['DryEndElapsedSec']
+    dry_s = int(dry_s) if dry_s is not None else -1
+    fc_s = vals['FirstCrackStartElapsedSec']
+    fc_s = int(fc_s) if fc_s is not None else -1
+    drop_s = vals['DropElapsedSec']
+    drop_s = int(drop_s) if drop_s is not None else -1
+    bg_dry = vals['BgPhaseDrySec'] or -1
+    bg_fc = vals['BgPhaseFcSec'] or -1
+    bg_drop = vals['BgPhaseDropSec'] or -1
+    use_bg = (bool(vals['PhaseFromBg']) and bg_dry > 0
+              and bg_fc > bg_dry and bg_drop > bg_fc)
+    if use_bg:
+        b_dry, b_fc, b_drop = bg_dry, bg_fc, bg_drop
+    else:
+        b_dry = int(vals['PhaseDryTargetSec'] or 0)
+        b_fc = b_dry + int(vals['PhaseMaillardTargetSec'] or 0)
+        b_drop = b_fc + int(vals['PhaseDevTargetSec'] or 0)
+    dry_end = dry_s if dry_s >= 0 else b_dry
+    fc_end = fc_s if fc_s >= 0 else b_fc
+    if fc_end < dry_end:
+        fc_end = dry_end
+    drop_end = drop_s if drop_s >= 0 else b_drop
+    if drop_end < fc_end:
+        drop_end = fc_end
+    out = []
+    for col, s, e in (('bandDry', 0, dry_end),
+                      ('bandMai', dry_end, fc_end),
+                      ('bandDev', fc_end, drop_end)):
+        if e > s:
+            out.append((col, float(s), float(e)))
+    if drop_s >= 0 and last > drop_s:
+        out.append(('bandCool', float(drop_s), float(last)))
+    return out
+
+
 def build_live_curve():
     """Rebuild LiveCurveDS, the dataset the Roast page charts
     actually draw, from the recorded CurveSamples (v4.1, Eric's
@@ -977,14 +2012,19 @@ def build_live_curve():
             merged[ms] = row
         row[col] = val
 
-    for p, (_t, r) in zip(points, rors):
+    # Display smoothing (item 12) shapes ONLY this bean column:
+    # the samples and the RoR column above stay raw.
+    display = display_smoothed([p['bt'] for p in points])
+    for p, (_t, r), disp in zip(points, rors, display):
         ms = long(p['t'] * 1000)
-        put(ms, 'bean', p['bt'])
+        put(ms, 'bean', disp)
         put(ms, 'ror', r)
         put(ms, 'fan', float(p['fan']) if p['fan'] is not None
             else None)
         put(ms, 'heat', float(p['heat']) if p['heat'] is not None
             else None)
+    for t, v in projection_points(pts, rors):
+        put(long(t * 1000), 'proj', v)
     for path, col in ((BACKGROUND_DS, 'bg'), (BGROR_DS, 'bgRor'),
                       (TARGET_DS, 'plan')):
         ds = system.tag.readBlocking([path])[0].value
@@ -995,12 +2035,24 @@ def build_live_curve():
             v = ds.getValueAt(i, col)
             if t is not None and v is not None:
                 put(long(t.getTime()), col, float(v))
+    # Phase bands (Tier 3 item 16): crisp boundary rows at each
+    # band edge, then the band value at every row inside its
+    # range. The chart fills under these width 0 series, which
+    # shades the strip behind the curves.
+    for col, s, e in phase_band_ranges():
+        put(long(s * 1000), col, BAND_TOP_F)
+        put(long(e * 1000), col, BAND_TOP_F)
+        for ms in list(merged.keys()):
+            if long(s * 1000) <= ms <= long(e * 1000):
+                put(ms, col, BAND_TOP_F)
     rows = []
     for ms in sorted(merged):
         m = merged[ms]
         rows.append([Date(ms), m.get('bean'), m.get('ror'),
                      m.get('fan'), m.get('heat'), m.get('bg'),
-                     m.get('bgRor'), m.get('plan')])
+                     m.get('bgRor'), m.get('plan'), m.get('proj'),
+                     m.get('bandDry'), m.get('bandMai'),
+                     m.get('bandDev'), m.get('bandCool')])
     system.tag.writeBlocking(
         [LIVE_DS], [system.dataset.toDataSet(LIVE_COLS, rows)])
 
@@ -1042,6 +2094,12 @@ def _stamp(stem, label):
     append_log('event', label, vals['BeanTempF'], elapsed, now)
     record_press(label)
     build_marks()
+    # A stamp through the normal button is the confirmation an
+    # auto suggestion (item 14) waits for: clear its prompt.
+    if stem == 'DryEnd':
+        _clear_suggestion('DryEnd')
+    elif stem == 'FirstCrackStart':
+        _clear_suggestion('FCStart')
     return elapsed
 
 
@@ -1084,12 +2142,18 @@ def _clear_log():
 # ---------------------------------------------------------------- flow
 
 def charge():
+    # Finalize any open between batch window FIRST (Tier 3
+    # item 20): the metrics stage on the Bbp tags and ride into
+    # this batch document at Save Batch. With no open window
+    # this clears any stale staged metrics instead.
+    _bbp_finalize_charge()
     vals = read_members(['BeanTempF', 'FanLevel', 'HeatLevel'])
     now = system.date.now()
     write_members([('State', 'Roasting'), ('StartTime', now),
                    ('ChargeTime', now), ('ChargeTempF', vals['BeanTempF']),
                    ('Mode', 'Roast'), ('WeightOutG', 0.0)])
     _clear_events()
+    _reset_live_analytics()
     clear_curve_samples()
     _clear_log()
     append_log('event', 'Charge', vals['BeanTempF'], 0, now,
@@ -1103,6 +2167,8 @@ def charge():
 def drop():
     _stamp('Drop', 'Drop')
     write_members([('State', 'Dropped'), ('Mode', 'Cool')])
+    # The between batch window opens at DROP (Tier 3 item 20).
+    _bbp_start_window()
     build_overlays()
 
 
@@ -1133,8 +2199,14 @@ def reset_batch():
                    ('_RoRPrevTempF', 0.0), ('_RoRPrevMs', 0),
                    ('_RoRLiveJson', '')])
     _clear_events()
+    _reset_live_analytics()
     clear_curve_samples()
     _clear_log()
+    # Reset discards an open between batch window and any
+    # staged BBP metrics (Tier 3 item 20, documented decision):
+    # a reset workspace starts a fresh between batch story.
+    _bbp_clear_all()
+    write_members([('PlanDeviationText', '--')])
     build_marks()
 
 
@@ -1176,17 +2248,14 @@ def build_overlays():
     the BackgroundCurveJson tag ([seconds, temp] pairs), which
     roastery.batches fills from the batch_series table."""
     from java.util import Date
-    vals = read_members(['TargetChargeTempF', 'TargetDryEndSec',
-                         'TargetDryEndTempF', 'TargetFCSec',
-                         'TargetFCTempF', 'TargetDropSec',
-                         'TargetDropTempF', 'StartTime'])
+    vals = read_members(['StartTime'])
     start = vals['StartTime']
     if start is None:
         return
-    pts = [(0.0, vals['TargetChargeTempF']),
-           (float(vals['TargetDryEndSec']), vals['TargetDryEndTempF']),
-           (float(vals['TargetFCSec']), vals['TargetFCTempF']),
-           (float(vals['TargetDropSec']), vals['TargetDropTempF'])]
+    # The plan is the variable length list from
+    # target_plan_points (Tier 3 item 17): the JSON list when
+    # one is stored, else the legacy four point tags.
+    pts = target_plan_points()
     # X values are elapsed dates (epoch + offset seconds), the
     # v4.1 axis shared by every chart dataset; StartTime only
     # gates whether a roast timeline exists at all.
@@ -1226,10 +2295,487 @@ def build_overlays():
 
 
 
+# ------------------------------------------------------- target plan
+# Full profile designer for the target plan (Tier 3 item 17,
+# Artisan designer.py point by point editing).
+#
+# Storage choice: the plan is a JSON list of [sec, tempF] pairs
+# on the TargetPlanJson member of CurrentBatch. It survives
+# restarts like every other standing tag, has no length limit
+# the four fixed tags imposed, and both readers (the plan line
+# in build_overlays and the deviation tile through
+# update_plan_deviation) go through target_plan_points, so a
+# longer list changes nothing else. When the JSON tag is empty
+# or invalid, the plan falls back to the legacy four point tags
+# (charge, dry end, FC, drop), which are also the migration
+# source: the existing four points ARE the default list, with
+# no separate migration step. Saving a plan through the
+# designer writes the JSON list and syncs two legacy tags for
+# the readers that still use them as scalars: the first point
+# temp to TargetChargeTempF and the last point to TargetDropSec
+# and TargetDropTempF (the drop target the alarms and metadata
+# use). The dry end and FC legacy tags are NOT synced: they
+# also carry the suggestion thresholds, which are their own
+# settings.
+#
+# Validation (Artisan designer shape, and the BatchEdit ordered
+# time pattern): at least 2 and at most 12 points, the first
+# point anchored at 0 seconds (charge), times strictly
+# increasing, temps between 50 and 500 F. A violation is
+# REJECTED with a visible note and nothing is saved; the plan
+# is never silently sorted.
+
+TARGET_PLAN_MAX = 12
+TARGET_PLAN_COLS = ['idx', 'timeSec', 'timeText', 'tempF']
+
+
+def target_plan_points():
+    """The current target plan as [(sec, tempF)] oldest first:
+    the TargetPlanJson list when it parses and validates, else
+    the legacy four point tags."""
+    raw = read_members(['TargetPlanJson'])['TargetPlanJson']
+    pts = []
+    if raw:
+        try:
+            data = system.util.jsonDecode(raw)
+        except Exception:
+            data = None
+        if isinstance(data, list):
+            try:
+                pts = [(float(p[0]), float(p[1])) for p in data]
+            except Exception:
+                pts = []
+    if pts and validate_target_plan(pts) is None:
+        return pts
+    vals = read_members(['TargetChargeTempF', 'TargetDryEndSec',
+                         'TargetDryEndTempF', 'TargetFCSec',
+                         'TargetFCTempF', 'TargetDropSec',
+                         'TargetDropTempF'])
+    return [(0.0, float(vals['TargetChargeTempF'] or 0.0)),
+            (float(vals['TargetDryEndSec'] or 0),
+             float(vals['TargetDryEndTempF'] or 0.0)),
+            (float(vals['TargetFCSec'] or 0),
+             float(vals['TargetFCTempF'] or 0.0)),
+            (float(vals['TargetDropSec'] or 0),
+             float(vals['TargetDropTempF'] or 0.0))]
+
+
+def validate_target_plan(points):
+    """None when the plan is valid, else the rejection message
+    (the caller shows it and saves nothing)."""
+    if len(points) < 2:
+        return ('The target plan needs at least 2 points. '
+                'Nothing was saved.')
+    if len(points) > TARGET_PLAN_MAX:
+        return ('The target plan holds at most %d points. '
+                'Nothing was saved.' % TARGET_PLAN_MAX)
+    if float(points[0][0]) != 0.0:
+        return ('The first target point must be at 0 seconds '
+                '(charge). Nothing was saved.')
+    for i in range(len(points)):
+        t, v = float(points[i][0]), float(points[i][1])
+        if v < 50.0 or v > 500.0:
+            return ('Target temps must be between 50 and 500 F. '
+                    'Nothing was saved.')
+        if i > 0 and t <= float(points[i - 1][0]):
+            return ('Target point times must be strictly '
+                    'increasing. Nothing was saved.')
+    return None
+
+
+def set_target_plan(points):
+    """Validate and store a plan; returns the rejection message
+    or None. On success the JSON list is written, the charge
+    and drop legacy tags are synced (see the section note), and
+    the overlays rebuild so the plan line moves at once."""
+    pts = [(float(t), float(v)) for t, v in points]
+    err = validate_target_plan(pts)
+    if err:
+        return err
+    write_members([
+        ('TargetPlanJson',
+         system.util.jsonEncode([[t, v] for t, v in pts])),
+        ('TargetChargeTempF', pts[0][1]),
+        ('TargetDropSec', int(pts[-1][0])),
+        ('TargetDropTempF', pts[-1][1])])
+    try:
+        build_overlays()
+    except Exception:
+        pass
+    return None
+
+
+def target_plan_dataset():
+    rows = []
+    for i, (t, v) in enumerate(target_plan_points()):
+        rows.append([i, int(t),
+                     '%d:%02d' % (int(t) // 60, int(t) % 60), v])
+    return system.dataset.toDataSet(TARGET_PLAN_COLS, rows)
+
+
+def _target_editor_paths():
+    return [TARGET_EDITOR + '/' + f
+            for f in ('Idx', 'TimeSec', 'TempF')]
+
+
+def target_editor_load(self, idx):
+    pts = target_plan_points()
+    idx = max(0, min(int(idx), len(pts) - 1))
+    t, v = pts[idx]
+    system.tag.writeBlocking(_target_editor_paths(),
+                             [idx, int(t), float(v)])
+    self.view.custom.targetPlanDs = target_plan_dataset()
+    self.view.custom.targetPlanCount = len(pts)
+
+
+def target_editor_load_idx(self):
+    idx = system.tag.readBlocking(
+        [TARGET_EDITOR + '/Idx'])[0].value
+    target_editor_load(self, int(idx or 0))
+
+
+def _target_editor_values():
+    vals = system.tag.readBlocking(_target_editor_paths())
+    return (int(vals[0].value or 0), int(vals[1].value or 0),
+            float(vals[2].value or 0.0))
+
+
+def _target_note(self, msg):
+    self.view.custom.targetPlanNote = msg
+    self.view.custom.targetPlanDs = target_plan_dataset()
+    self.view.custom.targetPlanCount = len(target_plan_points())
+
+
+def target_editor_save(self):
+    """Save the editor values over the selected plan point."""
+    idx, sec, temp = _target_editor_values()
+    pts = target_plan_points()
+    if idx < 0 or idx >= len(pts):
+        _target_note(self, 'Pick a point to edit first.')
+        return
+    pts[idx] = (float(sec), float(temp))
+    err = set_target_plan(pts)
+    _target_note(self, err if err else
+                 'Saved target point %d: %d sec, %.0f F.'
+                 % (idx + 1, sec, temp))
+
+
+def target_editor_add(self):
+    """Append the editor values as a new last plan point. The
+    time must be after the current last point (validation in
+    set_target_plan rejects it otherwise, with the note)."""
+    _idx, sec, temp = _target_editor_values()
+    pts = target_plan_points()
+    pts.append((float(sec), float(temp)))
+    err = set_target_plan(pts)
+    if err:
+        _target_note(self, err)
+    else:
+        target_editor_load(self, len(pts) - 1)
+        _target_note(self, 'Added target point %d: %d sec, '
+                     '%.0f F.' % (len(pts), sec, temp))
+
+
+def target_editor_delete(self):
+    """Delete the selected plan point. The charge point (index
+    0) anchors the plan and cannot be deleted."""
+    idx, _sec, _temp = _target_editor_values()
+    pts = target_plan_points()
+    if idx <= 0:
+        _target_note(self, 'The charge point (point 1) anchors '
+                     'the plan and cannot be deleted.')
+        return
+    if idx >= len(pts):
+        _target_note(self, 'Pick a point to delete first.')
+        return
+    gone = pts.pop(idx)
+    err = set_target_plan(pts)
+    if err:
+        _target_note(self, err)
+    else:
+        target_editor_load(self, min(idx, len(pts) - 1))
+        _target_note(self, 'Deleted target point %d (%d sec).'
+                     % (idx + 1, int(gone[0])))
+
+
+def target_plan_reset(self):
+    """Reset the plan to the legacy four points: clearing the
+    JSON tag makes target_plan_points fall back to them."""
+    write_members([('TargetPlanJson', '')])
+    try:
+        build_overlays()
+    except Exception:
+        pass
+    target_editor_load(self, 0)
+    _target_note(self, 'Plan reset to the four points from the '
+                 'fields above.')
+
+
+def targets_startup(self):
+    self.view.custom.targetPlanDs = target_plan_dataset()
+    self.view.custom.targetPlanCount = len(target_plan_points())
+    target_editor_load(self, 0)
+
+
+def update_plan_deviation(temp):
+    """Deviation tile text (Tier 3 item 17): live BT minus the
+    target plan interpolated at the elapsed seconds, over the
+    variable length plan. Published on PlanDeviationText; the
+    tile binds that tag. Two dashes outside a roast, the same
+    contract the old four point view expression had."""
+    vals = read_members(['State', 'StartTime'])
+    if vals['State'] != 'Roasting' or vals['StartTime'] is None:
+        text = '--'
+    else:
+        elapsed = elapsed_sec(vals['StartTime'])
+        dev = float(temp) - _plan_at(target_plan_points(),
+                                     float(elapsed))
+        text = '%+.1f F' % dev
+    cur = read_members(['PlanDeviationText'])['PlanDeviationText']
+    if cur != text:
+        write_members([('PlanDeviationText', text)])
+
+
+# ------------------------------------------------------- between batch
+# Between batch protocol, BT only subset (Tier 3 item 20,
+# Artisan main.py calcBBPMetrics). The ET half is skipped:
+# the SR800 has one bean temp probe.
+#
+# Window: from the previous roast DROP to the next CHARGE.
+# drop() opens the window (first sample is the drop temp at
+# t = 0); every BeanTempF change while the state is Dropped,
+# Cooling or Complete stages a sample into BbpSamplesDS
+# (t_offset_sec is float seconds since DROP, so the window
+# keeps sub second resolution). The staging tags live outside
+# the batch workspace (the Bbp folder plus the dataset tag),
+# so the window survives Save Batch for the roast that just
+# dropped. charge() closes the window: it appends the final
+# sample at the charge temp and moment, computes the metrics,
+# and stages them on the Bbp tags; batches.build_document
+# writes them into the next batch document as its bbp
+# subdocument at Save Batch. Reset discards the window and
+# any staged metrics (documented decision above, in
+# reset_batch): a reset workspace starts fresh.
+#
+# Metrics, all from the staged samples S = [(t, BT)]:
+# - time_sec: t of the last sample minus t of the first (the
+#   DROP to CHARGE duration).
+# - bottom_temp_f: the minimum BT in S; the bottom is the
+#   FIRST sample holding that minimum, at time t_b.
+# - RoR span: span = the library RoR delta span (the
+#   RoRDeltaSpanSec tag through ror_params, default 20 s; a
+#   span of 0 falls back to 20 for this math), the same span
+#   convention core.compute_ror_series differentiates over.
+# - ror_in_f_min: the slope approaching the bottom over the
+#   span, (bottom - BT at max(t_first, t_b - span)) times 60
+#   divided by (t_b - that start time), with BT interpolated
+#   linearly between samples; 0.0 when the bottom is the
+#   first sample (no approach exists).
+# - ror_out_f_min: the slope leaving the bottom over the
+#   span, (BT at min(t_last, t_b + span) - bottom) times 60
+#   divided by (that end time - t_b), interpolated the same
+#   way; 0.0 when the bottom is the last sample.
+
+
+def _bbp_read(members):
+    qvs = system.tag.readBlocking(
+        [BBP_ROOT + '/' + m for m in members])
+    return dict((m, qvs[i].value) for i, m in enumerate(members))
+
+
+def _bbp_write(pairs):
+    system.tag.writeBlocking(
+        [BBP_ROOT + '/' + m for m, _v in pairs],
+        [v for _m, v in pairs])
+
+
+def empty_bbp_dataset():
+    return typed_empty_dataset(BBP_COLS, BBP_SEED)
+
+
+def bbp_samples():
+    """Staged between batch samples as [(t_sec, tempF)] with
+    float seconds since DROP, oldest first."""
+    ds = system.tag.readBlocking([BBP_DS])[0].value
+    out = []
+    if ds is None:
+        return out
+    for r in range(ds.rowCount):
+        t = ds.getValueAt(r, 't_offset_sec')
+        v = ds.getValueAt(r, 'bean_temp_f')
+        if t is not None and v is not None:
+            out.append((float(t), float(v)))
+    out.sort()
+    return out
+
+
+def _bbp_start_window():
+    now = system.date.now()
+    temp = read_members(['BeanTempF'])['BeanTempF']
+    # Only the window state is (re)started here. The staged
+    # metrics are NOT cleared: they belong to the batch that
+    # is running now (finalized at its CHARGE) and must
+    # survive until its Save Batch, which consumes them
+    # (bbp_clear_staged). This window is for the NEXT batch.
+    _bbp_write([('SampleCount', 1),
+                ('DropMs', float(now.getTime())),
+                ('WindowActive', True)])
+    ds = empty_bbp_dataset()
+    ds = system.dataset.addRow(ds, [0.0, now, float(temp or 0.0)])
+    system.tag.writeBlocking([BBP_DS], [ds])
+
+
+def _bbp_capture(temp, now, now_ms):
+    vals = _bbp_read(['WindowActive', 'DropMs'])
+    if not vals['WindowActive'] or not vals['DropMs']:
+        return
+    state = read_members(['State'])['State']
+    if state not in ('Dropped', 'Cooling', 'Complete'):
+        return
+    t = (now_ms - float(vals['DropMs'])) / 1000.0
+    if t < 0:
+        return
+    ds = system.tag.readBlocking([BBP_DS])[0].value
+    if ds is None or ds.rowCount == 0:
+        ds = empty_bbp_dataset()
+    if ds.rowCount > 0:
+        last_t = ds.getValueAt(ds.rowCount - 1, 't_offset_sec')
+        last_bt = ds.getValueAt(ds.rowCount - 1, 'bean_temp_f')
+        if (last_t is not None and int(float(last_t)) == int(t)
+                and last_bt is not None
+                and abs(float(last_bt) - float(temp)) < 0.05):
+            return
+    ds = system.dataset.addRow(ds, [float(t), now, float(temp)])
+    system.tag.writeBlocking([BBP_DS], [ds])
+    _bbp_write([('SampleCount', ds.rowCount)])
+
+
+def _bbp_interp(points, t):
+    if t <= points[0][0]:
+        return points[0][1]
+    if t >= points[-1][0]:
+        return points[-1][1]
+    for i in range(len(points) - 1):
+        t0, v0 = points[i]
+        t1, v1 = points[i + 1]
+        if t0 <= t <= t1:
+            if t1 <= t0:
+                return v1
+            return v0 + (v1 - v0) * (t - t0) / (t1 - t0)
+    return points[-1][1]
+
+
+def bbp_compute(points):
+    """The four BBP metrics from staged samples (definitions
+    in the section note), or None when the window cannot
+    support them (fewer than 2 samples or no duration)."""
+    if len(points) < 2:
+        return None
+    t_first = points[0][0]
+    t_last = points[-1][0]
+    if t_last <= t_first:
+        return None
+    bottom = min(v for _t, v in points)
+    t_b = [t for t, v in points if v == bottom][0]
+    span = float(ror_params()['span'] or 20)
+    if span <= 0:
+        span = 20.0
+    if t_b > t_first:
+        ta = max(t_first, t_b - span)
+        ror_in = ((bottom - _bbp_interp(points, ta)) * 60.0
+                  / (t_b - ta))
+    else:
+        ror_in = 0.0
+    if t_last > t_b:
+        te = min(t_last, t_b + span)
+        ror_out = ((_bbp_interp(points, te) - bottom) * 60.0
+                   / (te - t_b))
+    else:
+        ror_out = 0.0
+    return {'time_sec': t_last - t_first,
+            'bottom_temp_f': bottom,
+            'bottom_sec': t_b,
+            'ror_in_f_min': ror_in,
+            'ror_out_f_min': ror_out}
+
+
+def _bbp_finalize_charge():
+    """Close the window at CHARGE: append the final sample,
+    compute the metrics and stage them for the batch document.
+    With no open window, stale staged metrics are cleared so a
+    later save can never inherit an old window."""
+    vals = _bbp_read(['WindowActive'])
+    if not vals['WindowActive']:
+        _bbp_write([('HasMetrics', False), ('TimeSec', 0.0),
+                    ('BottomTempF', 0.0), ('BottomSec', 0.0),
+                    ('RorInFMin', 0.0), ('RorOutFMin', 0.0),
+                    ('SampleCount', 0)])
+        return None
+    now = system.date.now()
+    temp = read_members(['BeanTempF'])['BeanTempF']
+    try:
+        _bbp_capture(float(temp or 0.0), now, long(now.getTime()))
+    except Exception:
+        pass
+    points = bbp_samples()
+    metrics = bbp_compute(points)
+    _bbp_write([('WindowActive', False),
+                ('SampleCount', len(points))])
+    system.tag.writeBlocking([BBP_DS], [empty_bbp_dataset()])
+    if metrics is None:
+        _bbp_write([('HasMetrics', False)])
+        return None
+    _bbp_write([('HasMetrics', True),
+                ('TimeSec', float(metrics['time_sec'])),
+                ('BottomTempF', float(metrics['bottom_temp_f'])),
+                ('BottomSec', float(metrics['bottom_sec'])),
+                ('RorInFMin', float(metrics['ror_in_f_min'])),
+                ('RorOutFMin', float(metrics['ror_out_f_min']))])
+    return metrics
+
+
+def _bbp_clear_all():
+    _bbp_write([('WindowActive', False), ('DropMs', 0.0),
+                ('HasMetrics', False), ('TimeSec', 0.0),
+                ('BottomTempF', 0.0), ('BottomSec', 0.0),
+                ('RorInFMin', 0.0), ('RorOutFMin', 0.0),
+                ('SampleCount', 0)])
+    system.tag.writeBlocking([BBP_DS], [empty_bbp_dataset()])
+
+
+def bbp_clear_staged():
+    """Consume the staged metrics after a successful save:
+    they have been written into that batch document, and a
+    later save must never inherit them. The open window and
+    its samples are untouched (they belong to the next
+    batch). Called by roastery.batches.save_current_batch."""
+    _bbp_write([('HasMetrics', False), ('TimeSec', 0.0),
+                ('BottomTempF', 0.0), ('BottomSec', 0.0),
+                ('RorInFMin', 0.0), ('RorOutFMin', 0.0)])
+
+
+def bbp_staged_metrics():
+    """The staged BBP metrics for the batch document, as the
+    four value bbp subdocument, or None when no window was
+    finalized at this batch charge."""
+    vals = _bbp_read(['HasMetrics', 'TimeSec', 'BottomTempF',
+                      'RorInFMin', 'RorOutFMin'])
+    if not vals['HasMetrics']:
+        return None
+    return {'time_sec': float(vals['TimeSec'] or 0.0),
+            'bottom_temp_f': float(vals['BottomTempF'] or 0.0),
+            'ror_in_f_min': float(vals['RorInFMin'] or 0.0),
+            'ror_out_f_min': float(vals['RorOutFMin'] or 0.0)}
+
+
 # ---------------------------------------------------------------- forms
 
 def coerce(member, value):
     """Form payloads carry numbers as strings; coerce per member."""
+    if member in FORM_BOOLS:
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in ('true', '1', 'yes', 'on')
     if member in FORM_INTS:
         return int(float(value))
     if member in FORM_FLOATS:
@@ -1244,7 +2790,8 @@ def config_form_data():
     for m in FORM_MEMBERS:
         v = vals[m]
         if v is None:
-            v = 0 if m in FORM_INTS else (0.0 if m in FORM_FLOATS else '')
+            v = (False if m in FORM_BOOLS else
+                 0 if m in FORM_INTS else (0.0 if m in FORM_FLOATS else ''))
         else:
             v = coerce(m, v)
         data[m] = v
@@ -1310,6 +2857,8 @@ BATCHES_CODE = '''# Roastery batch persistence: full CRUD for previous batches i
 #   JSON array parameter unpacked in SQL). View as Background reads
 #   the series back through Series/SelectByBatch, so every batch
 #   carries its own curve like an Artisan roast file.
+
+import math
 
 import roastery.core as core
 
@@ -1433,6 +2982,9 @@ def build_document():
     members += ['TargetChargeTempF', 'TargetDryEndSec',
                 'TargetDryEndTempF', 'TargetFCSec', 'TargetFCTempF',
                 'TargetDropSec', 'TargetDropTempF']
+    members += ['TurningPointElapsedSec', 'TurningPointTempF',
+                'AucLiveFMin', 'AucSinceFcFMin', 'AucBaseTempF',
+                'AucBegin', 'AucTargetFMin']
     vals = core.read_members(members)
     total = vals['DropElapsedSec'] or 0
     dry = vals['DryEndElapsedSec']
@@ -1441,8 +2993,11 @@ def build_document():
     fc = fc if fc is not None and fc >= 0 else total
     charge_w = vals['ChargeWeightG'] or 0.0
     out_w = vals['WeightOutG'] or 0.0
-    loss = ((charge_w - out_w) * 100.0 / charge_w) if out_w > 0 and charge_w > 0 else 0.0
-    return {
+    lossd = loss_yield_density(vals)
+    loss = lossd.get('weightLossPct')
+    if loss is None:
+        loss = ((charge_w - out_w) * 100.0 / charge_w) if out_w > 0 and charge_w > 0 else 0.0
+    doc = {
         'batchNumber': vals['BatchNumber'],
         'beanName': vals['BeanName'],
         'roastStart': _iso(vals['ChargeTime']),
@@ -1454,6 +3009,16 @@ def build_document():
                    'developmentSec': total - fc,
                    'dtrPct': ((total - fc) * 100.0 / total) if total > 0 else 0.0},
         'auc': curve_auc(core.curve_points(), vals['ChargeTempF']),
+        'aucDetail': {'valueFMin': vals['AucLiveFMin'],
+                      'sinceFcFMin': vals['AucSinceFcFMin'],
+                      'baseF': vals['AucBaseTempF'],
+                      'begin': vals['AucBegin'],
+                      'targetFMin': vals['AucTargetFMin']},
+        'turningPoint': (
+            {'t': vals['TurningPointElapsedSec'],
+             'tempF': vals['TurningPointTempF']}
+            if vals['TurningPointElapsedSec'] is not None
+            and vals['TurningPointElapsedSec'] >= 0 else None),
         'weightLossPct': loss,
         'source': vals['ActiveSource'],
         'metadata': dict((m, vals[m]) for m in core.FORM_MEMBERS),
@@ -1482,6 +3047,21 @@ def build_document():
                    'dropSec': vals['TargetDropSec'],
                    'dropTempF': vals['TargetDropTempF']},
         'fanHeatTrace': _trace_summary()}
+    # Between batch protocol (Tier 3 item 20, BT only): the
+    # metrics staged at this batch CHARGE from the previous
+    # roast DROP window, when a window was finalized. Batches
+    # with no preceding drop carry no bbp key at all.
+    _bbp = core.bbp_staged_metrics()
+    if _bbp is not None:
+        doc['bbp'] = _bbp
+    # The saved target document carries the full variable
+    # length plan (Tier 3 item 17) beside the legacy fields.
+    doc['target']['points'] = [
+        [float(t), float(v)] for t, v in core.target_plan_points()]
+    doc['loss'] = lossd
+    pts = [(float(p['t']), float(p['bt'])) for p in core.curve_points()]
+    doc['phaseAnalysis'] = phase_analysis(doc, pts)
+    return doc
 
 
 # ---------------------------------------------------------------- CRUD
@@ -1560,6 +3140,10 @@ def save_current_batch(self):
         'drop_temp_f': vals['DropTempF'],
         'data': system.util.jsonEncode(doc)})
     _insert_series(vals['BatchNumber'], core.curve_points())
+    # The staged BBP metrics were written into this batch
+    # document by build_document; consume them so a later
+    # save cannot inherit them (Tier 3 item 20).
+    core.bbp_clear_staged()
     core.record_press('Save Batch')
     self.view.custom.saveNote = 'Saved batch %d to the database.' % vals['BatchNumber']
     return vals['BatchNumber']
@@ -1606,13 +3190,21 @@ def edit_form_data_for(self):
     from charge) and event temps."""
     create = system.tag.readBlocking([EDITOR_CREATE_TAG])[0].value
     if create:
-        return {'BeanName': '', 'Origin': '', 'Region': '', 'Farm': '',
-                'Altitude': '', 'Variety': '', 'Process': '',
-                'HarvestYear': 2025, 'MoisturePct': 0.0,
-                'DensityGL': 0.0, 'ChargeWeightG': 200.0,
-                'TargetDropTempF': 415.0, 'RoastLevel': '',
-                'OperatorName': '', 'Notes': '', 'WeightOutG': 0.0,
-                'BatchNumber': 0}
+        data = {}
+        for m in core.FORM_MEMBERS:
+            if m in core.FORM_BOOLS:
+                data[m] = False
+            elif m in core.FORM_INTS:
+                data[m] = 0
+            elif m in core.FORM_FLOATS:
+                data[m] = 0.0
+            else:
+                data[m] = ''
+        data.update({'HarvestYear': 2025, 'ChargeWeightG': 200.0,
+                     'TargetDropTempF': 415.0,
+                     'RoasterType': 'FreshRoast SR800',
+                     'RoasterSizeKg': 0.25, 'BatchNumber': 0})
+        return data
     number = int(system.tag.readBlocking([SELECTED_TAG])[0].value or 0)
     batch = get_batch(number)
     if batch is None:
@@ -1623,7 +3215,9 @@ def edit_form_data_for(self):
     for m in core.FORM_MEMBERS:
         v = meta.get(m)
         if v is None:
-            v = 0 if m in core.FORM_INTS else (0.0 if m in core.FORM_FLOATS else '')
+            v = (False if m in core.FORM_BOOLS else
+                 0 if m in core.FORM_INTS else
+                 (0.0 if m in core.FORM_FLOATS else ''))
         data[m] = v
     data['BatchNumber'] = batch['batchNumber']
     events = doc.get('events') or {}
@@ -1806,8 +3400,7 @@ def set_background(self):
     Roast page background overlay, then navigate to the console.
     roastery.core.build_overlays recomputes the ghost RoR from the
     staged temps with the current RoR parameters."""
-    batch_number = int(self.view.custom.selBatchNumber or 0) \
-        if hasattr(self.view.custom, 'selBatchNumber') else 0
+    batch_number = int(self.view.custom.selBatchNumber or 0)         if hasattr(self.view.custom, 'selBatchNumber') else 0
     if batch_number <= 0:
         batch_number = int(system.tag.readBlocking(
             [SELECTED_TAG])[0].value or 0)
@@ -1815,19 +3408,142 @@ def set_background(self):
         return
     ds = _run(NQ_SERIES_SELECT, {'batch_number': batch_number})
     pairs = []
+    levels = []
     for r in range(ds.rowCount):
         pairs.append([ds.getValueAt(r, 't_offset_sec'),
                       ds.getValueAt(r, 'bean_temp_f')])
+        levels.append((ds.getValueAt(r, 't_offset_sec'),
+                       ds.getValueAt(r, 'fan_level'),
+                       ds.getValueAt(r, 'heat_level')))
     batch = get_batch(batch_number)
     label = 'Batch %d' % batch_number
     if batch is not None and batch['beanName']:
         label += ' - ' + batch['beanName']
+    drop_sec = -1.0
+    if batch is not None:
+        ev = (batch['document'].get('events') or {}).get('drop')
+        if ev and ev.get('t') is not None:
+            drop_sec = float(ev['t'])
+        elif batch['document'].get('totalSec'):
+            drop_sec = float(batch['document']['totalSec'])
+    # Playback events for Tier 2 item 11 ride along with the
+    # ghost: the Fan and Heat changes in its own series plus
+    # its drop time, derived by roastery.core.
+    events = core.build_background_events(levels, drop_sec)
+    # Phase boundaries for Tier 3 item 16 stage with the ghost
+    # too, from its stamped document events (session level
+    # staging tags; the saved Settings targets stay untouched).
+    if batch is not None:
+        _ev = batch['document'].get('events') or {}
+        core.stage_bg_phases(
+            (_ev.get('dryEnd') or {}).get('t'),
+            (_ev.get('fcStart') or {}).get('t'),
+            (_ev.get('drop') or {}).get('t'))
     system.tag.writeBlocking(
-        [core.BACKGROUND_JSON, BACKGROUND_LABEL],
-        [system.util.jsonEncode(pairs), label])
+        [core.BACKGROUND_JSON, BACKGROUND_LABEL,
+         core.BACKGROUND_DROP_TAG, core.BACKGROUND_EVENTS_TAG],
+        [system.util.jsonEncode(pairs), label, drop_sec,
+         system.util.jsonEncode(events)])
     core.build_overlays()
     system.perspective.navigate(page='/')
 
+
+
+# ---------------------------------------------------------------- compare
+# Multi curve comparison on the Log page (Tier 1 item 2): up to
+# three saved batches overlaid on one canvas chart, BT solid and
+# RoR dashed per batch. RoR is recomputed from each batch's
+# stored temps with the current parameters, the same offline
+# path stage_detail uses, so compared curves can never disagree
+# with the detail view.
+
+COMPARE_COLS = ['t_stamp', 'btA', 'rorA', 'btB', 'rorB',
+                'btC', 'rorC']
+COMPARE_SLOTS = ('A', 'B', 'C')
+
+
+def compare_options():
+    """Dropdown options for the compare pickers, from the
+    SelectAll named query (the table's own source)."""
+    ds = _run(NQ_SELECT_ALL)
+    out = [{'value': 0, 'label': 'None'}]
+    for r in range(ds.rowCount):
+        n = ds.getValueAt(r, 'batch_number')
+        bean = ds.getValueAt(r, 'bean_name') or ''
+        out.append({'value': int(n),
+                    'label': 'Batch %s - %s' % (n, bean)})
+    return out
+
+
+def compare_startup(self):
+    """BatchesPanel onStartup: fill the three compare pickers
+    and default A and B to the two newest batches."""
+    opts = compare_options()
+    root = self.getChild('root')
+    if root is None:
+        root = self.view.getChild('root')
+    for slot in COMPARE_SLOTS:
+        root.getChild('CompareRow').getChild(
+            'Cmp' + slot).props.options = opts
+    nums = [o['value'] for o in opts if o['value']]
+    c = self.view.custom
+    if len(nums) >= 2:
+        c.cmpA, c.cmpB = nums[0], nums[1]
+    elif nums:
+        c.cmpA = nums[0]
+
+
+def _compare_points(batch_number):
+    ds = _run(NQ_SERIES_SELECT, {'batch_number': int(batch_number)})
+    points = []
+    for r in range(ds.rowCount):
+        bt = ds.getValueAt(r, 'bean_temp_f')
+        if bt is not None:
+            points.append((float(ds.getValueAt(r, 't_offset_sec')),
+                           float(bt)))
+    points.sort()
+    return points
+
+
+def build_compare(self):
+    """Compare button: build the wide compare dataset on the
+    elapsed axis (timestamp union, nulls elsewhere, the live
+    chart's merge shape) and the caption naming each slot."""
+    from java.util import Date
+    c = self.view.custom
+    chosen = [('A', int(c.cmpA or 0)), ('B', int(c.cmpB or 0)),
+              ('C', int(c.cmpC or 0))]
+    merged = {}
+    captions = []
+    for slot, number in chosen:
+        if number <= 0:
+            continue
+        points = _compare_points(number)
+        if not points:
+            continue
+        rors = core.compute_ror_series(points, core.ror_params(),
+                                       offline=True)
+        ror_by_t = dict((t, r) for t, r in rors)
+        for t, bt in points:
+            ms = long(t * 1000)
+            row = merged.get(ms)
+            if row is None:
+                row = {}
+                merged[ms] = row
+            row['bt' + slot] = bt
+            row['ror' + slot] = ror_by_t.get(t)
+        batch = get_batch(number)
+        bean = (batch['beanName'] if batch else '') or ''
+        captions.append('%s = Batch %d %s' % (slot, number, bean))
+    rows = []
+    for ms in sorted(merged):
+        m = merged[ms]
+        rows.append([Date(ms), m.get('btA'), m.get('rorA'),
+                     m.get('btB'), m.get('rorB'),
+                     m.get('btC'), m.get('rorC')])
+    c.compareDs = system.dataset.toDataSet(COMPARE_COLS, rows)
+    c.compareCaption = (' - '.join(captions) if captions
+                        else 'Pick at least one batch to compare.')
 
 
 # ---------------------------------------------------------------- event editing
@@ -1871,8 +3587,7 @@ def _apply_events(doc, payload):
             continue
         old = events.get(key) or {}
         try:
-            t = parse_mmss(payload.get(tkey)) if tkey in payload \
-                else old.get('t')
+            t = parse_mmss(payload.get(tkey)) if tkey in payload                 else old.get('t')
         except Exception:
             return ('Event times must be mm:ss (for example 04:30). '
                     'Nothing was saved.')
@@ -1986,7 +3701,85 @@ def stage_detail(batch_number):
         [DETAIL_DS, DETAIL_MARKS],
         [system.dataset.toDataSet(['t_stamp', 'bt', 'ror'], rows),
          core.marks_dataset(evs)])
+    # The detail analyzer (Tier 2 item 13) restages with the
+    # batch: selection back to Latest, readout recomputed.
+    system.tag.writeBlocking(
+        [core.DETAIL_ANALYZER + '/Sec'], [-1])
+    detail_analyzer_refresh()
     return True
+
+
+# ------------------------------------------------------- detail analyzer
+# Tier 2 item 13 on BatchDetail: the same crosshair readout as
+# the live chart, computed over the staged DetailDS (stored
+# temps with RoR recomputed on read by stage_detail, the one
+# implementation) plus the staged ghost for the ghost BT and
+# deviation columns. Values publish to the DetailAnalyzer
+# tags the detail strip binds; selection moves through the
+# strip steppers, never through floating chart text.
+
+def _detail_analyzer_paths():
+    names = {'timeText': 'TimeText', 'btText': 'BtText',
+             'rorText': 'RorText', 'bgText': 'BgText',
+             'devText': 'DevText', 'btF': 'BtF', 'rorF': 'RorF',
+             'bgF': 'BgF', 'devF': 'DevF', 'hasBg': 'HasBg'}
+    return dict((k, core.DETAIL_ANALYZER + '/' + v)
+                for k, v in names.items())
+
+
+def _detail_points():
+    ds = system.tag.readBlocking([DETAIL_DS])[0].value
+    points = []
+    rors = []
+    if ds is None:
+        return points, rors
+    for r in range(ds.rowCount):
+        ts = ds.getValueAt(r, 't_stamp')
+        bt = ds.getValueAt(r, 'bt')
+        if ts is None or bt is None:
+            continue
+        t = ts.getTime() / 1000.0
+        points.append((t, float(bt)))
+        rors.append((t, ds.getValueAt(r, 'ror')))
+    return points, rors
+
+
+def detail_analyzer_refresh():
+    """Recompute the BatchDetail analyzer readout at the
+    selected time (DetailAnalyzer/Sec, -1 is Latest)."""
+    points, rors = _detail_points()
+    if not points:
+        return
+    sec = system.tag.readBlocking(
+        [core.DETAIL_ANALYZER + '/Sec'])[0].value
+    t = points[-1][0] if sec is None or int(sec) < 0 else float(sec)
+    t = max(points[0][0], min(points[-1][0], t))
+    core._analyzer_write(
+        _detail_analyzer_paths(),
+        core.analyzer_values(points, rors, t))
+
+
+def detail_analyzer_step(delta):
+    """Detail analyzer stepper (thin handler target)."""
+    points, _rors = _detail_points()
+    if not points:
+        return
+    sec = system.tag.readBlocking(
+        [core.DETAIL_ANALYZER + '/Sec'])[0].value
+    base = points[-1][0] if sec is None or int(sec) < 0 \
+        else float(sec)
+    new = max(points[0][0], min(points[-1][0],
+                                base + float(delta)))
+    system.tag.writeBlocking(
+        [core.DETAIL_ANALYZER + '/Sec'], [int(new)])
+    detail_analyzer_refresh()
+
+
+def detail_analyzer_latest():
+    """Detail analyzer Latest button."""
+    system.tag.writeBlocking(
+        [core.DETAIL_ANALYZER + '/Sec'], [-1])
+    detail_analyzer_refresh()
 
 
 def detail_reference_lines():
@@ -2030,14 +3823,202 @@ def open_detail(self):
                                        scope='session')
 
 
+# Tier 2 items 7, 8 and 10b: phase analytics completion, loss /
+# yield / density, and the BT similarity score. Definitions are
+# Artisan 5.0.0 main.py: RoR(TP_index, dryEndIndex),
+# computedProfileInformation() (phase RoRs, delta temps, total
+# RoR, fcs_ror, per phase AUC through ts(), cool phase time from
+# calcStatistics), weight_loss(), volume_increase(), and
+# curveSimilarity() (BT half).
+
+
+def _weight_loss(green, roasted):
+    """Artisan weight_loss: percent, 0 when green is 0 or the
+    roasted weight exceeds the green weight."""
+    green = float(green or 0.0)
+    roasted = float(roasted or 0.0)
+    if green == 0.0 or green < roasted:
+        return 0.0
+    return 100.0 * ((green - roasted) / green)
+
+
+def _volume_increase(green, roasted):
+    """Artisan volume_increase: percent, 0 when green is 0 or
+    the roasted volume is smaller than the green volume."""
+    green = float(green or 0.0)
+    roasted = float(roasted or 0.0)
+    if green == 0.0 or green > roasted:
+        return 0.0
+    return 100.0 * ((roasted - green) / green)
+
+
+def loss_yield_density(meta):
+    """The full Artisan loss, yield and density set from the
+    batch metadata (Tier 1 item 3 fields). Every value is
+    guarded: when an input is absent or the Artisan formula
+    would divide by zero or read a negative yield, the key is
+    simply not stored, never a fabricated number. Keys:
+    weightLossPct, defectsLossPct, totalLossPct, totalYieldG,
+    totalYieldPct, volumeGainPct, moistureLossPct,
+    organicLossPct, greenDensityGL, roastedDensityGL.
+    Densities are weight over volume in g per L (Artisan
+    converts weight to g and volume to L; Roastery stores g
+    and ml, so density is weight * 1000 / volume_ml).
+    totalYieldG is Artisan's computed total_yield (the yield
+    weight in grams, weight out minus defects); totalYieldPct
+    is the same yield as a percent of the green weight."""
+    meta = meta or {}
+    out = {}
+
+    def _f(key):
+        v = meta.get(key)
+        try:
+            return float(v) if v is not None else 0.0
+        except Exception:
+            return 0.0
+
+    win = _f('ChargeWeightG')
+    wout = _f('WeightOutG')
+    defects = _f('DefectsWeightG')
+    vin = _f('VolumeInMl')
+    vout = _f('VolumeOutMl')
+    gmoist = _f('MoisturePct')
+    rmoist = _f('RoastedMoisturePct')
+    wl = _weight_loss(win, wout) if win > 0 and wout > 0 else 0.0
+    if wl > 0:
+        out['weightLossPct'] = wl
+    if wout > 0 and defects > 0 and defects < wout:
+        dl = _weight_loss(wout, wout - defects)
+        if dl > 0:
+            out['defectsLossPct'] = dl
+    if vin > 0 and vout > 0:
+        vg = _volume_increase(vin, vout)
+        if vg > 0:
+            out['volumeGainPct'] = vg
+    if gmoist > 0 and rmoist > 0:
+        ml = gmoist - rmoist
+        out['moistureLossPct'] = ml
+        if wl > 0:
+            out['organicLossPct'] = wl - ml
+    if win > 0 and (wout > 0 or defects > 0):
+        res = (wout - defects) if wout > 0 else (win - defects)
+        if res > 0:
+            out['totalYieldG'] = res
+            out['totalYieldPct'] = res * 100.0 / win
+            tl = _weight_loss(win, res)
+            if tl > 0:
+                out['totalLossPct'] = tl
+    if win > 0 and vin > 0:
+        out['greenDensityGL'] = win * 1000.0 / vin
+    if wout > 0 and vout > 0:
+        out['roastedDensityGL'] = wout * 1000.0 / vout
+    return out
+
+
+def _auc_range(points, start, end, base):
+    """Trapezoid area between the bean curve and the base temp
+    over [start, end] only, in degree F minutes (Artisan ts()
+    per phase shape, calcAUC trapezoids). Segments are clipped
+    to the range with interpolated endpoint temps."""
+    if end is None or start is None or end <= start or not points:
+        return None
+    auc = 0.0
+    for i in range(len(points) - 1):
+        t0, v0 = points[i]
+        t1, v1 = points[i + 1]
+        if t1 <= start or t0 >= end or t1 <= t0:
+            continue
+        a = max(t0, start)
+        b = min(t1, end)
+        va = v0 + (v1 - v0) * (a - t0) / (t1 - t0)
+        vb = v0 + (v1 - v0) * (b - t0) / (t1 - t0)
+        avg = (va + vb) / 2.0
+        if avg > base:
+            auc += (avg - base) * (b - a) / 60.0
+    return auc
+
+
+def _interp_pairs(pairs, t):
+    if not pairs or t < pairs[0][0] or t > pairs[-1][0]:
+        return None
+    for i in range(len(pairs) - 1):
+        t0, v0 = pairs[i]
+        t1, v1 = pairs[i + 1]
+        if t0 <= t <= t1:
+            if t1 <= t0:
+                return v1
+            return v0 + (v1 - v0) * (t - t0) / (t1 - t0)
+    return pairs[-1][1]
+
+
+def bt_similarity(fg_points, fg_drop_t, bg_points, bg_drop_t,
+                  fg_dry_t=None):
+    """BT similarity against the background, Artisan main.py
+    curveSimilarity() BT half only (the dbt value): the RMSE
+    in F between the foreground BT and the background BT
+    interpolated at the same times, over the stretch from
+    DRY to DROP, with the background time axis shifted so the
+    two DROP times align (dropTimeDelta). The ET half is
+    skipped (single sensor). Roastery adaptation: Artisan
+    locates its dry index by scanning back from DROP for the
+    phases dry boundary temperature; Roastery uses its
+    recorded Dry End event as the same phase boundary.
+    Returns None when either curve lacks a DROP or there is
+    no overlap to compare."""
+    if (not fg_points or not bg_points or fg_drop_t is None
+            or bg_drop_t is None):
+        return None
+    start = float(fg_dry_t) if fg_dry_t is not None else 0.0
+    shift = float(fg_drop_t) - float(bg_drop_t)
+    sq = []
+    for t, bt in fg_points:
+        if t < start or t > float(fg_drop_t):
+            continue
+        b = _interp_pairs(bg_points, t - shift)
+        if b is None:
+            continue
+        sq.append((float(bt) - b) ** 2)
+    if not sq:
+        return None
+    return math.sqrt(sum(sq) / len(sq))
+
+
+def phase_analysis(doc, points):
+    """Structured phase analytics for the saved document
+    (Tier 2 item 7): per phase duration, share, delta temp,
+    average RoR and AUC, plus fcsRorFMin, totalRorFMin and
+    coolSec. Only values the data actually supports are
+    stored. See _phase_analysis for the definitions."""
+    rows, _tp_text, extra = _phase_analysis(doc, points)
+    out = {'phases': {}}
+    for name, vals in extra['phases'].items():
+        out['phases'][name] = vals
+    if extra.get('fcsRor') is not None:
+        out['fcsRorFMin'] = extra['fcsRor']
+    if extra.get('totalRor') is not None:
+        out['totalRorFMin'] = extra['totalRor']
+    if extra.get('coolSec') is not None:
+        out['coolSec'] = extra['coolSec']
+    return out
+
+
 def _phase_analysis(doc, points):
-    """Analyzer style phase readouts for the detail view, in the
-    spirit of Artisan's computed block: per phase duration, share
-    of the roast, bean temp gain between the bounding events and
-    the average rate of rise over the phase (gain per minute),
-    plus the turning point (the bean temp minimum between charge
-    and dry end) read off the stored curve."""
+    """Analyzer style phase readouts for the detail view,
+    aligned to Artisan's computed block (Tier 2 item 7):
+    per phase duration and share (dry phase time still runs
+    charge to dry end, as in Artisan calcStatistics), the per
+    phase delta temp and average RoR from Artisan RoR() (the
+    DRY phase RoR and delta are measured from the TURNING
+    POINT, or from the greens temp when one is recorded, not
+    from charge), per phase AUC (Artisan ts() ranges: charge
+    to dry, dry to FC start, FC start to drop, above the AUC
+    base), the RoR at FC START (fcs_ror, the RoR series value
+    at the FC sample), the total RoR (TP to drop), and a cool
+    phase line (drop to the cool end: the imported Artisan
+    COOL time when present, else the last stored sample).
+    Returns (table rows, turning point text, extra dict)."""
     events = doc.get('events') or {}
+    meta = doc.get('metadata') or {}
 
     def ev(key, field):
         e = events.get(key)
@@ -2045,38 +4026,125 @@ def _phase_analysis(doc, points):
 
     total = doc.get('totalSec') or (points[-1][0] if points else 0)
     dry_t = ev('dryEnd', 't')
+    fc_t = ev('fcStart', 't')
+    drop_t = ev('drop', 't')
+    saved_tp = doc.get('turningPoint') or {}
     tp = None
-    for (t, bt) in points:
-        if t <= 0:
-            continue
-        if dry_t is not None and t >= dry_t:
-            break
-        if dry_t is None and total and t > total * 0.5:
-            break
-        if tp is None or bt < tp[1]:
-            tp = (t, bt)
+    if (saved_tp.get('t') is not None
+            and saved_tp.get('tempF') is not None):
+        # The live detected turning point, saved with the batch
+        # (roastery.core._track_turning_point); it wins over the
+        # offline curve scan below.
+        tp = (saved_tp['t'], saved_tp['tempF'])
+    else:
+        for (t, bt) in points:
+            if t <= 0:
+                continue
+            if dry_t is not None and t >= dry_t:
+                break
+            if dry_t is None and total and t > total * 0.5:
+                break
+            if tp is None or bt < tp[1]:
+                tp = (t, bt)
+    # AUC base: the saved AUC detail base when present, else
+    # the charge temp (the base curve_auc uses for the batch).
+    auc_detail = doc.get('aucDetail') or {}
+    base = auc_detail.get('baseF')
+    if base is None:
+        base = ev('charge', 'tempF') or 0.0
+    greens = 0.0
+    try:
+        greens = float(meta.get('GreensTempF') or 0.0)
+    except Exception:
+        greens = 0.0
+    dry_temp = ev('dryEnd', 'tempF')
+    # Drying delta and RoR, Artisan RoR() first two branches.
+    dry_gain = None
+    dry_ror = None
+    if dry_temp is not None and greens > 0:
+        dry_gain = dry_temp - greens
+        if dry_t:
+            dry_ror = dry_gain / (dry_t / 60.0)
+    elif dry_temp is not None and tp is not None and dry_t is not None and dry_t > tp[0]:
+        dry_gain = dry_temp - tp[1]
+        dry_ror = dry_gain / ((dry_t - tp[0]) / 60.0)
+    bounds = (('Drying', 0, dry_t, dry_gain, dry_ror),
+              ('Maillard', dry_t, fc_t, None, None),
+              ('Development', fc_t, drop_t, None, None))
+    phases = {}
     rows = []
-    for name, a, b in (('Drying', 'charge', 'dryEnd'),
-                       ('Maillard', 'dryEnd', 'fcStart'),
-                       ('Development', 'fcStart', 'drop')):
-        ta, tb = ev(a, 't'), ev(b, 't')
+    for name, ta, tb, gain, ror in bounds:
         if ta is None or tb is None or tb <= ta:
             continue
         dur = tb - ta
-        fa, fb = ev(a, 'tempF'), ev(b, 'tempF')
-        gain = (fb - fa) if (fa is not None and fb is not None) \
-            else None
-        ror = (gain / (dur / 60.0)) if gain is not None else None
+        if gain is None:
+            fa = _interp_pairs(points, float(ta))
+            fb = _interp_pairs(points, float(tb))
+            # Event temps are the recorded truth when present;
+            # the curve interpolation is the fallback.
+            ea = ev('charge' if name == 'Drying' else
+                    'dryEnd' if name == 'Maillard' else 'fcStart',
+                    'tempF')
+            eb = ev('dryEnd' if name == 'Drying' else
+                    'fcStart' if name == 'Maillard' else 'drop',
+                    'tempF')
+            if ea is not None:
+                fa = ea
+            if eb is not None:
+                fb = eb
+            gain = (fb - fa) if (fa is not None
+                                 and fb is not None) else None
+            ror = (gain / (dur / 60.0)) if gain is not None else None
+        auc = _auc_range(points, float(ta), float(tb), float(base))
+        phases[name] = {'sec': dur,
+                        'sharePct': (dur * 100.0 / total)
+                        if total else None,
+                        'deltaF': gain, 'rorFMin': ror,
+                        'aucFMin': auc}
         rows.append([name, _mmss(dur),
                      ('%.0f%%' % (dur * 100.0 / total))
                      if total else '--',
                      ('%+.0f F' % gain) if gain is not None
                      else '--',
                      ('%.1f F/min' % ror) if ror is not None
-                     else '--'])
-    tp_text = ('%.0f F at %s' % (tp[1], _mmss(tp[0]))) if tp \
-        else '--'
-    return rows, tp_text
+                     else '--',
+                     ('%.0f' % auc) if auc is not None else '--'])
+    # Cool phase: drop to cool end.
+    cool_sec = None
+    cool_end = None
+    sub = (doc.get('artisan') or {}).get('events') or {}
+    if sub.get('coolEndSec') is not None:
+        cool_end = float(sub['coolEndSec'])
+    elif points and drop_t is not None and points[-1][0] > drop_t:
+        cool_end = float(points[-1][0])
+    if cool_end is not None and drop_t is not None and cool_end > drop_t:
+        cool_sec = cool_end - drop_t
+        span = total + cool_sec
+        rows.append(['Cool', _mmss(cool_sec),
+                     ('%.0f%%' % (cool_sec * 100.0 / span))
+                     if span else '--', '--', '--', '--'])
+    # RoR at FC START from the one RoR implementation.
+    fcs_ror = None
+    if fc_t is not None and points:
+        rors = core.compute_ror_series(points, core.ror_params(),
+                                       offline=True)
+        best = None
+        for t, r in rors:
+            if r is None:
+                continue
+            if best is None or abs(t - fc_t) < abs(best[0] - fc_t):
+                best = (t, r)
+        if best is not None:
+            fcs_ror = best[1]
+    total_ror = None
+    drop_temp = ev('drop', 'tempF')
+    if (tp is not None and drop_t is not None and drop_temp is not None
+            and drop_t > tp[0]):
+        total_ror = (drop_temp - tp[1]) / ((drop_t - tp[0]) / 60.0)
+    extra = {'phases': phases, 'fcsRor': fcs_ror,
+             'totalRor': total_ror, 'coolSec': cool_sec}
+    tp_text = ('%.0f F at %s' % (tp[1], _mmss(tp[0]))) if tp         else '--'
+    return rows, tp_text, extra
 
 
 def detail_startup(self):
@@ -2092,6 +4160,7 @@ def detail_startup(self):
     doc = system.util.jsonDecode(raw)
     meta = doc.get('metadata') or {}
     phases = doc.get('phases') or {}
+    calculator_seed(doc)
     self.view.custom.titleText = 'Batch %s - %s' % (
         doc.get('batchNumber'), doc.get('beanName') or '')
     self.view.custom.subText = '%s - %s' % (
@@ -2113,6 +4182,30 @@ def detail_startup(self):
             _mmss(phases.get('dryingSec')),
             _mmss(phases.get('maillardSec')),
             _mmss(phases.get('developmentSec'))))
+    # Statistics summary line (Tier 3 item 19): the same phase
+    # values in the compact under chart form, percents of the
+    # total roast time. No new math: the phase seconds and the
+    # DTR percent come straight from the document phases block.
+    _tot = float(doc.get('totalSec') or 0)
+
+    def _share(sec):
+        if not _tot or sec is None:
+            return '--'
+        return '%d%%' % int(round(float(sec) * 100.0 / _tot))
+    def _ms(sec):
+        sec = int(max(0, float(sec or 0)))
+        return '%d:%02d' % (sec // 60, sec % 60)
+    _sep = ' ' + chr(183) + ' '
+    self.view.custom.dStatsLine = _sep.join([
+        'Dry %s %s' % (_ms(phases.get('dryingSec')),
+                       _share(phases.get('dryingSec'))),
+        'Mai %s %s' % (_ms(phases.get('maillardSec')),
+                       _share(phases.get('maillardSec'))),
+        'Dev %s %s' % (_ms(phases.get('developmentSec')),
+                       _share(phases.get('developmentSec'))),
+        'DTR %s' % (('%.0f%%' % phases['dtrPct'])
+                    if phases.get('dtrPct') is not None
+                    else '--')])
     pts = []
     try:
         sds = _run(NQ_SERIES_SELECT, {'batch_number': number})
@@ -2125,10 +4218,64 @@ def detail_startup(self):
     except Exception:
         pts = []
     pts.sort()
-    seg_rows, tp_text = _phase_analysis(doc, pts)
+    seg_rows, tp_text, extra = _phase_analysis(doc, pts)
     self.view.custom.analysisDs = system.dataset.toDataSet(
-        ['phase', 'time', 'share', 'gain', 'avgRor'], seg_rows)
+        ['phase', 'time', 'share', 'gain', 'avgRor', 'auc'],
+        seg_rows)
     self.view.custom.dTp = tp_text
+    fcs = extra.get('fcsRor')
+    self.view.custom.dFcsRor = ('%.1f F/min' % fcs)         if fcs is not None else '--'
+    tror = extra.get('totalRor')
+    self.view.custom.dTotalRor = ('%.1f F/min' % tror)         if tror is not None else '--'
+    cool = extra.get('coolSec')
+    self.view.custom.dCool = _mmss(cool)         if cool is not None else '--'
+    lossd = doc.get('loss') or loss_yield_density(meta)
+    def _pct(key):
+        v = lossd.get(key)
+        return ('%.1f%%' % v) if v is not None else '--'
+    def _dens(key):
+        v = lossd.get(key)
+        return ('%.0f g/L' % v) if v is not None else '--'
+    self.view.custom.dDefectsLoss = _pct('defectsLossPct')
+    self.view.custom.dTotalLoss = _pct('totalLossPct')
+    self.view.custom.dVolumeGain = _pct('volumeGainPct')
+    self.view.custom.dMoistureLoss = _pct('moistureLossPct')
+    self.view.custom.dOrganicLoss = _pct('organicLossPct')
+    self.view.custom.dGreenDensity = _dens('greenDensityGL')
+    self.view.custom.dRoastedDensity = _dens('roastedDensityGL')
+    yld = lossd.get('totalYieldPct')
+    self.view.custom.dYield = ('%.1f%%' % yld)         if yld is not None else '--'
+    # BT similarity against the currently staged ghost
+    # (Tier 2 item 10b), when the ghost carries a drop time.
+    sim = None
+    try:
+        bg_pairs = core.background_points()
+        bg_drop = system.tag.readBlocking(
+            [core.BACKGROUND_DROP_TAG])[0].value
+        evs = doc.get('events') or {}
+        drop_ev = evs.get('drop') or {}
+        dry_ev = evs.get('dryEnd') or {}
+        if bg_pairs and bg_drop is not None and float(bg_drop) >= 0:
+            sim = bt_similarity(pts, drop_ev.get('t'), bg_pairs,
+                                float(bg_drop), dry_ev.get('t'))
+    except Exception:
+        sim = None
+    self.view.custom.dSimilarity = ('%.1f F RMSE' % sim)         if sim is not None else '--'
+    # Between batch line (Tier 3 item 20): one line carrying
+    # the four BBP values when the document has them, and an
+    # empty string when it does not, so batches with no
+    # preceding drop show nothing.
+    _bbp_doc = doc.get('bbp') or {}
+    if _bbp_doc:
+        self.view.custom.dBbp = (
+            'Between batch (BBP): %s, bottom %.0f F, '
+            'RoR in %.1f F/min, RoR out %.1f F/min' % (
+                _mmss(_bbp_doc.get('time_sec')),
+                float(_bbp_doc.get('bottom_temp_f') or 0),
+                float(_bbp_doc.get('ror_in_f_min') or 0),
+                float(_bbp_doc.get('ror_out_f_min') or 0)))
+    else:
+        self.view.custom.dBbp = ''
     ev_rows = []
     events = doc.get('events') or {}
     for key, lbl in (('charge', 'Charge'), ('dryEnd', 'Dry End'),
@@ -2270,6 +4417,291 @@ def seed_from_roastlog():
         _insert_series(number, points)
         inserted += 1
     return inserted
+
+# ---------------------------------------------------------------- Tier 3
+# Item 18: batch export beyond .alog (CSV, JSON, printable HTML
+# summary), and item 21: the yield and conversion calculator
+# seeding. The export builders are pure library functions over
+# the stored document (SelectById) and the stored series
+# (Series/SelectByBatch, named queries only); the download
+# handlers are thin one purpose wrappers around
+# system.perspective.download, exactly like the .alog export in
+# roastery.artisan. Ranking and production reports are skipped,
+# per the Tier 3 inventory.
+
+CALC_TAG = '[default]Roastery/Calculator'
+
+
+def _series_rows(batch_number):
+    """Stored series for one batch as plain dicts, in time order.
+    RoR, fan and heat are the stored columns (RoR was derived by
+    the one implementation at save time)."""
+    ds = _run(NQ_SERIES_SELECT, {'batch_number': int(batch_number)})
+    rows = []
+    for r in range(ds.rowCount):
+        rows.append({
+            't': ds.getValueAt(r, 't_offset_sec'),
+            'bt': ds.getValueAt(r, 'bean_temp_f'),
+            'ror': ds.getValueAt(r, 'rate_of_rise_f'),
+            'fan': ds.getValueAt(r, 'fan_level'),
+            'heat': ds.getValueAt(r, 'heat_level')})
+    rows.sort(key=lambda row: (row['t'] is None, row['t']))
+    return rows
+
+
+def _fmt_num(v, places=2):
+    if v is None:
+        return ''
+    try:
+        return ('%.' + str(places) + 'f') % float(v)
+    except Exception:
+        return str(v)
+
+
+def _csv_cell(v):
+    s = '' if v is None else str(v)
+    if ',' in s or '"' in s or chr(10) in s:
+        return '"' + s.replace('"', '""') + '"'
+    return s
+
+
+def _html_escape(v):
+    s = '' if v is None else str(v)
+    return (s.replace('&', '&amp;').replace('<', '&lt;')
+             .replace('>', '&gt;'))
+
+
+def build_csv_text(batch_number):
+    """CSV export (Tier 3 item 18): a metadata header section
+    (comment lines prefixed with # carrying the batch document
+    key fields), then the series table with elapsed seconds,
+    elapsed mm:ss, bean temp, RoR, fan and heat."""
+    batch = get_batch(int(batch_number))
+    if batch is None:
+        raise ValueError('Batch %s is not in the log.' % batch_number)
+    doc = batch['document']
+    meta = doc.get('metadata') or {}
+    lines = []
+    header = [
+        ('Batch', doc.get('batchNumber')),
+        ('Bean', doc.get('beanName')),
+        ('Origin', meta.get('Origin')),
+        ('Roast start', doc.get('roastStart')),
+        ('Roast end', doc.get('roastEnd')),
+        ('Roast degree', doc.get('roastDegree')),
+        ('Drop temp F', _fmt_num(doc.get('dropTempF'), 1)),
+        ('Total sec', doc.get('totalSec')),
+        ('Charge weight g', _fmt_num(meta.get('ChargeWeightG'), 1)),
+        ('Weight out g', _fmt_num(meta.get('WeightOutG'), 1)),
+        ('Weight loss pct', _fmt_num(doc.get('weightLossPct'), 1)),
+        ('AUC', _fmt_num(doc.get('auc'), 1)),
+        ('Source', doc.get('source')),
+    ]
+    lines.append('# Roastery batch export')
+    for k, v in header:
+        if v not in (None, ''):
+            lines.append('# ' + _csv_cell(k) + ',' + _csv_cell(v))
+    lines.append('')
+    lines.append('time_sec,time_mmss,bean_temp_f,'
+                 'rate_of_rise_f_per_min,fan_level,heat_level')
+    for row in _series_rows(batch_number):
+        t = row['t']
+        fan = row['fan']
+        heat = row['heat']
+        lines.append(','.join([
+            _fmt_num(t, 1),
+            _mmss(t) if t is not None else '',
+            _fmt_num(row['bt']),
+            _fmt_num(row['ror']),
+            (('%d' % int(fan)) if fan is not None else ''),
+            (('%d' % int(heat)) if heat is not None else '')]))
+    return 'roastery-batch-%d.csv' % int(batch_number), chr(10).join(lines) + chr(10)
+
+
+def build_json_text(batch_number):
+    """JSON export (Tier 3 item 18): the full batch document
+    plus the full stored series, one object."""
+    batch = get_batch(int(batch_number))
+    if batch is None:
+        raise ValueError('Batch %s is not in the log.' % batch_number)
+    payload = {
+        'batchNumber': int(batch_number),
+        'beanName': batch['beanName'],
+        'roastStart': _iso(batch['roastStart']),
+        'roastEnd': _iso(batch['roastEnd']),
+        'dropTempF': batch['dropTempF'],
+        'document': batch['document'],
+        'series': _series_rows(batch_number)}
+    return ('roastery-batch-%d.json' % int(batch_number),
+            system.util.jsonEncode(payload))
+
+
+def build_summary_html(batch_number):
+    """Printable summary (Tier 3 item 18): a standalone HTML
+    file that reads well printed, with the batch metadata, the
+    summary and phase analysis, the loss block, the events
+    timeline and simple series statistics. Inline CSS lives in
+    the generated file only (it is a print document, not a
+    Perspective view, so the style class rule does not apply)."""
+    batch = get_batch(int(batch_number))
+    if batch is None:
+        raise ValueError('Batch %s is not in the log.' % batch_number)
+    doc = batch['document']
+    meta = doc.get('metadata') or {}
+    phases = doc.get('phases') or {}
+    rows = _series_rows(batch_number)
+    pts = [(float(r['t']), float(r['bt'])) for r in rows
+           if r['t'] is not None and r['bt'] is not None]
+    seg_rows, tp_text, extra = _phase_analysis(doc, pts)
+    lossd = doc.get('loss') or loss_yield_density(meta)
+    max_bt = max([bt for _t, bt in pts]) if pts else None
+    dur = pts[-1][0] if pts else None
+    e = _html_escape
+    out = []
+    out.append('<!DOCTYPE html>')
+    out.append('<html><head><meta charset="utf-8">')
+    out.append('<title>Roastery Batch %s Summary</title>' % e(doc.get('batchNumber')))
+    out.append('<style>body{font-family:Arial,sans-serif;margin:32px;'
+               'color:#111}h1{font-size:22px;margin:0 0 4px}'
+               'h2{font-size:15px;margin:24px 0 8px;color:#0c7bb3}'
+               'table{border-collapse:collapse;min-width:320px}'
+               'td,th{border:1px solid #999;padding:5px 10px;'
+               'font-size:13px;text-align:left}'
+               '.sub{color:#555;font-size:13px}</style></head><body>')
+    out.append('<h1>Batch %s - %s</h1>' % (e(doc.get('batchNumber')), e(doc.get('beanName'))))
+    out.append('<p class="sub">%s - %s</p>' % (
+        e((doc.get('roastStart') or '')[:16].replace('T', ' ')),
+        e(doc.get('roastDegree'))))
+    out.append('<h2>Summary</h2><table>')
+    summary = [
+        ('Total time', _mmss(doc.get('totalSec'))),
+        ('Drop temp', ('%.0f F' % doc['dropTempF']) if doc.get('dropTempF') else '--'),
+        ('Weight loss', ('%.1f%%' % doc['weightLossPct']) if doc.get('weightLossPct') else '--'),
+        ('Dev ratio (DTR)', ('%.1f%%' % phases['dtrPct']) if phases.get('dtrPct') is not None else '--'),
+        ('AUC', ('%.0f' % doc['auc']) if doc.get('auc') else '--'),
+        ('Turning point', tp_text),
+        ('RoR at FC start', ('%.1f F/min' % extra['fcsRor']) if extra.get('fcsRor') is not None else '--'),
+        ('Total RoR (TP to drop)', ('%.1f F/min' % extra['totalRor']) if extra.get('totalRor') is not None else '--'),
+        ('Source', doc.get('source') or '--'),
+    ]
+    for k, v in summary:
+        out.append('<tr><td>%s</td><td>%s</td></tr>' % (e(k), e(v)))
+    out.append('</table>')
+    loss_labels = {'weightLossPct': 'Weight loss',
+                   'defectsLossPct': 'Defects loss',
+                   'totalLossPct': 'Total loss',
+                   'totalYieldPct': 'Total yield',
+                   'volumeGainPct': 'Volume gain',
+                   'moistureLossPct': 'Moisture loss',
+                   'organicLossPct': 'Organic loss',
+                   'greenDensityGL': 'Green density',
+                   'roastedDensityGL': 'Roasted density'}
+    if lossd:
+        out.append('<h2>Loss, Yield and Density</h2><table>')
+        for k in ('weightLossPct', 'defectsLossPct', 'totalLossPct',
+                  'totalYieldPct', 'volumeGainPct', 'moistureLossPct',
+                  'organicLossPct'):
+            if lossd.get(k) is not None:
+                out.append('<tr><td>%s</td><td>%.1f%%</td></tr>' % (e(loss_labels.get(k, k)), lossd[k]))
+        for k in ('greenDensityGL', 'roastedDensityGL'):
+            if lossd.get(k) is not None:
+                out.append('<tr><td>%s</td><td>%.0f g/L</td></tr>' % (e(loss_labels.get(k, k)), lossd[k]))
+        out.append('</table>')
+    out.append('<h2>Phase Analysis</h2><table>')
+    out.append('<tr><th>Phase</th><th>Time</th><th>Share</th>'
+               '<th>Gain</th><th>Avg RoR</th><th>AUC</th></tr>')
+    for r in seg_rows:
+        out.append('<tr>' + ''.join('<td>%s</td>' % e(c) for c in r) + '</tr>')
+    out.append('</table>')
+    out.append('<h2>Events</h2><table>')
+    out.append('<tr><th>Event</th><th>Time</th><th>Temp</th></tr>')
+    events = doc.get('events') or {}
+    for key, lbl in (('charge', 'Charge'), ('dryEnd', 'Dry End'),
+                     ('fcStart', 'FC Start'), ('fcEnd', 'FC End'),
+                     ('scStart', 'SC Start'), ('scEnd', 'SC End'),
+                     ('drop', 'Drop')):
+        ev = events.get(key)
+        if ev:
+            out.append('<tr><td>%s</td><td>%s</td><td>%s</td></tr>' % (
+                e(lbl), e(_mmss(ev.get('t'))),
+                e(('%.0f F' % ev['tempF']) if ev.get('tempF') is not None else '--')))
+    for c in events.get('custom') or []:
+        out.append('<tr><td>%s</td><td>%s</td><td>%s</td></tr>' % (
+            e(c.get('name') or 'Custom'), e(_mmss(c.get('t'))),
+            e(('%.0f F' % c['tempF']) if c.get('tempF') is not None else '--')))
+    out.append('</table>')
+    out.append('<h2>Metadata</h2><table>')
+    for m in core.FORM_MEMBERS:
+        if meta.get(m) not in (None, ''):
+            out.append('<tr><td>%s</td><td>%s</td></tr>' % (e(m), e(meta[m])))
+    out.append('</table>')
+    out.append('<h2>Curve Statistics</h2><table>')
+    stats = [
+        ('Samples', str(len(pts))),
+        ('Duration', _mmss(dur) if dur is not None else '--'),
+        ('Max bean temp', ('%.1f F' % max_bt) if max_bt is not None else '--'),
+    ]
+    for k, v in stats:
+        out.append('<tr><td>%s</td><td>%s</td></tr>' % (e(k), e(v)))
+    out.append('</table>')
+    out.append('</body></html>')
+    return ('roastery-batch-%d-summary.html' % int(batch_number),
+            chr(10).join(out))
+
+
+def export_csv_download(self):
+    """BatchDetail Export CSV button (thin)."""
+    number = system.tag.readBlocking([SELECTED_TAG])[0].value
+    if not number:
+        return
+    filename, text = build_csv_text(int(number))
+    system.perspective.download(filename, text)
+
+
+def export_json_download(self):
+    """BatchDetail Export JSON button (thin)."""
+    number = system.tag.readBlocking([SELECTED_TAG])[0].value
+    if not number:
+        return
+    filename, text = build_json_text(int(number))
+    system.perspective.download(filename, text)
+
+
+def export_summary_download(self):
+    """BatchDetail Print Summary button (thin): downloads the
+    printable HTML summary; open it and print from the browser."""
+    number = system.tag.readBlocking([SELECTED_TAG])[0].value
+    if not number:
+        return
+    filename, text = build_summary_html(int(number))
+    system.perspective.download(filename, text)
+
+
+def calculator_seed(doc):
+    """Tier 3 item 21: seed the calculator tags from the staged
+    batch, so the calculator on BatchDetail starts from this
+    batch's own weights. The math itself lives on expression
+    tags in the Calculator folder (expected out, actual loss,
+    and the F/C and g/oz conversions), so the readouts update
+    live as the bidirectional tag bound inputs are edited."""
+    meta = (doc or {}).get('metadata') or {}
+    writes = []
+    try:
+        charge = float(meta.get('ChargeWeightG') or 0)
+    except Exception:
+        charge = 0
+    try:
+        out_w = float(meta.get('WeightOutG') or 0)
+    except Exception:
+        out_w = 0
+    if charge > 0:
+        writes.append((CALC_TAG + '/ChargeG', charge))
+        writes.append((CALC_TAG + '/ConvG', charge))
+    if out_w > 0:
+        writes.append((CALC_TAG + '/OutG', out_w))
+    if writes:
+        system.tag.writeBlocking([p for p, _v in writes],
+                                 [v for _p, v in writes])
 '''
 
 # ================================================================ named queries
@@ -2463,6 +4895,14 @@ IDENTITY_KEYS = (
 
 GRAMS = {'g': 1.0, 'kg': 1000.0, 'lb': 453.59237,
          'lbs': 453.59237, 'oz': 28.349523125}
+VOLUMES = {'ml': 1.0, 'l': 1000.0, 'oz': 29.5735,
+           'fl oz': 29.5735, 'floz': 29.5735}
+DEFECT_FIELDS = (
+    ('DefectHeavyFC', 'heavyFC'), ('DefectLowFC', 'lowFC'),
+    ('DefectLightCut', 'lightCut'), ('DefectDarkCut', 'darkCut'),
+    ('DefectDrops', 'drops'), ('DefectOily', 'oily'),
+    ('DefectUneven', 'uneven'), ('DefectTipping', 'tipping'),
+    ('DefectScorching', 'scorching'), ('DefectDivots', 'divots'))
 
 
 # ---------------------------------------------------------------- parse
@@ -2650,9 +5090,10 @@ def _weight_g(p, idx):
     return _num(w[idx]) * GRAMS.get(unit, 1.0)
 
 
-def _density_gl(p):
-    d = p.get('density') or []
-    if len(d) < 4:
+def _density_from_list(d):
+    """Grams per litre from an Artisan density list of the
+    shape [amount, amountUnit, volume, volumeUnit]."""
+    if not d or len(d) < 4:
         return 0.0
     amount = _num(d[0]) * GRAMS.get(str(d[1]).lower(), 1.0)
     vol = _num(d[2])
@@ -2661,6 +5102,10 @@ def _density_gl(p):
     if amount > 0 and liters > 0:
         return amount / liters
     return 0.0
+
+
+def _density_gl(p):
+    return _density_from_list(p.get('density') or [])
 
 
 def _fan_heat_series(p, timex, t0, mode):
@@ -2827,12 +5272,45 @@ def profile_to_batch(p, batch_number):
     meta['MoisturePct'] = _num(p.get('moisture_greens'))
     meta['DensityGL'] = _density_gl(p)
     meta['OperatorName'] = p.get('operator') or ''
-    notes = p.get('roastingnotes') or ''
-    if p.get('cuppingnotes'):
-        notes = (notes + '\n' if notes else '') + \
-            'Cupping: ' + p['cuppingnotes']
-    meta['Notes'] = notes
+    meta['Notes'] = p.get('roastingnotes') or ''
+    meta['CuppingNotes'] = p.get('cuppingnotes') or ''
     meta['TargetDropTempF'] = drop_temp or 0.0
+    meta['RoastTitle'] = p.get('title') or ''
+    meta['RoasterType'] = p.get('roastertype') or ''
+    meta['RoasterSizeKg'] = _num(p.get('roastersize'))
+    meta['RoasterHeating'] = int(_num(p.get('roasterheating')))
+    meta['Organization'] = p.get('organization') or ''
+    vol = p.get('volume') or []
+    vol_unit = str(vol[2]).lower() if len(vol) > 2 else 'ml'
+    vol_factor = VOLUMES.get(vol_unit, 1.0)
+    meta['VolumeInMl'] = _num(vol[0]) * vol_factor \
+        if len(vol) > 0 else 0.0
+    meta['VolumeOutMl'] = _num(vol[1]) * vol_factor \
+        if len(vol) > 1 else 0.0
+    weight = p.get('weight') or []
+    weight_unit = str(weight[2]).lower() \
+        if len(weight) > 2 else 'g'
+    meta['DefectsWeightG'] = _num(p.get('defects_weight')) * \
+        GRAMS.get(weight_unit, 1.0)
+    meta['RoastedDensityGL'] = _density_from_list(
+        p.get('density_roasted') or [])
+    meta['BeanSizeMinMm'] = _num(p.get('beansize_min'))
+    if p.get('beansize_max') not in (None, ''):
+        meta['BeanSizeMaxMm'] = _num(p.get('beansize_max'))
+    else:
+        meta['BeanSizeMaxMm'] = _num(p.get('beansize'))
+    for member, key in DEFECT_FIELDS:
+        meta[member] = bool(p.get(key))
+    meta['WholeColor'] = _num(p.get('whole_color'))
+    meta['GroundColor'] = _num(p.get('ground_color'))
+    meta['ColorSystem'] = p.get('color_system') or ''
+    meta['AmbientTempF'] = _to_f(p.get('ambientTemp'), mode) \
+        or 0.0
+    meta['AmbientHumidityPct'] = _num(p.get('ambient_humidity'))
+    meta['AmbientPressureHPa'] = _num(p.get('ambient_pressure'))
+    meta['RoastedMoisturePct'] = _num(p.get('moisture_roasted'))
+    meta['GreensTempF'] = _to_f(p.get('greens_temp'), mode) \
+        or 0.0
 
     end_ms = None
     if charge_ms is not None:
@@ -2867,10 +5345,16 @@ def profile_to_batch(p, batch_number):
             'dropSec': total,
             'dropTempF': drop_temp or 0.0},
         'fanHeatTrace': trace}
+    doc['loss'] = batches.loss_yield_density(meta)
     sub = _classify(p)
     sub['events']['coolEndSec'] = cool_sec
     sub['events']['etTempsF'] = et_temps
     doc['artisan'] = sub
+    # Phase analysis runs after the artisan subdocument is
+    # attached: its cool phase reads the imported COOL time
+    # from sub['events']['coolEndSec'].
+    doc['phaseAnalysis'] = batches.phase_analysis(
+        doc, [(pt['t'], pt['bt']) for pt in points])
     params = {
         'batch_number': int(batch_number),
         'roast_start': java.util.Date(long(charge_ms))
@@ -2981,6 +5465,58 @@ def import_upload(self, event):
         note = 'Import failed: %s' % e
     try:
         self.view.custom.importNote = note
+    except Exception:
+        pass
+    return note
+
+
+def stage_background_upload(self, event):
+    """Roast page FileUpload onFileReceived handler (thin):
+    stage the uploaded profile's bean curve as the Roast page
+    background overlay. Nothing is saved to the log."""
+    note = ''
+    try:
+        f = event.file
+        if f is None:
+            raise ValueError('No file arrived with the event.')
+        raw = f.getBytes()
+        text = str(java.lang.String(raw, 'UTF-8'))
+        profile = parse_alog(text)
+        doc, points, params = profile_to_batch(profile, 0)
+        pairs = [[pt['t'], pt['bt']] for pt in points]
+        if not pairs:
+            raise ValueError('The file has no bean curve '
+                             'samples at or after charge.')
+        # Playback events (Tier 2 item 11) stage with the
+        # ghost, derived from the imported per sample levels
+        # by the same roastery.core builder the saved batch
+        # route uses.
+        levels = [(pt['t'], pt.get('fan'), pt.get('heat'))
+                  for pt in points]
+        events = core.build_background_events(
+            levels, float(doc.get('totalSec') or -1))
+        # Phase boundaries for Tier 3 item 16 stage with the
+        # ghost, from the imported document events.
+        _ev = doc.get('events') or {}
+        core.stage_bg_phases((_ev.get('dryEnd') or {}).get('t'),
+                             (_ev.get('fcStart') or {}).get('t'),
+                             (_ev.get('drop') or {}).get('t'))
+        system.tag.writeBlocking(
+            [core.BACKGROUND_JSON, batches.BACKGROUND_LABEL,
+             core.BACKGROUND_DROP_TAG, core.BACKGROUND_EVENTS_TAG],
+            [system.util.jsonEncode(pairs),
+             'File: ' + (f.name or 'profile.alog'),
+             float(doc.get('totalSec') or -1),
+             system.util.jsonEncode(events)])
+        core.build_overlays()
+        note = 'Background staged from %s: %d samples. ' \
+            'Nothing was saved to the log.' % (
+                f.name or 'file', len(pairs))
+    except Exception as e:
+        LOG.error('Artisan background staging failed: %s' % e)
+        note = 'Background failed: %s' % e
+    try:
+        self.view.custom.bgNote = note
     except Exception:
         pass
     return note
@@ -3412,12 +5948,71 @@ def batch_to_profile(batch):
     else:
         profile['weight'] = [_num(meta.get('ChargeWeightG')),
                              _num(meta.get('WeightOutG')), 'g']
+    if 'RoasterType' in meta:
+        profile['roastertype'] = str(meta.get('RoasterType')
+                                      or '')
+    if 'RoasterSizeKg' in meta:
+        profile['roastersize'] = _num(meta.get('RoasterSizeKg'))
+    if 'RoasterHeating' in meta:
+        profile['roasterheating'] = int(_num(
+            meta.get('RoasterHeating')))
+    if 'Organization' in meta:
+        profile['organization'] = str(meta.get('Organization')
+                                      or '')
+    for member, key in DEFECT_FIELDS:
+        if member in meta:
+            profile[key] = bool(meta.get(member))
+    volume_in = _num(meta.get('VolumeInMl'))
+    volume_out = _num(meta.get('VolumeOutMl'))
+    if volume_in > 0 or volume_out > 0:
+        profile['volume'] = [volume_in, volume_out, 'ml']
+    if _num(meta.get('DefectsWeightG')) > 0:
+        profile['defects_weight'] = _num(
+            meta.get('DefectsWeightG'))
+    if _num(meta.get('RoastedDensityGL')) > 0 \
+            and _num(meta.get('WeightOutG')) > 0 \
+            and volume_out > 0:
+        profile['density_roasted'] = [
+            _num(meta.get('WeightOutG')), 'g', volume_out, 'ml']
+    if _num(meta.get('BeanSizeMinMm')) > 0:
+        profile['beansize_min'] = str(int(round(
+            _num(meta.get('BeanSizeMinMm')))))
+    if _num(meta.get('BeanSizeMaxMm')) > 0:
+        profile['beansize_max'] = str(int(round(
+            _num(meta.get('BeanSizeMaxMm')))))
+    if _num(meta.get('WholeColor')) > 0:
+        profile['whole_color'] = _num(meta.get('WholeColor'))
+    if _num(meta.get('GroundColor')) > 0:
+        profile['ground_color'] = _num(meta.get('GroundColor'))
+    if meta.get('ColorSystem'):
+        profile['color_system'] = meta.get('ColorSystem')
+    if _num(meta.get('AmbientTempF')) > 0:
+        profile['ambientTemp'] = _from_f(
+            meta.get('AmbientTempF'), mode)
+    if _num(meta.get('AmbientHumidityPct')) > 0:
+        profile['ambient_humidity'] = _num(
+            meta.get('AmbientHumidityPct'))
+    if _num(meta.get('AmbientPressureHPa')) > 0:
+        profile['ambient_pressure'] = _num(
+            meta.get('AmbientPressureHPa'))
+    if _num(meta.get('RoastedMoisturePct')) > 0:
+        profile['moisture_roasted'] = _num(
+            meta.get('RoastedMoisturePct'))
+    if _num(meta.get('GreensTempF')) > 0:
+        profile['greens_temp'] = _from_f(
+            meta.get('GreensTempF'), mode)
+    if meta.get('Notes'):
+        profile['roastingnotes'] = meta.get('Notes')
+    if meta.get('CuppingNotes'):
+        profile['cuppingnotes'] = meta.get('CuppingNotes')
     profile['beans'] = meta.get('BeanName') or doc.get('beanName') \
         or ''
     identity = sub.get('identity') or {}
     profile['title'] = identity.get('title') or (
         doc.get('beanName') or 'Roastery batch %d'
         % batch['batchNumber'])
+    if meta.get('RoastTitle'):
+        profile['title'] = meta.get('RoastTitle')
     profile['roastbatchnr'] = int(batch['batchNumber'])
     profile['roastbatchprefix'] = identity.get(
         'roastbatchprefix', '')
@@ -3652,14 +6247,14 @@ STYLE_CLASSES = {
                       'cursor': 'pointer', 'color': 'var(--label)',
                       'backgroundColor': 'transparent'},
     'roast-hud': {'backgroundColor': 'var(--container)',
-                  'padding': '5px 10px', 'gap': '10px'},
+                  'padding': '5px 6px', 'gap': '4px'},
     'roast-hud-field': {'paddingLeft': '8px'},
     'roast-hud-value': {'fontSize': '16px', 'fontWeight': '700',
                         'color': 'var(--label)',
                         'fontFamily': 'monospace',
                         'whiteSpace': 'nowrap', 'overflow': 'hidden',
                         'textOverflow': 'ellipsis'},
-    'roast-hud-value-phase': {'fontSize': '13px',
+    'roast-hud-value-phase': {'fontSize': '12px',
                         'fontWeight': '700',
                         'color': 'var(--label)',
                         'fontFamily': 'monospace',
@@ -3691,6 +6286,11 @@ STYLE_CLASSES = {
     'roast-table-sm': {'fontSize': '12.5px', 'color': 'var(--label)',
                        'backgroundColor': 'var(--container)'},
     'roast-h100': {'height': '100%'},
+    'roast-stats-line': {'fontSize': '11px', 'fontWeight': '600',
+                         'color': 'var(--neutral-70)',
+                         'whiteSpace': 'nowrap',
+                         'overflow': 'hidden',
+                         'textOverflow': 'ellipsis'},
 }
 
 STYLESHEET_CSS = """/* Roastery advanced stylesheet.
@@ -3731,6 +6331,13 @@ STYLESHEET_CSS = """/* Roastery advanced stylesheet.
    rendered unconditionally), so the hidden utility lives
    here, keyed to the same class name. */
 .psc-roast-hidden { display: none !important; }
+
+/* Statistics summary line (Tier 3 item 19): single line, never
+   wraps, truncates with an ellipsis instead of pushing the
+   layout at 360px (the class compiler carries these text
+   properties, and the rule here makes the intent explicit). */
+.psc-roast-stats-line { white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
 
 /* Phase bar segments size by percentage widths that must sum
    to the bar. Two sizing traps, both proven at 360px on
@@ -3877,6 +6484,53 @@ def f_row(widgets):
     return {'align': 'start', 'justify': 'start', 'visible': True,
             'enabled': True, 'widgets': widgets, 'style': {}}
 
+def extra_meta_rows():
+    """Roast Properties rows (Tier 1 item 3): the Artisan
+    profile fields beyond the original sixteen, shared by the
+    Config metadata form and the slide over batch editor so
+    both carry the full property set. Defect flags are form
+    checkboxes; their values ride the form payload as booleans
+    and roastery.core.coerce keeps them boolean."""
+    return [
+        f_row([f_widget('PropsHeader', 'none', 'Roast Properties',
+                        tpl=HEADER_TPL)]),
+        f_row([f_text('RoastTitle', 'Roast title'),
+               f_text('RoasterType', 'Roaster type')]),
+        f_row([f_number('RoasterSizeKg', 'Roaster size (kg)', 0, 100),
+               f_number('RoasterHeating', 'Roaster heating', 0, 99)]),
+        f_row([f_text('Organization', 'Organization'),
+               f_text('ColorSystem', 'Color system')]),
+        f_row([f_number('VolumeInMl', 'Volume in (ml)', 0, 100000),
+               f_number('VolumeOutMl', 'Volume out (ml)', 0, 100000)]),
+        f_row([f_number('DefectsWeightG', 'Defects weight (g)',
+                        0, 5000),
+               f_number('RoastedDensityGL', 'Roasted density (g/L)',
+                        0, 2000)]),
+        f_row([f_number('BeanSizeMinMm', 'Bean size min (mm)', 0, 30),
+               f_number('BeanSizeMaxMm', 'Bean size max (mm)', 0, 30)]),
+        f_row([f_number('WholeColor', 'Whole bean color', 0, 150),
+               f_number('GroundColor', 'Ground color', 0, 150)]),
+        f_row([f_number('AmbientTempF', 'Ambient temp (F)', -50, 140),
+               f_number('AmbientHumidityPct', 'Ambient humidity (%)',
+                        0, 100)]),
+        f_row([f_number('AmbientPressureHPa',
+                        'Ambient pressure (hPa)', 0, 2000),
+               f_number('RoastedMoisturePct', 'Roasted moisture (%)',
+                        0, 100)]),
+        f_row([f_number('GreensTempF', 'Greens temp (F)', -50, 140)]),
+        f_row([f_widget('CuppingNotes', 'text-area', 'Cupping notes')]),
+        f_row([f_widget('DefectHeavyFC', 'checkbox', 'Heavy FC'),
+               f_widget('DefectLowFC', 'checkbox', 'Low FC'),
+               f_widget('DefectLightCut', 'checkbox', 'Light cut')]),
+        f_row([f_widget('DefectDarkCut', 'checkbox', 'Dark cut'),
+               f_widget('DefectDrops', 'checkbox', 'Drops'),
+               f_widget('DefectOily', 'checkbox', 'Oily')]),
+        f_row([f_widget('DefectUneven', 'checkbox', 'Uneven'),
+               f_widget('DefectTipping', 'checkbox', 'Tipping'),
+               f_widget('DefectScorching', 'checkbox', 'Scorching')]),
+        f_row([f_widget('DefectDivots', 'checkbox', 'Divots')]),
+    ]
+
 def metadata_form(name, header_text, submit_text, submit_script,
                   cancel_script, with_batch_number=False):
     header = f_widget('MetaHeader', 'none', header_text, tpl=HEADER_TPL)
@@ -3903,6 +6557,7 @@ def metadata_form(name, header_text, submit_text, submit_script,
         f_row([f_widget('Notes', 'text-area', 'Notes')]),
         f_row([f_number('WeightOutG', 'Weight out (g)', 0, 2000)]),
     ]
+    rows += extra_meta_rows()
     return {
         'type': 'ia.input.form', 'meta': {'name': name},
         'props': {
@@ -4090,9 +6745,25 @@ def phases_bar_view():
     dry_e = ref(T('DryEndElapsedSec'))
     fc_e = ref(T('FirstCrackStartElapsedSec'))
     drop_e = ref(T('DropElapsedSec'))
-    td = ref(T('PhaseDryTargetSec'))
-    tm = ref(T('PhaseMaillardTargetSec'))
-    tv = ref(T('PhaseDevTargetSec'))
+    # Effective targets (Tier 3 item 16): when phases from
+    # background is on and a ghost with ordered stamped events
+    # is staged (BgPhase tags, staged by the library when the
+    # ghost loads), the bar proportions and target labels come
+    # from the GHOST phase durations. The saved target tags are
+    # never overwritten; turning the option off, or clearing
+    # the ghost, returns the bar to the saved targets.
+    bg_dry = ref(T('BgPhaseDrySec'))
+    bg_fc = ref(T('BgPhaseFcSec'))
+    bg_drop = ref(T('BgPhaseDropSec'))
+    use_bg = (f"({ref(T('PhaseFromBg'))} && {bg_dry} > 0 && "
+              f"{bg_fc} > {bg_dry} && {bg_drop} > {bg_fc})")
+    td = f"if({use_bg}, {bg_dry}, {ref(T('PhaseDryTargetSec'))})"
+    tm = (f"if({use_bg}, ({bg_fc} - {bg_dry}), "
+          f"{ref(T('PhaseMaillardTargetSec'))})")
+    tv = (f"if({use_bg}, ({bg_drop} - {bg_fc}), "
+          f"{ref(T('PhaseDevTargetSec'))})")
+    dtr_t = (f"if({use_bg}, ({bg_drop} - {bg_fc}) * 100.0 / "
+             f"{bg_drop}, {ref(T('DTRTargetPct'))})")
     tt = f"({td} + {tm} + {tv})"
     # Stability pass: segment widths are ALWAYS the target
     # proportions. They used to recompute to the actual phase
@@ -4165,7 +6836,7 @@ def phases_bar_view():
     dtr = label('DtrLabel', 'DTR', 'roast-accent-text',
                 prop_config={'props.text': {'binding': expr_binding(
                     f"if({drop_e} >= 0, 'DTR ' + numberFormat(({drop_e} - {fc_e}) * 100.0 / {drop_e}, '0.0') + '%', "
-                    f"'DTR target ' + numberFormat({ref(T('DTRTargetPct'))}, '0.0') + '%')")}})
+                    f"'DTR target ' + numberFormat({dtr_t}, '0.0') + '%')")}})
     head = flex('HeadRow', 'row', [heading, dtr],
                 justify='space-between', align='center')
     root = flex('root', 'column', [head, bar],
@@ -4411,6 +7082,30 @@ def summary_view():
              f"if({ref(T('WeightOutG'))} > 0, numberFormat({ref(T('WeightOutG'))}, '0') + ' g', 'not entered')"),
         line('Loss', 'Weight loss',
              f"if({ref(T('WeightOutG'))} > 0 && {ref(T('ChargeWeightG'))} > 0, numberFormat(({ref(T('ChargeWeightG'))} - {ref(T('WeightOutG'))}) * 100.0 / {ref(T('ChargeWeightG'))}, '0.0') + '%', '--')"),
+        line('DefLoss', 'Defects loss',
+             f"if({ref(T('WeightOutG'))} > 0 && {ref(T('DefectsWeightG'))} > 0 && {ref(T('DefectsWeightG'))} < {ref(T('WeightOutG'))}, numberFormat({ref(T('DefectsWeightG'))} * 100.0 / {ref(T('WeightOutG'))}, '0.0') + '%', '--')"),
+        line('TotLoss', 'Total loss',
+             f"if({ref(T('ChargeWeightG'))} > 0 && {ref(T('WeightOutG'))} > 0, numberFormat(({ref(T('ChargeWeightG'))} - ({ref(T('WeightOutG'))} - {ref(T('DefectsWeightG'))})) * 100.0 / {ref(T('ChargeWeightG'))}, '0.0') + '%', '--')"),
+        line('Yield', 'Total yield',
+             f"if({ref(T('ChargeWeightG'))} > 0 && {ref(T('WeightOutG'))} > 0, numberFormat(({ref(T('WeightOutG'))} - {ref(T('DefectsWeightG'))}) * 100.0 / {ref(T('ChargeWeightG'))}, '0.0') + '%', '--')"),
+        line('VolGain', 'Volume gain',
+             f"if({ref(T('VolumeInMl'))} > 0 && {ref(T('VolumeOutMl'))} >= {ref(T('VolumeInMl'))}, numberFormat(({ref(T('VolumeOutMl'))} - {ref(T('VolumeInMl'))}) * 100.0 / {ref(T('VolumeInMl'))}, '0.0') + '%', '--')"),
+        line('MoistLoss', 'Moisture loss',
+             f"if({ref(T('MoisturePct'))} > 0 && {ref(T('RoastedMoisturePct'))} > 0, numberFormat({ref(T('MoisturePct'))} - {ref(T('RoastedMoisturePct'))}, '0.0') + '%', '--')"),
+        line('OrgLoss', 'Organic loss',
+             f"if({ref(T('MoisturePct'))} > 0 && {ref(T('RoastedMoisturePct'))} > 0 && {ref(T('WeightOutG'))} > 0 && {ref(T('ChargeWeightG'))} > 0, numberFormat(({ref(T('ChargeWeightG'))} - {ref(T('WeightOutG'))}) * 100.0 / {ref(T('ChargeWeightG'))} - ({ref(T('MoisturePct'))} - {ref(T('RoastedMoisturePct'))}), '0.0') + '%', '--')"),
+        line('GreenDens', 'Green density',
+             f"if({ref(T('ChargeWeightG'))} > 0 && {ref(T('VolumeInMl'))} > 0, numberFormat({ref(T('ChargeWeightG'))} * 1000.0 / {ref(T('VolumeInMl'))}, '0') + ' g/L', '--')"),
+        line('RoastDens', 'Roasted density',
+             f"if({ref(T('WeightOutG'))} > 0 && {ref(T('VolumeOutMl'))} > 0, numberFormat({ref(T('WeightOutG'))} * 1000.0 / {ref(T('VolumeOutMl'))}, '0') + ' g/L', '--')"),
+        line('BgDev', 'Deviation vs background',
+             f"{ref(T('BgDeviationText'))}"),
+        line('Auc', 'AUC (F min)',
+             f"if({ref(T('AucLiveFMin'))} > 0, numberFormat({ref(T('AucLiveFMin'))}, '0'), '--')"),
+        line('AucFc', 'AUC since FC (F min)',
+             f"if({ref(T('AucSinceFcFMin'))} > 0, numberFormat({ref(T('AucSinceFcFMin'))}, '0'), '--')"),
+        line('AucGuide', 'AUC target reached at',
+             f"if({ref(T('AucGuideElapsedSec'))} >= 0, {mmss_int(ref(T('AucGuideElapsedSec')))}, '--:--')"),
     ]
     save_btn = button('SaveButton', 'Save Batch',
                       'roast-btn roast-btn-green',
@@ -4634,13 +7329,19 @@ def _canvas_props():
 
 
 def _canvas_series(value, label, color, axis, width=2, dash=None,
-                   step=None):
+                   step=None, area=None):
     s = copy.deepcopy(CANVAS_LINE_BASE['series'][0])
     s['value'] = value
     s['label'] = label
     s['smooth'] = True
     s['line'].update({'type': dash or 'solid', 'width': width,
                       'color': color})
+    if area is not None:
+        # The canvas line component honors a series area block
+        # exactly like the area component (probe proven live,
+        # 2026-11-17): a solid fill under the line at the given
+        # opacity. Opacity 0 is no fill, the default look.
+        s['area'] = area
     s['points']['visible'] = False
     s['advanced']['yAxis'] = axis
     # The live dataset is a timestamp UNION of samples and
@@ -4735,30 +7436,91 @@ def main_chart(legend_on=True, mobile=False):
             ax['labels']['fontSize'] = 11
             ax['labels']['gap'] = 2
         p['xAxis']['labels']['fontSize'] = 11
+    # Phase band series (Tier 3 item 16) sit FIRST so the fills
+    # draw behind every curve: width 0 lines (invisible strokes)
+    # whose dataset columns hold the bean axis top inside their
+    # phase range, filled at low opacity by the library composed
+    # band columns in LiveCurveDS. The bands carry no text IN
+    # the plot (the PhasesBar names the phases, and in plot
+    # labels would collide at 360px); their legend labels are
+    # the phase names, because an empty label makes the wrapper
+    # invent 'Series 1' style names (proven live, 2026-11-17).
+    def band_series(col, color, label):
+        s = _canvas_series(col, label, color, 0, width=0,
+                           area={'fillStyle': 'solid',
+                                 'color': color, 'opacity': 0.12,
+                                 'gradientMode': 'fade',
+                                 'gradientStart': color,
+                                 'gradientEnd': ''})
+        s['smooth'] = False
+        s['advanced']['connectNulls'] = False
+        return s
     p['series'] = [
+        band_series('bandDry', '#eab308', 'Drying'),
+        band_series('bandMai', '#f97316', 'Maillard'),
+        band_series('bandDev', '#dc2626', 'Development'),
+        band_series('bandCool', '#0284c7', 'Cooling'),
         _canvas_series('bg', 'Background', '#64748b', 0, width=2),
         _canvas_series('bgRor', 'Background RoR', '#64748b', 1,
                        width=2),
         _canvas_series('plan', 'Target', '#94a3b8', 0, width=2,
                        dash='dashed'),
         _canvas_series('bean', 'Bean Temp', AMBER, 0, width=3),
-        _canvas_series('ror', 'Rate of Rise', SKY, 1, width=2)]
-    p['appearance']['colorPalette'] = ['#64748b', '#64748b',
-                                       '#94a3b8', AMBER, SKY]
+        _canvas_series('ror', 'Rate of Rise', SKY, 1, width=2,
+                       area={'fillStyle': 'solid', 'color': SKY,
+                             'opacity': 0.0,
+                             'gradientMode': 'fade',
+                             'gradientStart': SKY,
+                             'gradientEnd': ''}),
+        _canvas_series('proj', 'Projection', '#f59e0b', 0, width=2,
+                       dash='dashed')]
+    p['appearance']['colorPalette'] = ['#eab308', '#f97316',
+                                       '#dc2626', '#0284c7',
+                                       '#64748b', '#64748b',
+                                       '#94a3b8', AMBER, SKY,
+                                       '#f59e0b']
     p['style'] = {'classes': 'roast-chart'}
+    # Curve display options (Tier 3 item 15): the Settings
+    # Display tags bind straight onto the series props, the same
+    # bracket path mechanism the reference lines use. Defaults
+    # on the tags (BT 3 solid, RoR 2 solid, ghost 2 solid, fill
+    # off, marker size 4) reproduce the pre Tier 3 look exactly.
+    # The event marker size rides the reference line endpoints
+    # of the bean series, which carries the event markLines.
+    pc = {
+        'props.data': {'binding': tag_binding(
+            '[default]Roastery/LiveCurveDS')},
+        'props.series[7].referenceLines.items':
+            _refline_binding(
+                '[default]Roastery/EventMarksDS',
+                'roastery.core.event_reference_lines_compact()'
+                if mobile else
+                'roastery.core.event_reference_lines()'),
+        'props.series[7].line.width': {'binding': tag_binding(
+            T('DispBtWidth'))},
+        'props.series[7].line.type': {'binding': tag_binding(
+            T('DispBtStyle'))},
+        'props.series[8].line.width': {'binding': tag_binding(
+            T('DispRorWidth'))},
+        'props.series[8].line.type': {'binding': tag_binding(
+            T('DispRorStyle'))},
+        'props.series[4].line.width': {'binding': tag_binding(
+            T('DispGhostWidth'))},
+        'props.series[4].line.type': {'binding': tag_binding(
+            T('DispGhostStyle'))},
+        'props.series[5].line.width': {'binding': tag_binding(
+            T('DispGhostWidth'))},
+        'props.series[5].line.type': {'binding': tag_binding(
+            T('DispGhostStyle'))},
+        'props.series[8].area.opacity': {'binding': expr_binding(
+            f"if({ref(T('DispRorFill'))}, 0.22, 0.0)")},
+        'props.series[7].referenceLines.endpoints.points[0].size':
+            {'binding': tag_binding(T('DispMarkerSize'))}}
     return {
         'type': 'ia.canvas-charts.line',
         'meta': {'name': 'RoastChart'},
         'props': p,
-        'propConfig': {
-            'props.data': {'binding': tag_binding(
-                '[default]Roastery/LiveCurveDS')},
-            'props.series[3].referenceLines.items':
-                _refline_binding(
-                    '[default]Roastery/EventMarksDS',
-                    'roastery.core.event_reference_lines_compact()'
-                    if mobile else
-                    'roastery.core.event_reference_lines()')},
+        'propConfig': pc,
         'position': {'grow': 1, 'shrink': 1, 'basis': '0px'}}
 
 
@@ -4977,8 +7739,33 @@ def batches_panel_view():
                       [import_lbl, upload, import_note],
                       align='center', wrap='wrap',
                       classes='roast-gap-12')
+    # Compare section (Tier 1 item 2): three batch pickers, a
+    # Compare button and the overlay chart. Options and the
+    # dataset are library built (roastery.batches.compare_*).
+    def cmp_drop(name, prop):
+        return {'type': 'ia.input.dropdown', 'meta': {'name': name},
+                'props': {'options': [], 'value': 0,
+                          'style': {'classes': 'roast-input'}},
+                'propConfig': {'props.value': _custom_binding(prop)},
+                'position': {'grow': 1, 'shrink': 1, 'basis': '150px'}}
+    cmp_btn = button('CompareButton', 'Compare',
+                     'roast-btn roast-btn-sm roast-btn-primary',
+                     events=lib_event(
+                         'roastery.batches.build_compare(self)'))
+    compare_row = flex('CompareRow', 'row',
+                       [cmp_drop('CmpA', 'cmpA'), cmp_drop('CmpB', 'cmpB'),
+                        cmp_drop('CmpC', 'cmpC'), cmp_btn],
+                       align='center', wrap='wrap',
+                       classes='roast-gap-12')
+    cmp_cap = label('CompareCaption', '', 'roast-note',
+                    prop_config={'props.text': {'binding': prop_binding(
+                        'view.custom.compareCaption')}})
+    cmp_chart_wrap = flex('CompareChartWrap', 'row', [compare_chart()],
+                          position={'grow': 0, 'shrink': 0,
+                                    'basis': '300px'})
     root = flex('root', 'column',
-                [table, confirm_row, foot, import_row],
+                [table, confirm_row, foot, import_row, compare_row,
+                 cmp_cap, cmp_chart_wrap],
                 classes='roast-card roast-gap-12',
                 scripts={'messageHandlers': [{
                     'messageType': 'roastery-batches-refresh',
@@ -4989,10 +7776,58 @@ def batches_panel_view():
     return {'custom': {'selBatchNumber': 0, 'selLabel': '',
                        'selNote': 'Select a batch for its details, the editor, a ghost overlay, or delete.',
                        'confirmDelete': False,
-                       'importNote': 'Choose an Artisan .alog file to add that roast to the log.'},
+                       'importNote': 'Choose an Artisan .alog file to add that roast to the log.',
+                       'cmpA': 0, 'cmpB': 0, 'cmpC': 0,
+                       'compareDs': None,
+                       'compareCaption': 'Pick up to three batches and press Compare.'},
             'params': {}, 'propConfig': {},
-            'props': {'defaultSize': {'width': 1200, 'height': 560}},
+            'props': {'defaultSize': {'width': 1200, 'height': 940}},
+            'events': {'system': {'onStartup': {
+                'scope': 'G', 'type': 'script',
+                'config': {'script':
+                    "\timport roastery.batches\n"
+                    "\troastery.batches.compare_startup(self)\n"}}}},
             'root': root}
+
+
+def compare_chart():
+    """Multi curve comparison chart (Tier 1 item 2): up to
+    three saved batches on the elapsed axis, BT solid and RoR
+    dashed in one hue per batch (A orange, B teal, C violet).
+    Axis titles stay off, the slimming the detail chart proved
+    at 360px; the legend names every series."""
+    p = _canvas_props()
+    p['data'] = []
+    p['xAxis'] = _canvas_xaxis(split=11, rotate=30)
+    p['yAxis'] = [_canvas_yaxis(150, 460, 'Bean Temp (deg F)',
+                                split=6),
+                  _canvas_yaxis(0, 40, 'Rate of Rise (deg F/min)',
+                                position='right', grid=False,
+                                split=4)]
+    for ax in p['yAxis']:
+        ax['title']['visible'] = False
+        ax['labels']['fontSize'] = 11
+        ax['labels']['gap'] = 2
+    p['xAxis']['labels']['fontSize'] = 11
+    p['series'] = [
+        _canvas_series('btA', 'A BT', '#f97316', 0, width=2),
+        _canvas_series('rorA', 'A RoR', '#f97316', 1, width=1,
+                       dash='dashed'),
+        _canvas_series('btB', 'B BT', '#14b8a6', 0, width=2),
+        _canvas_series('rorB', 'B RoR', '#14b8a6', 1, width=1,
+                       dash='dashed'),
+        _canvas_series('btC', 'C BT', '#8b5cf6', 0, width=2),
+        _canvas_series('rorC', 'C RoR', '#8b5cf6', 1, width=1,
+                       dash='dashed')]
+    p['appearance']['colorPalette'] = ['#f97316', '#14b8a6',
+                                       '#8b5cf6']
+    p['style'] = {'classes': 'roast-chart'}
+    return {'type': 'ia.canvas-charts.line',
+            'meta': {'name': 'CompareChart'},
+            'props': p,
+            'propConfig': {'props.data': {'binding': prop_binding(
+                'view.custom.compareDs')}},
+            'position': {'grow': 1, 'shrink': 1, 'basis': '0px'}}
 
 
 # ================================================================ BatchEdit (slide over dock)
@@ -5043,7 +7878,9 @@ def batch_edit_form():
             f_row([f_text('RoastLevel', 'Roast level'),
                    f_text('OperatorName', 'Operator')]),
             f_row([f_widget('Notes', 'text-area', 'Notes')]),
-            f_row([f_number('WeightOutG', 'Weight out (g)', 0, 2000)]),
+            f_row([f_number('WeightOutG', 'Weight out (g)', 0, 2000)])]
+    rows += extra_meta_rows()
+    rows += [
             f_row([f_widget('EventsHeader', 'none',
                             'Roast Events - times are mm:ss from charge; '
                             'clear a time to remove the event. Charge is '
@@ -5230,6 +8067,60 @@ PHASE_EXPR = (
     f"if({ref(T('DryEndElapsedSec'))} >= 0, 'Maillard', 'Drying')))))))")
 
 
+def stats_line_expr():
+    """Statistics summary line (Tier 3 item 19): one compact
+    line under the live chart with the phase times and percents
+    the PhasesBar already computes (actual phase seconds from
+    the stamped events, shares of the drop time once dropped,
+    target proportions before that, and the DTR the Summary
+    shows). Short labels (Dry, Mai, Dev) at the existing caption
+    size (11px, the caption scale) with m:ss times and an
+    integer DTR, so the longest form (all phases stamped)
+    fits the 286px phone chart card whole, with the class
+    ellipsis as the backstop. No new math lives here; every
+    number is the
+    PhasesBar or Summary expression reused."""
+    dry_e = ref(T('DryEndElapsedSec'))
+    fc_e = ref(T('FirstCrackStartElapsedSec'))
+    drop_e = ref(T('DropElapsedSec'))
+    bg_dry = ref(T('BgPhaseDrySec'))
+    bg_fc = ref(T('BgPhaseFcSec'))
+    bg_drop = ref(T('BgPhaseDropSec'))
+    use_bg = (f"({ref(T('PhaseFromBg'))} && {bg_dry} > 0 && "
+              f"{bg_fc} > {bg_dry} && {bg_drop} > {bg_fc})")
+    td = f"if({use_bg}, {bg_dry}, {ref(T('PhaseDryTargetSec'))})"
+    tm = (f"if({use_bg}, ({bg_fc} - {bg_dry}), "
+          f"{ref(T('PhaseMaillardTargetSec'))})")
+    tv = (f"if({use_bg}, ({bg_drop} - {bg_fc}), "
+          f"{ref(T('PhaseDevTargetSec'))})")
+    tt = f"({td} + {tm} + {tv})"
+    tt_safe = f"if({tt} > 0, {tt}, 1)"
+    dry_pct = (f"if({drop_e} > 0, {dry_e} * 100.0 / {drop_e}, "
+               f"{td} * 100.0 / {tt_safe})")
+    mai_pct = (f"if({drop_e} > 0 && {fc_e} >= 0, "
+               f"({fc_e} - {dry_e}) * 100.0 / {drop_e}, "
+               f"{tm} * 100.0 / {tt_safe})")
+    dev_pct = (f"if({drop_e} > 0 && {fc_e} >= 0, "
+               f"({drop_e} - {fc_e}) * 100.0 / {drop_e}, "
+               f"{tv} * 100.0 / {tt_safe})")
+    def ms(e):
+        # m:ss, not mm:ss: the saved minute zero pad costs a
+        # character per phase and the line must fit 360px whole.
+        return (f"numberFormat(floor({e} / 60), '0') + ':' + "
+                f"numberFormat({e} % 60, '00')")
+    return (
+        f"'Dry ' + if({dry_e} >= 0, {ms(dry_e)}, '--:--') + ' ' + "
+        f"numberFormat({dry_pct}, '0') + '% \u00b7 ' + "
+        f"'Mai ' + if({fc_e} >= 0 && {dry_e} >= 0, "
+        f"{ms(f'({fc_e} - {dry_e})')}, '--:--') + ' ' + "
+        f"numberFormat({mai_pct}, '0') + '% \u00b7 ' + "
+        f"'Dev ' + if({drop_e} >= 0 && {fc_e} >= 0, "
+        f"{ms(f'({drop_e} - {fc_e})')}, '--:--') + ' ' + "
+        f"numberFormat({dev_pct}, '0') + '% \u00b7 ' + "
+        f"'DTR ' + if({drop_e} > 0 && {fc_e} >= 0, "
+        f"numberFormat(({drop_e} - {fc_e}) * 100.0 / {drop_e}, '0') + '%', '--')")
+
+
 def state_pill(name):
     # Fixed 88px box (stability pass): the pill used to size to
     # its text (Idle 52px, Roasting 81px), shoving every element
@@ -5278,7 +8169,42 @@ def alarm_banner(name='AlarmBanner'):
         classes='roast-banner',
         prop_config={'props.style.backgroundColor': {'binding':
             expr_binding(
-                f"if({ALARM_ACTIVE}, '#991b1b', 'rgba(0,0,0,0)')")}})
+                f"if({ref(T('AlarmActive'))}, '#991b1b', 'rgba(0,0,0,0)')")}})
+
+
+def prompt_strip(name='PromptStrip'):
+    # Tier 2 items 11 and 14: the background playback prompt and
+    # the auto event suggestion share one reserved strip, the
+    # same stability pattern as the alarm banner: the slot is
+    # always its 38px, only the text and background change, so
+    # a prompt appearing mid roast moves nothing. Playback
+    # (amber) wins over a suggestion (blue) when both are live.
+    # The background is a data driven style binding like the
+    # alarm banner's (a class cannot express which prompt is
+    # active); it is on the validator's named exception list.
+    # The Dismiss button calls the library; stamping the
+    # suggested event also clears a suggestion.
+    txt = label(name + 'Text', '', 'roast-banner-text',
+                position={'grow': 1, 'shrink': 1, 'basis': '0px'},
+                prop_config={'props.text': {'binding': prop_binding(
+                    'view.custom.promptText')}})
+    dismiss = button(name + 'Dismiss', '',
+                     'roast-btn roast-btn-sm roast-btn-ghost',
+                     prop_config={'props.text': {'binding': expr_binding(
+                         f"if({ref(T('PlaybackActive'))} || "
+                         f"{ref(T('SuggestionActive'))}, "
+                         f"'Dismiss', '')")}},
+                     events=lib_event(
+                         'roastery.core.dismiss_prompt()'))
+    return flex(name, 'row', [txt, dismiss],
+                align='center',
+                position={'grow': 0, 'shrink': 0, 'basis': '38px'},
+                classes='roast-banner',
+                prop_config={'props.style.backgroundColor': {'binding':
+                    expr_binding(
+                        f"if({ref(T('PlaybackActive'))}, '#92400e', "
+                        f"if({ref(T('SuggestionActive'))}, '#1e40af', "
+                        f"'rgba(0,0,0,0)'))")}})
 
 
 # ---------------------------------------------------------------- TabBar
@@ -5351,13 +8277,20 @@ def hud_view():
     # so the last digit clipped in Eric's hands. The HUD is the
     # glance layer; the tiles on the same screen keep the 0.0
     # precision. Whole numbers fit every field with margin.
+    # Tier 1 tried adding an AUC field here and the 360px
+    # budget does not close: pill 88 + bean + ror + clock +
+    # a phase field wide enough for 'Second Crack' at HUD
+    # size already fill the row, and every squeeze clipped a
+    # digit or a phase letter in measurement. AUC lives on
+    # the tiles and in the summary (both layouts) and in
+    # Settings instead; the HUD keeps its four readouts.
     bean = field('Bean', 'BEAN F', fmt_tag(T('BeanTempF'), '0'),
-                 basis='52px')
+                 basis='46px')
     ror = field('Ror', 'ROR', fmt_tag(T('RateOfRiseF'), '0'),
-                basis='48px')
+                basis='42px')
     clock = field('Clock', 'ROAST TIME', prop_binding('view.custom.clockText'),
                   cap_binding=prop_binding('view.custom.clockCaption'),
-                  basis='60px')
+                  basis='58px')
     phase = field('Phase', 'PHASE', prop_binding('view.custom.phaseText'),
                   grow=1, value_class='roast-hud-value-phase')
     root = flex('root', 'row',
@@ -5416,8 +8349,46 @@ def _chart_card(basis, legend_on=True, trace_basis='250px',
                           justify='space-between', align='center',
                           position={'grow': 0, 'shrink': 0,
                                     'basis': '24px'})
-    children = [chart_head,
-                main_chart(legend_on=legend_on, mobile=mobile)]
+    # Background from file (Tier 1 item 1): stage an Artisan
+    # .alog as the ghost without saving a batch (the library
+    # writes the same BackgroundCurveJson the saved batch ghost
+    # uses). The note reports the staging on the page view.
+    bg_lbl = label('BgFileLabel', 'Background .alog', 'roast-note',
+                   position={'grow': 0, 'shrink': 0, 'basis': '104px'})
+    bg_upload = {'type': 'ia.input.fileupload',
+                 'meta': {'name': 'BgUpload'},
+                 'props': {'maxUploads': 1,
+                           'supportedFileTypes': ['alog'],
+                           'fileSizeLimit': 5},
+                 'events': {'component': {'onFileReceived': {
+                     'scope': 'G', 'type': 'script',
+                     'config': {'script':
+                         "\timport roastery.artisan\n"
+                         "\troastery.artisan.stage_background_upload(self, event)\n"}}}},
+                 'position': {'grow': 0, 'shrink': 1,
+                              'basis': '170px'}}
+    bg_clear = button('BgClearButton', 'Clear ghost',
+                      'roast-btn roast-btn-sm roast-btn-ghost',
+                      events=lib_event(
+                          'roastery.core.clear_background()'))
+    bg_note = label('BgNote', '', 'roast-note',
+                    position={'grow': 1, 'shrink': 1, 'basis': '0px'},
+                    prop_config={'props.text': {'binding': prop_binding(
+                        'view.custom.bgNote')}})
+    bg_row = flex('BgRow', 'row',
+                  [bg_lbl, bg_upload, bg_clear, bg_note],
+                  align='center', wrap='wrap', classes='roast-gap-8')
+    # Statistics summary line (Tier 3 item 19): directly under
+    # the chart, one line, existing classes only. It is a fixed
+    # 20px row so the layout never moves when its text changes.
+    stats_line = label('StatsLine', '', 'roast-stats-line',
+                       position={'grow': 0, 'shrink': 0,
+                                 'basis': '20px'},
+                       prop_config={'props.text': {'binding':
+                           expr_binding(stats_line_expr())}})
+    children = [chart_head, bg_row,
+                main_chart(legend_on=legend_on, mobile=mobile),
+                stats_line, _analyzer_strip()]
     if include_trace:
         trace_cap = label('TraceCaption', 'Fan / Heat Levels',
                           'roast-caption',
@@ -5430,6 +8401,79 @@ def _chart_card(basis, legend_on=True, trace_basis='250px',
     return flex('ChartCard', 'column', children,
                 classes='roast-card roast-gap-8',
                 position={'grow': 0, 'shrink': 0, 'basis': basis})
+
+
+def _analyzer_strip(detail=False):
+    """Analyzer crosshair readout strip (Tier 2 item 13): a
+    fixed strip under the chart, never floating chart text, so
+    it cannot collide with axis or marker labels. The selected
+    time moves with the -10s / +10s steppers or back to Latest;
+    the library computes BT, RoR, ghost BT and deviation at
+    that time from the one RoR implementation and publishes
+    them on tags the four fields bind. Four short fields at
+    grow 1 basis 0 fit 360px without squeezing anything."""
+    if detail:
+        base = '[default]Roastery/DetailAnalyzer/'
+        step_m, step_p = ('roastery.batches.detail_analyzer_step(-10)',
+                          'roastery.batches.detail_analyzer_step(10)')
+        latest = 'roastery.batches.detail_analyzer_latest()'
+        nm = 'DetailAnalyzer'
+    else:
+        base = T('Analyzer')
+        step_m, step_p = ('roastery.core.analyzer_step(-10)',
+                          'roastery.core.analyzer_step(10)')
+        latest = 'roastery.core.analyzer_latest()'
+        nm = 'Analyzer'
+
+    def tb(member):
+        return base + member if detail else T(member)
+
+    cap = label(nm + 'Cap', 'Analyzer', 'roast-caption',
+                position={'grow': 0, 'shrink': 0, 'basis': '64px'})
+    minus = button(nm + 'Minus', '-10s',
+                   'roast-btn roast-btn-sm roast-btn-ghost',
+                   events=lib_event(step_m))
+    time_lbl = label(nm + 'Time', '--:--', 'roast-value-strong',
+                     position={'grow': 0, 'shrink': 0,
+                               'basis': '52px'},
+                     prop_config={'props.text': {'binding': tag_binding(
+                         tb('TimeText' if detail else 'AnalyzerTimeText'))}})
+    plus = button(nm + 'Plus', '+10s',
+                  'roast-btn roast-btn-sm roast-btn-ghost',
+                  events=lib_event(step_p))
+    latest_btn = button(nm + 'Latest', 'Latest',
+                        'roast-btn roast-btn-sm roast-btn-ghost',
+                        events=lib_event(latest))
+    controls = flex(nm + 'Controls', 'row',
+                    [cap, minus, time_lbl, plus, latest_btn],
+                    align='center', classes='roast-gap-8',
+                    position={'grow': 0, 'shrink': 0, 'basis': '36px'})
+
+    def field(fname, caption, member):
+        c = label(nm + fname + 'Cap', caption, 'roast-caption')
+        v = label(nm + fname + 'Val', '--', 'roast-value',
+                  prop_config={'props.text': {'binding': tag_binding(
+                      tb(member))}})
+        return flex(nm + fname, 'column', [c, v],
+                    classes='roast-gap-8',
+                    position={'grow': 1, 'shrink': 1, 'basis': '0px'})
+
+    if detail:
+        fields = [('Bt', 'BT (F)', 'BtText'), ('Ror', 'RoR', 'RorText'),
+                  ('Bg', 'Ghost BT (F)', 'BgText'),
+                  ('Dev', 'Dev (F)', 'DevText')]
+    else:
+        fields = [('Bt', 'BT (F)', 'AnalyzerBtText'),
+                  ('Ror', 'RoR', 'AnalyzerRorText'),
+                  ('Bg', 'Ghost BT (F)', 'AnalyzerBgText'),
+                  ('Dev', 'Dev (F)', 'AnalyzerDevText')]
+    values = flex(nm + 'Values', 'row',
+                  [field(*f) for f in fields],
+                  classes='roast-gap-8',
+                  position={'grow': 0, 'shrink': 0, 'basis': '44px'})
+    return flex(nm + 'Strip', 'column', [controls, values],
+                classes='roast-gap-8',
+                position={'grow': 0, 'shrink': 0, 'basis': '88px'})
 
 
 def _trace_card(basis='280px'):
@@ -5506,7 +8550,22 @@ def _tiles_row(mobile=False):
               {'title': 'Target Drop', 'valueText': '415',
                'unit': 'deg F', 'accent': '#64748b'}, dict(tile_pos),
               {'props.params.valueText': {'binding': fmt_tag(
-                  T('TargetDropTempF'), '0')}})]
+                  T('TargetDropTempF'), '0')}}),
+        embed('TpTile', 'Views/Tile',
+              {'title': 'Turning Point', 'valueText': '--',
+               'unit': 'deg F', 'accent': '#f59e0b'}, dict(tile_pos),
+              {'props.params.valueText': {'binding': expr_binding(
+                  f"if({ref(T('TurningPointElapsedSec'))} >= 0, numberFormat({ref(T('TurningPointTempF'))}, '0') + ' @ ' + {mmss_int(ref(T('TurningPointElapsedSec')))}, '--')")}}),
+        embed('AucTile', 'Views/Tile',
+              {'title': 'AUC', 'valueText': '--',
+               'unit': 'F min', 'accent': '#8b5cf6'}, dict(tile_pos),
+              {'props.params.valueText': {'binding': fmt_tag(
+                  T('AucLiveFMin'), '0')}}),
+        embed('BgDevTile', 'Views/Tile',
+              {'title': 'Bg Deviation', 'valueText': '--',
+               'unit': '', 'accent': '#64748b'}, dict(tile_pos),
+              {'props.params.valueText': {'binding': tag_binding(
+                  T('BgDeviationText'))}})]
     if mobile:
         tiles = [tiles[0], tiles[1], tiles[3], tiles[4]]
     return flex('TilesRow', 'row', tiles,
@@ -5562,7 +8621,7 @@ def roast_page_view():
                   position={'grow': 0, 'shrink': 0, 'basis': 'auto'},
                   classes='roast-header')
     main_col = flex('MainCol', 'column',
-                    [_chart_card('660px', trace_basis='250px'),
+                    [_chart_card('748px', trace_basis='250px'),
                      _strip_embed(),
                      _phases_embed(), _tiles_row()],
                     classes='roast-gap-12',
@@ -5580,7 +8639,7 @@ def roast_page_view():
                        classes='roast-content roast-gap-12',
                        position={'grow': 0, 'shrink': 0, 'basis': 'auto'})
     large = flex('LargeRoot', 'column',
-                 [header, alarm_banner(), content_row],
+                 [header, alarm_banner(), prompt_strip(), content_row],
                  classes='roast-app roast-fillscroll',
                  position={'size': 'large'})
 
@@ -5591,7 +8650,7 @@ def roast_page_view():
                        prop_config={'props.text': {'binding': expr_binding(
                            f"'Batch ' + {ref(T('BatchNumber'))} + ' - ' + {ref(T('BeanName'))}")}})
     scroll_col = flex('ScrollCol', 'column', [
-        batch_line, _chart_card('430px', legend_on=False,
+        batch_line, _chart_card('518px', legend_on=False,
                                 head_stack=True, include_trace=False,
                                 mobile=True),
         _tiles_row(mobile=True),
@@ -5607,7 +8666,8 @@ def roast_page_view():
         classes='roast-content roast-gap-12 roast-scrollcol',
         position={'grow': 1, 'shrink': 1, 'basis': '0px'})
     small = flex('SmallRoot', 'column', [
-        alarm_banner('AlarmBannerM'), scroll_col,
+        alarm_banner('AlarmBannerM'), prompt_strip('PromptStripM'),
+        scroll_col,
         embed('ControlDockEmbed', 'Views/ControlDock', {},
               {'grow': 0, 'shrink': 0, 'basis': 'auto'})],
         classes='roast-app roast-h100',
@@ -5620,16 +8680,25 @@ def roast_page_view():
     return {
         'custom': {'clockText': '00:00', 'clockCaption': 'ROAST TIME',
                    'deviationText': '--', 'phaseText': 'Pre-charge',
-                   'alarmText': ''},
+                   'alarmText': '', 'bgNote': '', 'promptText': ''},
         'params': {},
         'propConfig': {
             'custom.clockText': {'binding': expr_binding(CLOCK_EXPR_V4)},
             'custom.clockCaption': {'binding': expr_binding(
                 CLOCK_CAPTION_EXPR)},
-            'custom.deviationText': {'binding': expr_binding(
-                DEVIATION_EXPR)},
+            # Tier 3 item 17: the deviation tile reads the
+            # variable length plan through the library published
+            # PlanDeviationText tag (a view expression can only
+            # interpolate the old four fixed points).
+            'custom.deviationText': {'binding': tag_binding(
+                T('PlanDeviationText'))},
             'custom.phaseText': {'binding': expr_binding(PHASE_EXPR)},
-            'custom.alarmText': {'binding': expr_binding(ALARM_TEXT)}},
+            'custom.promptText': {'binding': expr_binding(
+                f"if({ref(T('PlaybackActive'))}, "
+                f"{ref(T('PlaybackText'))}, "
+                f"if({ref(T('SuggestionActive'))}, "
+                f"{ref(T('SuggestionText'))}, ''))")},
+            'custom.alarmText': {'binding': tag_binding(T('AlarmText'))}},
         'props': {'defaultSize': {'width': 1440, 'height': 1240}},
         'root': root}
 
@@ -5689,6 +8758,108 @@ def settings_roaster_view():
 
 
 def settings_targets_view():
+    # Tier 3 item 17: below the legacy four point fields and the
+    # phase row sits the full profile designer (Artisan
+    # designer.py shape): a read only table of the current plan
+    # points plus an editor staging one point in the
+    # TargetEditor tags (the AlarmEditor precedent: tag bindings
+    # are the proven bidirectional path). Save, Add and Delete
+    # go through roastery.core, which validates strictly
+    # increasing times and rejects with the note text; the plan
+    # line and the deviation tile read the stored list.
+    TE = '[default]Roastery/TargetEditor/'
+
+    def te_num(name, member, fmt='0'):
+        return {'type': 'ia.input.numeric-entry-field',
+                'meta': {'name': name},
+                'props': {'value': 0, 'format': fmt,
+                          'style': {'classes': 'roast-input'}},
+                'propConfig': {'props.value': {'binding': tag_binding(
+                    TE + member, bidirectional=True)}}}
+
+    def te_drop(name, member, options):
+        return {'type': 'ia.input.dropdown', 'meta': {'name': name},
+                'props': {'options': options,
+                          'value': options[0]['value'],
+                          'style': {'classes': 'roast-input'}},
+                'propConfig': {'props.value': {'binding': tag_binding(
+                    TE + member, bidirectional=True)}}}
+
+    plan_cols = [
+        {'field': 'idx', 'header': {'title': '#'}, 'width': 36},
+        {'field': 'timeSec', 'header': {'title': 'Time (sec)'},
+         'width': 92},
+        {'field': 'timeText', 'header': {'title': 'Time'},
+         'width': 70},
+        {'field': 'tempF', 'header': {'title': 'Temp (F)'},
+         'width': 92},
+    ]
+    plan_table = {'type': 'ia.display.table',
+                  'meta': {'name': 'TargetPlanTable'},
+                  'props': {'data': [], 'columns': plan_cols,
+                            'pager': {'enabled': False},
+                            'rows': {'height': 32},
+                            'header': {'height': 32, 'style': {
+                                'classes': 'roast-table-header'}},
+                            'style': {'classes': 'roast-table-sm'}},
+                  'propConfig': {'props.data': {'binding': prop_binding(
+                      'view.custom.targetPlanDs')}},
+                  # Fixed basis, not auto: a virtualized table at
+                  # auto height renders zero rows in this build
+                  # (the Tier 1 alarm table lesson).
+                  'position': {'grow': 0, 'shrink': 0,
+                               'basis': '190px'}}
+    idx_options = [{'value': i, 'label': 'Point %d' % (i + 1)}
+                   for i in range(12)]
+    load_row = flex('TargetLoadRow', 'row', [
+        cfg_field('TpIdxField', 'Edit point',
+                  te_drop('TpIdxDrop', 'Idx', idx_options),
+                  basis='150px'),
+        button('TpLoadButton', 'Load Point',
+               'roast-btn roast-btn-sm roast-btn-ghost',
+               events=lib_event(
+                   'roastery.core.target_editor_load_idx(self)')),
+        label('TpCountLabel', '', 'roast-note',
+              prop_config={'props.text': {'binding': expr_binding(
+                  "'Points in plan: ' + {view.custom.targetPlanCount}")}})],
+        align='flex-end', wrap='wrap', classes='roast-gap-12')
+    ed_row = cfg_row('TpEdRow', [
+        cfg_field('TpTimeField', 'Point time (sec)',
+                  te_num('TpTimeNum', 'TimeSec'), basis='160px'),
+        cfg_field('TpTempField', 'Point temp (F)',
+                  te_num('TpTempNum', 'TempF', '0.0'), basis='160px')])
+    btn_row = flex('TpBtnRow', 'row', [
+        button('TpSaveButton', 'Save Point',
+               'roast-btn roast-btn-sm roast-btn-primary',
+               events=lib_event(
+                   'roastery.core.target_editor_save(self)')),
+        button('TpAddButton', 'Add Point',
+               'roast-btn roast-btn-sm roast-btn-green',
+               events=lib_event(
+                   'roastery.core.target_editor_add(self)')),
+        button('TpDeleteButton', 'Delete Point',
+               'roast-btn roast-btn-sm roast-btn-charge',
+               events=lib_event(
+                   'roastery.core.target_editor_delete(self)')),
+        button('TpResetButton', 'Reset to Four Points',
+               'roast-btn roast-btn-sm roast-btn-ghost',
+               events=lib_event(
+                   'roastery.core.target_plan_reset(self)')),
+        label('TpNoteLabel', '', 'roast-note-success',
+              position={'grow': 1, 'shrink': 1, 'basis': '0px'},
+              prop_config={'props.text': {'binding': prop_binding(
+                  'view.custom.targetPlanNote')}})],
+        align='center', wrap='wrap', classes='roast-gap-12')
+    designer_head = label('DesignerHead', 'Target Plan Designer',
+                          'roast-section-title')
+    designer_desc = label(
+        'DesignerDesc',
+        'Edit the plan point by point. Times must be strictly '
+        'increasing and the first point stays at 0 sec; an out '
+        'of order save is rejected and nothing changes. The '
+        'four fields above seed the default plan and the Reset '
+        'button returns to them.',
+        'roast-section-desc')
     root = settings_section('TargetSection', 'Targets',
         'The target profile the deviation tile and target curve '
         'follow, and the phase bar targets. Phase durations drive '
@@ -5719,9 +8890,18 @@ def settings_targets_view():
                       num_in('PhaseDevNum', 'PhaseDevTargetSec')),
             cfg_field('DtrField', 'DTR target (%)',
                       num_in('DtrNum', 'DTRTargetPct', '0.0'))]),
+        designer_head, designer_desc, plan_table, load_row,
+        ed_row, btn_row,
     ])
-    return {'custom': {}, 'params': {}, 'propConfig': {},
-            'props': {'defaultSize': {'width': 900, 'height': 300}},
+    return {'custom': {'targetPlanDs': None, 'targetPlanCount': 0,
+                       'targetPlanNote': ''},
+            'params': {}, 'propConfig': {},
+            'props': {'defaultSize': {'width': 900, 'height': 760}},
+            'events': {'system': {'onStartup': {
+                'scope': 'G', 'type': 'script',
+                'config': {'script':
+                    "\timport roastery.core\n"
+                    "\troastery.core.targets_startup(self)\n"}}}},
             'root': root}
 
 
@@ -5765,31 +8945,317 @@ def settings_ror_view():
             'root': root}
 
 
-def settings_alarms_view():
-    def alarm_row(name, caption, check_member, fields):
-        chk = check_in(name + 'Check', check_member)
-        chk['position'] = {'grow': 0, 'shrink': 0, 'basis': '30px'}
-        cap = label(name + 'Cap', caption, 'roast-alarm-cap',
-                    position={'grow': 0, 'shrink': 0, 'basis': '168px'})
-        fields[0]['position'] = {'grow': 0, 'shrink': 0, 'basis': '110px'}
-        if len(fields) > 1:
-            fields[1]['position'] = {'grow': 1, 'shrink': 1,
-                                     'basis': '220px'}
-        return flex(name, 'row', [chk, cap] + fields, align='center',
-                    wrap='wrap', classes='roast-gap-10',
-                    position={'grow': 0, 'shrink': 0, 'basis': '48px'})
-    root = settings_section('AlarmSection', 'Alarms',
-        'Lite alarms shown as the banner on the Roast page.', [
-        alarm_row('AlarmHigh', 'High bean temp', 'AlarmHighTempEnabled', [
-            num_in('AlarmHighNum', 'AlarmHighTempF'),
-            text_in('AlarmHighMsgIn', 'AlarmHighTempMsg')]),
-        alarm_row('AlarmDrop', 'Drop approaching', 'AlarmDropEnabled', [
-            num_in('AlarmDropNum', 'AlarmDropDeltaF')]),
-        alarm_row('AlarmFC', 'First crack watch', 'AlarmFCWatchEnabled', [
-            num_in('AlarmFCNum', 'AlarmFCWindowSec')]),
+def tag_dropdown(name, member, options):
+    return {'type': 'ia.input.dropdown', 'meta': {'name': name},
+            'props': {'options': options, 'value': options[0]['value'],
+                      'style': {'classes': 'roast-input'}},
+            'propConfig': {'props.value': {'binding': tag_binding(
+                T(member), bidirectional=True)}}}
+
+
+def settings_auc_view():
+    live = label('AucLive', '', 'roast-value',
+                 prop_config={'props.text': {'binding': expr_binding(
+                     f"'AUC now: ' + numberFormat({ref(T('AucLiveFMin'))}, '0') + ' F min - since FC ' + numberFormat({ref(T('AucSinceFcFMin'))}, '0') + ' F min'")}})
+    begin_dd = tag_dropdown('AucBeginDropdown', 'AucBegin', [
+        {'value': 'Charge', 'label': 'Charge'},
+        {'value': 'TP', 'label': 'Turning point'},
+        {'value': 'Dry End', 'label': 'Dry end'},
+        {'value': 'FC Start', 'label': 'FC start'}])
+    root = settings_section('AucSection', 'AUC',
+        'Area under the curve, Artisan style: the integral of '
+        'bean temp above the base temp from the begin event, in '
+        'F min (Artisan works in C min; its 640 C min default '
+        'target equals 1152 F min here). The guide projects '
+        'when the target is reached at the current rate of '
+        'rise and shows in the Roast summary.', [
+        cfg_row('AucRow1', [
+            cfg_field('AucBeginField', 'Begin event', begin_dd,
+                      basis='220px'),
+            cfg_field('AucBaseField', 'Base temp (F)',
+                      num_in('AucBaseNum', 'AucBaseTempF', '0')),
+            cfg_field('AucBaseEvField', 'Base from begin event temp',
+                      check_in('AucBaseEvCheck', 'AucBaseFromEvent'),
+                      basis='230px')]),
+        cfg_row('AucRow2', [
+            cfg_field('AucTargetField', 'Target (F min)',
+                      num_in('AucTargetNum', 'AucTargetFMin', '0')),
+            cfg_field('AucGuideField', 'Guide (projection)',
+                      check_in('AucGuideCheck', 'AucGuideEnabled'),
+                      basis='200px'),
+            cfg_field('AucLiveField', 'Live readout', live,
+                      basis='320px')]),
     ])
     return {'custom': {}, 'params': {}, 'propConfig': {},
-            'props': {'defaultSize': {'width': 900, 'height': 240}},
+            'props': {'defaultSize': {'width': 900, 'height': 300}},
+            'root': root}
+
+
+def _custom_binding(prop):
+    """Bidirectional property binding to a view custom prop,
+    for editor inputs the library reads back on save."""
+    return {'binding': {'type': 'property',
+                        'config': {'path': 'view.custom.' + prop},
+                        'bidirectional': True}}
+
+
+def settings_projection_view():
+    """BT projection settings (Tier 2 item 9): the dashed
+    projection series on the live chart is built by
+    roastery.core.projection_points from the current BT and
+    RoR. Linear extends at the current RoR; Quadratic lets
+    the RoR drift linearly and applies only after five
+    minutes elapsed, exactly as Artisan updateProjection
+    gates it. Display only, never stored."""
+    mode_dd = tag_dropdown('ProjModeDropdown', 'ProjectionMode', [
+        {'value': 'Linear', 'label': 'Linear (current RoR)'},
+        {'value': 'Quadratic', 'label': 'Quadratic (RoR trend)'}])
+    root = settings_section('ProjectionSection', 'Projection',
+        'Where the bean curve is heading, Artisan style: a '
+        'dashed projection line on the live chart extending '
+        'two minutes forward from the current bean temp and '
+        'rate of rise. BT only.', [
+        cfg_row('ProjRow1', [
+            cfg_field('ProjEnabledField', 'Projection on',
+                      check_in('ProjEnabledCheck',
+                               'ProjectionEnabled'),
+                      basis='160px'),
+            cfg_field('ProjModeField', 'Mode', mode_dd,
+                      basis='260px')]),
+    ])
+    return {'custom': {}, 'params': {}, 'propConfig': {},
+            'props': {'defaultSize': {'width': 900, 'height': 220}},
+            'root': root}
+
+
+def settings_playback_view():
+    """Tier 2 items 11, 12 and 14 settings: background
+    playback prompts, auto event suggestions, and display
+    smoothing for the BT line. All three are advisory or
+    display only: prompts and suggestions never write Fan,
+    Heat or an event tag, and smoothing shapes only the
+    chart dataset, never a stored temp or the RoR math."""
+    pb_note = label('PbSoundNote',
+        'Sound is visual only in this build: the Perspective '
+        'client has no clean beep API reachable from its '
+        'scripting layer, so the banner prompt is the signal '
+        'and this switch is stored for when a sound route '
+        'exists.', 'roast-note',
+        position={'grow': 1, 'shrink': 1, 'basis': '0px'})
+    playback = settings_section('PlaybackSection', 'Background Playback',
+        'When a background ghost is loaded, its Fan and Heat '
+        'changes and its Drop prompt on the Roast page at their '
+        'elapsed times, Artisan playback style, each exactly '
+        'once. Prompts only: nothing is applied automatically, '
+        'Fan and Heat stay manual.', [
+        cfg_row('PbRow1', [
+            cfg_field('PbEnabledField', 'Playback prompts on',
+                      check_in('PbEnabledCheck', 'PlaybackEnabled'),
+                      basis='190px'),
+            cfg_field('PbSoundField', 'Beep with prompts',
+                      check_in('PbSoundCheck', 'PlaybackSound'),
+                      basis='170px'),
+            cfg_field('PbNoteField', 'Sound note', pb_note,
+                      basis='320px')]),
+    ])
+    suggestions = settings_section('SuggestSection', 'Event Suggestions',
+        'When the live bean temp crosses a phase target temp '
+        'from the Targets section (Dry End temp, FC temp), the '
+        'Roast page suggests the event once. Suggestion only: '
+        'the event is stamped only when you press its normal '
+        'button, which also clears the suggestion.', [
+        cfg_row('SgRow1', [
+            cfg_field('SgDryField', 'Suggest Dry End',
+                      check_in('SgDryCheck', 'SuggestDryEndEnabled'),
+                      basis='170px'),
+            cfg_field('SgFcField', 'Suggest FC Start',
+                      check_in('SgFcCheck', 'SuggestFcEnabled'),
+                      basis='170px')]),
+    ])
+    smooth_dd = tag_dropdown('DispSmoothDropdown', 'DisplaySmoothing', [
+        {'value': 0, 'label': '0 - Off (raw temps)'},
+        {'value': 1, 'label': '1 - Light'},
+        {'value': 2, 'label': '2'},
+        {'value': 3, 'label': '3 - Medium'},
+        {'value': 4, 'label': '4'},
+        {'value': 5, 'label': '5 - Strongest'}])
+    display = settings_section('DisplaySection', 'Display Smoothing',
+        'Optional smoothing of the bean temp LINE on the live '
+        'chart, Artisan smoothETBT style. Display only: stored '
+        'temps stay raw and the rate of rise is computed from '
+        'the raw temps exactly as before, at every level.', [
+        cfg_row('DsRow1', [
+            cfg_field('DsLevelField', 'BT line smoothing level',
+                      smooth_dd, basis='260px')]),
+    ])
+    root = flex('root', 'column', [playback, suggestions, display],
+                classes='roast-gap-12')
+    return {'custom': {}, 'params': {}, 'propConfig': {},
+            'props': {'defaultSize': {'width': 900, 'height': 560}},
+            'root': root}
+
+
+def settings_alarms_view():
+    """Alarm table (Tier 1 item 6): the Artisan style alarm
+    definitions live in the AlarmDefsJson tag and are evaluated
+    by roastery.core.evaluate_alarms on every temp change and
+    press. The table is a read only view of the definitions;
+    the editor below it stages one definition in the
+    AlarmEditor tags (tag bindings: view.custom property
+    bindings do not write user edits back in this build) and
+    Save, Add and Delete rewrite the definitions through the
+    library. The three lite alarm tags remain in the UDT,
+    unused by the views."""
+    cols = [
+        {'field': 'idx', 'header': {'title': '#'}, 'width': 32},
+        {'field': 'name', 'header': {'title': 'Name'}, 'width': 128},
+        {'field': 'enabled', 'header': {'title': 'On'}, 'width': 38},
+        {'field': 'guard', 'header': {'title': 'Guard'}, 'width': 74},
+        {'field': 'offsetSec', 'header': {'title': 'Offset (s)'},
+         'width': 72},
+        {'field': 'source', 'header': {'title': 'Source'},
+         'width': 54},
+        {'field': 'cond', 'header': {'title': 'Cond'}, 'width': 46},
+        {'field': 'threshold', 'header': {'title': 'Value'},
+         'width': 58},
+        {'field': 'message', 'header': {'title': 'Message'},
+         'width': 180},
+        {'field': 'action', 'header': {'title': 'Action'},
+         'width': 68},
+    ]
+    table = {'type': 'ia.display.table', 'meta': {'name': 'AlarmTable'},
+             'props': {'data': [], 'columns': cols,
+                       'pager': {'enabled': False},
+                       'rows': {'height': 32},
+                       'header': {'height': 32, 'style': {
+                           'classes': 'roast-table-header'}},
+                       'style': {'classes': 'roast-table-sm'}},
+             'propConfig': {'props.data': {'binding': prop_binding(
+                 'view.custom.alarmsDs')}},
+             # Fixed basis, not auto: a virtualized table at
+             # auto height collapses to zero rendered rows in
+             # this build (proven in the Tier 1 scratch round);
+             # the table scrolls internally past this height.
+             'position': {'grow': 0, 'shrink': 0, 'basis': '190px'}}
+
+    ED = '[default]Roastery/AlarmEditor/'
+
+    def ed_text(name, member):
+        return {'type': 'ia.input.text-field', 'meta': {'name': name},
+                'props': {'text': '',
+                          'style': {'classes': 'roast-input'}},
+                'propConfig': {'props.text': {'binding': tag_binding(
+                    ED + member, bidirectional=True)}}}
+
+    def ed_num(name, member):
+        return {'type': 'ia.input.numeric-entry-field',
+                'meta': {'name': name},
+                'props': {'value': 0, 'format': '0',
+                          'style': {'classes': 'roast-input'}},
+                'propConfig': {'props.value': {'binding': tag_binding(
+                    ED + member, bidirectional=True)}}}
+
+    def ed_check(name, member):
+        return {'type': 'ia.input.checkbox', 'meta': {'name': name},
+                'props': {'selected': False, 'text': '',
+                          'style': {'classes': 'roast-checkbox'}},
+                'propConfig': {'props.selected': {'binding':
+                    tag_binding(ED + member, bidirectional=True)}}}
+
+    def ed_drop(name, member, options):
+        return {'type': 'ia.input.dropdown', 'meta': {'name': name},
+                'props': {'options': options,
+                          'value': options[0]['value'],
+                          'style': {'classes': 'roast-input'}},
+                'propConfig': {'props.value': {'binding': tag_binding(
+                    ED + member, bidirectional=True)}}}
+
+    idx_options = [{'value': i, 'label': 'Alarm %d' % (i + 1)}
+                   for i in range(12)]
+    load_row = flex('AlarmLoadRow', 'row', [
+        cfg_field('AlIdxField', 'Edit alarm',
+                  ed_drop('AlIdxDrop', 'Idx', idx_options),
+                  basis='150px'),
+        button('AlLoadButton', 'Load',
+               'roast-btn roast-btn-sm roast-btn-ghost',
+               events={'component': {'onActionPerformed': {
+                   'scope': 'G', 'type': 'script',
+                   'config': {'script':
+                       "\timport roastery.core\n"
+                       "\troastery.core.alarm_editor_load_idx(self)\n"}}}}),
+        label('AlCountLabel', '', 'roast-note',
+              prop_config={'props.text': {'binding': expr_binding(
+                  "'Alarms defined: ' + {view.custom.alarmCount}")}})],
+        align='flex-end', wrap='wrap', classes='roast-gap-12')
+    ed_row1 = cfg_row('AlEdRow1', [
+        cfg_field('AlNameField', 'Name', ed_text('AlNameIn', 'Name'),
+                  basis='200px'),
+        cfg_field('AlMsgField', 'Message',
+                  ed_text('AlMsgIn', 'Message'), basis='260px'),
+        cfg_field('AlEnabledField', 'Enabled',
+                  ed_check('AlEnabledCheck', 'Enabled'),
+                  basis='90px')])
+    ed_row2 = cfg_row('AlEdRow2', [
+        cfg_field('AlGuardField', 'Guard event',
+                  ed_drop('AlGuardDrop', 'Guard',
+                          [{'value': g, 'label': g} for g in
+                           ('None', 'Charge', 'TP', 'Dry End',
+                            'FC Start', 'FC End', 'SC Start',
+                            'SC End', 'Drop')]),
+                  basis='150px'),
+        cfg_field('AlOffsetField', 'Offset (sec)',
+                  ed_num('AlOffsetNum', 'OffsetSec'), basis='110px'),
+        cfg_field('AlSourceField', 'Source',
+                  ed_drop('AlSourceDrop', 'Source',
+                          [{'value': s, 'label': s}
+                           for s in ('BT', 'RoR', 'Time')]),
+                  basis='110px'),
+        cfg_field('AlCondField', 'Condition',
+                  ed_drop('AlCondDrop', 'Cond',
+                          [{'value': '>=', 'label': '>='},
+                           {'value': '<=', 'label': '<='}]),
+                  basis='100px'),
+        cfg_field('AlValueField', 'Value',
+                  ed_num('AlValueNum', 'Value'), basis='110px'),
+        cfg_field('AlActionField', 'Action',
+                  ed_drop('AlActionDrop', 'Action',
+                          [{'value': 'Banner', 'label': 'Banner'},
+                           {'value': 'Message', 'label': 'Message'}]),
+                  basis='130px')])
+    btn_row = flex('AlBtnRow', 'row', [
+        button('AlSaveButton', 'Save Alarm',
+               'roast-btn roast-btn-sm roast-btn-primary',
+               events=lib_event('roastery.core.alarm_editor_save(self)')),
+        button('AlAddButton', 'Add as New',
+               'roast-btn roast-btn-sm roast-btn-green',
+               events=lib_event('roastery.core.alarm_editor_add(self)')),
+        button('AlDeleteButton', 'Delete Alarm',
+               'roast-btn roast-btn-sm roast-btn-charge',
+               events=lib_event(
+                   'roastery.core.alarm_editor_delete(self)')),
+        label('AlNoteLabel', '', 'roast-note-success',
+              position={'grow': 1, 'shrink': 1, 'basis': '0px'},
+              prop_config={'props.text': {'binding': prop_binding(
+                  'view.custom.alarmNote')}})],
+        align='center', wrap='wrap', classes='roast-gap-12')
+    root = settings_section('AlarmSection', 'Alarms',
+        'Alarm definitions, Artisan style: an alarm arms after '
+        'its guard event plus the offset, then watches the bean '
+        'temp, the rate of rise, or the elapsed time. Banner '
+        'alarms show on the Roast page while the condition '
+        'holds; Message alarms latch until the next charge. '
+        'Definitions live in one tag and are evaluated by the '
+        'library on every temp change.', [
+        table, load_row, ed_row1, ed_row2, btn_row])
+    return {'custom': {'alarmsDs': None, 'alarmCount': 0,
+                       'alarmIdx': 0, 'alarmNote': ''},
+            'params': {}, 'propConfig': {},
+            'props': {'defaultSize': {'width': 900, 'height': 560}},
+            'events': {'system': {'onStartup': {
+                'scope': 'G', 'type': 'script',
+                'config': {'script':
+                    "\timport roastery.core\n"
+                    "\troastery.core.alarms_startup(self)\n"}}}},
             'root': root}
 
 
@@ -5831,6 +9297,98 @@ def settings_customs_view():
             'root': root}
 
 
+def settings_display_view():
+    """Curve display options (Tier 3 item 15) and phases from
+    background (Tier 3 item 16). Item 15 follows the Artisan
+    CurveStyles group: per curve line width and style for BT,
+    RoR and the ghost, a fill toggle under the RoR curve, and
+    the event marker size. The tags bind straight onto the
+    canvas chart series props in main_chart (line width, line
+    type, area opacity, reference line endpoint size), so a
+    change here restyles the live chart at once and the
+    defaults (BT 3 solid, RoR 2 solid, ghost 2 solid, fill
+    off, marker 4) reproduce the earlier fixed look exactly.
+    Draw style (step) from Artisan is not offered: the BT and
+    RoR curves are smoothed samples, and a step draw would
+    misstate them; the Fan and Heat strip already steps.
+    Item 16: the toggle stages nothing itself. The ghost phase
+    boundaries were staged on the BgPhase tags when the ghost
+    loaded (library, both ghost routes); with the toggle on,
+    the PhasesBar proportions and the chart phase bands follow
+    the ghost instead of the saved targets. Saved values in
+    SettingsTargets are never overwritten by this option."""
+    width_opts = lambda vals: [{'value': v, 'label': '%d px' % v}
+                               for v in vals]
+    style_opts = [{'value': 'solid', 'label': 'Solid'},
+                  {'value': 'dashed', 'label': 'Dashed'},
+                  {'value': 'dotted', 'label': 'Dotted'}]
+    display = settings_section('DisplaySection', 'Curve Display',
+        'How the live curves are drawn, Artisan CurveStyles '
+        'style: line width and style per curve, an optional '
+        'fill under the rate of rise curve, and the size of '
+        'the event markers on the bean curve. Colors do not '
+        'change here; they stay the app palette in both themes.', [
+        cfg_row('DispRow1', [
+            cfg_field('DispBtWField', 'Bean temp width',
+                      tag_dropdown('DispBtWDrop', 'DispBtWidth',
+                                   width_opts((1, 2, 3, 4, 5))),
+                      basis='170px'),
+            cfg_field('DispBtSField', 'Bean temp style',
+                      tag_dropdown('DispBtSDrop', 'DispBtStyle',
+                                   style_opts), basis='170px'),
+            cfg_field('DispRorWField', 'Rate of rise width',
+                      tag_dropdown('DispRorWDrop', 'DispRorWidth',
+                                   width_opts((1, 2, 3, 4, 5))),
+                      basis='170px'),
+            cfg_field('DispRorSField', 'Rate of rise style',
+                      tag_dropdown('DispRorSDrop', 'DispRorStyle',
+                                   style_opts), basis='170px')]),
+        cfg_row('DispRow2', [
+            cfg_field('DispGhostWField', 'Ghost width',
+                      tag_dropdown('DispGhostWDrop', 'DispGhostWidth',
+                                   width_opts((1, 2, 3, 4, 5))),
+                      basis='170px'),
+            cfg_field('DispGhostSField', 'Ghost style',
+                      tag_dropdown('DispGhostSDrop', 'DispGhostStyle',
+                                   style_opts), basis='170px'),
+            cfg_field('DispFillField', 'Fill under RoR',
+                      check_in('DispFillCheck', 'DispRorFill'),
+                      basis='150px'),
+            cfg_field('DispMarkerField', 'Event marker size',
+                      tag_dropdown('DispMarkerDrop', 'DispMarkerSize',
+                                   width_opts((2, 4, 6, 8, 10))),
+                      basis='170px')]),
+    ])
+    staged = label('BgPhaseReadout', '', 'roast-value',
+                   prop_config={'props.text': {'binding': expr_binding(
+                       f"if({ref(T('BgPhaseDrySec'))} > 0, "
+                       f"'Ghost phases staged: Dry End ' + {mmss_int(ref(T('BgPhaseDrySec')))} + "
+                       f"', FC Start ' + {mmss_int(ref(T('BgPhaseFcSec')))} + "
+                       f"', Drop ' + {mmss_int(ref(T('BgPhaseDropSec')))}, "
+                       f"'No ghost phase boundaries staged (load a background first).')")}})
+    phases = settings_section('BgPhaseSection', 'Phases From Background',
+        'Phase bands shade the live chart behind the curves '
+        '(Drying, Maillard, Development, Cooling), following '
+        'the stamped phases and the targets for the phase still '
+        'ahead. With this option on, the bands and the phase '
+        'bar follow the loaded ghost phase boundaries instead '
+        'of the saved targets. The saved target values are '
+        'never overwritten; clearing the ghost clears the '
+        'staged boundaries.', [
+        cfg_row('BgPhaseRow1', [
+            cfg_field('BgPhaseToggleField', 'Use ghost phases',
+                      check_in('BgPhaseCheck', 'PhaseFromBg'),
+                      basis='170px'),
+            cfg_field('BgPhaseStagedField', 'Staged ghost phases',
+                      staged, basis='380px')]),
+    ])
+    root = flex('root', 'column', [display, phases],
+                classes='roast-gap-12')
+    return {'custom': {}, 'params': {}, 'propConfig': {},
+            'props': {'defaultSize': {'width': 900, 'height': 520}},
+            'root': root}
+
+
 def settings_page_view():
     title = label('Title', 'Settings', 'roast-title')
     sub = label('Sub', 'Standing configuration for the roaster. '
@@ -5839,7 +9397,10 @@ def settings_page_view():
     head = flex('HeadCol', 'column', [title, sub], classes='roast-gap-8')
     sections = [head]
     for name in ('SettingsRoaster', 'SettingsTargets', 'SettingsRor',
-                 'SettingsAlarms', 'SettingsMetadata', 'SettingsCustoms'):
+                 'SettingsAuc', 'SettingsProjection',
+                 'SettingsPlayback', 'SettingsDisplay',
+                 'SettingsAlarms', 'SettingsMetadata',
+                 'SettingsCustoms'):
         sections.append(embed(name + 'Embed', 'Views/' + name, {},
                               {'grow': 0, 'shrink': 0, 'basis': 'auto'}))
     content = flex('Content', 'column', sections,
@@ -5953,6 +9514,91 @@ def _ds_table(name, custom_key, cols):
             'position': {'grow': 0, 'shrink': 0, 'basis': '250px'}}
 
 
+
+# Tier 3 item 21: calculator inputs and readouts on BatchDetail.
+# Inputs bind bidirectionally to the Calculator folder tags (the
+# proven tag path; view.custom bindings do not write back in
+# this build), and the readouts are expression tags in that
+# folder, so the math updates live with no handler code.
+CALC_ROOT = '[default]Roastery/Calculator'
+
+
+def _calc_num(name, member, fmt='0.0'):
+    return {'type': 'ia.input.numeric-entry-field',
+            'meta': {'name': name},
+            'props': {'value': 0, 'format': fmt,
+                      'style': {'classes': 'roast-input'}},
+            'propConfig': {'props.value': {'binding': tag_binding(
+                CALC_ROOT + '/' + member, bidirectional=True)}}}
+
+
+def _calc_val(name, member, fmt='0.0'):
+    return label(name, '--', 'roast-value',
+                 prop_config={'props.text': {'binding': fmt_tag(
+                     CALC_ROOT + '/' + member, fmt)}})
+
+
+def _calc_field(name, caption, comp):
+    cap = label(name + 'Cap', caption, 'roast-form-caption')
+    return flex(name, 'column', [cap, comp], classes='roast-gap-8',
+                position={'grow': 1, 'shrink': 1, 'basis': '150px'})
+
+
+def _calc_row(name, fields):
+    return flex(name, 'row', fields, wrap='wrap',
+                classes='roast-gap-12')
+
+
+def _calc_card():
+    rows = [
+        _calc_row('CalcRow1', [
+            _calc_field('CalcChargeField', 'Charge weight (g)',
+                        _calc_num('CalcChargeIn', 'ChargeG')),
+            _calc_field('CalcLossField', 'Target loss (%)',
+                        _calc_num('CalcLossIn', 'LossPct')),
+            _calc_field('CalcExpectedField', 'Expected out (g)',
+                        _calc_val('CalcExpectedVal', 'ExpectedOutG')),
+            _calc_field('CalcExpectedOzField', 'Expected out (oz)',
+                        _calc_val('CalcExpectedOzVal',
+                                  'ExpectedOutOz', '0.00'))]),
+        _calc_row('CalcRow2', [
+            _calc_field('CalcOutField', 'Weight out (g)',
+                        _calc_num('CalcOutIn', 'OutG')),
+            _calc_field('CalcActualLossField', 'Loss from out (%)',
+                        _calc_val('CalcActualLossVal',
+                                  'ActualLossPct')),
+            _calc_field('CalcTempFField', 'Temp (F)',
+                        _calc_num('CalcTempFIn', 'TempF')),
+            _calc_field('CalcTempCField', 'Temp (C)',
+                        _calc_val('CalcTempCVal', 'TempC'))]),
+        _calc_row('CalcRow3', [
+            _calc_field('CalcTempCInField', 'Temp (C) in',
+                        _calc_num('CalcTempCInIn', 'TempCIn')),
+            _calc_field('CalcTempFOutField', 'Temp (F) out',
+                        _calc_val('CalcTempFOutVal', 'TempFOut')),
+            _calc_field('CalcConvGField', 'Weight (g)',
+                        _calc_num('CalcConvGIn', 'ConvG')),
+            _calc_field('CalcConvOzField', 'Weight (oz)',
+                        _calc_val('CalcConvOzVal', 'ConvOz',
+                                  '0.00'))]),
+        _calc_row('CalcRow4', [
+            _calc_field('CalcConvOzInField', 'Weight (oz) in',
+                        _calc_num('CalcConvOzInIn', 'ConvOzIn',
+                                  '0.00')),
+            _calc_field('CalcConvGOutField', 'Weight (g) out',
+                        _calc_val('CalcConvGOutVal', 'ConvGOut'))]),
+    ]
+    return flex('CalcCard', 'column', [
+        label('CalcHead', 'Yield and Conversion Calculator',
+              'roast-section-title'),
+        label('CalcNote',
+              'Seeded from this batch weights. Edit any input '
+              'and the readouts update live (expression tags in '
+              'the Calculator folder).', 'roast-note-sm')] + rows,
+        classes='roast-card roast-gap-10',
+        position={'grow': 0, 'shrink': 0, 'basis': 'auto'})
+
+
 def batch_detail_view():
     """Log detail: the batch curve (with its event marker lines),
     events timeline, phases and DTR, metadata, and the captured
@@ -5984,20 +9630,43 @@ def batch_detail_view():
                         events=script_event(
                             "\timport roastery.artisan\n"
                             "\troastery.artisan.export_download(self)\n"))
+    csv_btn = button('ExportCsvButton', 'Export CSV',
+                     'roast-btn roast-btn-sm roast-btn-ghost',
+                     events=lib_event(
+                         'roastery.batches.export_csv_download(self)'))
+    json_btn = button('ExportJsonButton', 'Export JSON',
+                      'roast-btn roast-btn-sm roast-btn-ghost',
+                      events=lib_event(
+                          'roastery.batches.export_json_download(self)'))
+    print_btn = button('PrintSummaryButton', 'Print Summary',
+                       'roast-btn roast-btn-sm roast-btn-ghost',
+                       events=lib_event(
+                           'roastery.batches.export_summary_download(self)'))
     head = flex('HeadRow', 'row', [back_btn, title_col],
                 justify='space-between', align='center',
                 classes='roast-gap-12',
                 position={'grow': 0, 'shrink': 0, 'basis': '76px'})
     actions = flex('ActionRow', 'row',
-                   [ghost_btn, edit_btn, export_btn],
-                   justify='flex-end', align='center',
+                   [ghost_btn, edit_btn, export_btn, csv_btn,
+                    json_btn, print_btn],
+                   justify='flex-end', align='center', wrap='wrap',
                    classes='roast-gap-12',
                    position={'grow': 0, 'shrink': 0,
-                             'basis': '52px'})
-    chart_card = flex('ChartCard', 'column', [detail_chart()],
+                             'basis': 'auto'})
+    # Statistics summary line (Tier 3 item 19) on the detail
+    # chart card too: the library computes it in detail_startup
+    # from the staged document phases (dStatsLine).
+    detail_stats = label('DetailStatsLine', '', 'roast-stats-line',
+                         position={'grow': 0, 'shrink': 0,
+                                   'basis': '20px'},
+                         prop_config={'props.text': {'binding':
+                             prop_binding('view.custom.dStatsLine')}})
+    chart_card = flex('ChartCard', 'column',
+                      [detail_chart(), detail_stats,
+                       _analyzer_strip(detail=True)],
                       classes='roast-card roast-gap-8',
                       position={'grow': 0, 'shrink': 0,
-                                'basis': '430px'})
+                                'basis': '538px'})
     events_card = flex('EventsCard', 'column', [
         label('EventsHead', 'Events Timeline', 'roast-section-title'),
         _ds_table('EventsTable', 'eventsDs', [
@@ -6024,8 +9693,29 @@ def batch_detail_view():
             {'field': 'time', 'header': {'title': 'Time'}},
             {'field': 'share', 'header': {'title': 'Share'}},
             {'field': 'gain', 'header': {'title': 'Gain'}},
-            {'field': 'avgRor', 'header': {'title': 'Avg RoR'}}]),
-        _kv_line('Tp', 'Turning point', 'dTp')],
+            {'field': 'avgRor', 'header': {'title': 'Avg RoR'}},
+            {'field': 'auc', 'header': {'title': 'AUC'}}]),
+        _kv_line('Tp', 'Turning point', 'dTp'),
+        _kv_line('FcsRor', 'RoR at FC start', 'dFcsRor'),
+        _kv_line('TotalRor', 'Total RoR (TP to drop)', 'dTotalRor'),
+        _kv_line('Cool', 'Cool phase', 'dCool'),
+        _kv_line('Sim', 'BT similarity vs ghost', 'dSimilarity'),
+        label('LossHead', 'Loss, Yield and Density',
+              'roast-section-title'),
+        _kv_line('DefLoss', 'Defects loss', 'dDefectsLoss'),
+        _kv_line('TotLoss', 'Total loss', 'dTotalLoss'),
+        _kv_line('Yield', 'Total yield', 'dYield'),
+        _kv_line('VolGain', 'Volume gain', 'dVolumeGain'),
+        _kv_line('MoistLoss', 'Moisture loss', 'dMoistureLoss'),
+        _kv_line('OrgLoss', 'Organic loss', 'dOrganicLoss'),
+        _kv_line('GreenDens', 'Green density', 'dGreenDensity'),
+        _kv_line('RoastDens', 'Roasted density', 'dRoastedDensity'),
+        # Between batch line (Tier 3 item 20): the library
+        # fills dBbp only when the batch document carries a
+        # bbp subdocument; otherwise the line is empty.
+        label('BbpLine', '', 'roast-note',
+              prop_config={'props.text': {'binding': prop_binding(
+                  'view.custom.dBbp')}})],
         classes='roast-card roast-gap-8',
         position={'grow': 1, 'shrink': 1, 'basis': '320px'})
     meta_card = flex('MetaCard', 'column', [
@@ -6038,7 +9728,7 @@ def batch_detail_view():
     mid_row = flex('MidRow', 'row', [events_card, summary_card],
                    wrap='wrap', classes='roast-gap-12',
                    position={'grow': 0, 'shrink': 0,
-                             'basis': '486px'})
+                             'basis': '820px'})
     press_card = flex('PressCard', 'column', [
         label('PressHead', 'Captured Button Presses',
               'roast-section-title'),
@@ -6057,9 +9747,10 @@ def batch_detail_view():
         prop_config={'props.style.classes': {'binding': expr_binding(
             "if({view.custom.hasPresses}, 'roast-card roast-gap-10', "
             "'roast-card roast-gap-10 roast-hidden')")}})
+    calc_card = _calc_card()
     content = flex('Content', 'column',
                    [head, actions, chart_card, mid_row, meta_card,
-                    press_card],
+                    calc_card, press_card],
                    classes='roast-content roast-gap-12')
     root = flex('root', 'column', [content], classes='roast-app',
                 scripts={'messageHandlers': [{
@@ -6074,9 +9765,18 @@ def batch_detail_view():
                        'dSource': '--', 'dPhases': '',
                        'eventsDs': None, 'metaDs': None,
                        'pressDs': None, 'hasPresses': False,
-                       'analysisDs': None, 'dTp': '--'},
+                       'analysisDs': None, 'dTp': '--',
+                       'dFcsRor': '--', 'dTotalRor': '--',
+                       'dCool': '--', 'dSimilarity': '--',
+                       'dDefectsLoss': '--', 'dTotalLoss': '--',
+                       'dYield': '--', 'dVolumeGain': '--',
+                       'dMoistureLoss': '--', 'dOrganicLoss': '--',
+                       'dGreenDensity': '--',
+                       'dRoastedDensity': '--',
+                       'dBbp': '',
+                       'dStatsLine': ''},
             'params': {}, 'propConfig': {},
-            'props': {'defaultSize': {'width': 1440, 'height': 1100}},
+            'props': {'defaultSize': {'width': 1440, 'height': 1500}},
             'events': {'system': {'onStartup': {
                 'scope': 'G', 'type': 'script',
                 'config': {'script':
@@ -6118,6 +9818,13 @@ def main():
     write_view(['Views', 'SettingsRoaster'], settings_roaster_view())
     write_view(['Views', 'SettingsTargets'], settings_targets_view())
     write_view(['Views', 'SettingsRor'], settings_ror_view())
+    write_view(['Views', 'SettingsAuc'], settings_auc_view())
+    write_view(['Views', 'SettingsProjection'],
+               settings_projection_view())
+    write_view(['Views', 'SettingsPlayback'],
+               settings_playback_view())
+    write_view(['Views', 'SettingsDisplay'],
+               settings_display_view())
     write_view(['Views', 'SettingsAlarms'], settings_alarms_view())
     write_view(['Views', 'SettingsMetadata'], settings_metadata_view())
     write_view(['Views', 'SettingsCustoms'], settings_customs_view())

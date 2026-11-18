@@ -1,0 +1,86 @@
+{
+    "type_key": "standard",
+    "name": "PressEvents",
+    "execution_enabled": true,
+    "data_source": "db",
+    "table_name": "public.batch_events",
+    "auto_create_table": false,
+    "store_timestamp": true,
+    "timestamp_column": "pressed_at",
+    "store_quality": false,
+    "update_rate": 250,
+    "update_units": "MS",
+    "execution_schedule_mode": "RATE",
+    "group_execution_flags": 258,
+    "trigger_path": "ActionCounter",
+    "trigger_mode": "AnyChange",
+    "rec_mode": "INSERT_ALL",
+    "raw_query_history_ins": true,
+    "configured_items": [
+        {
+            "type_key": "grouptag_sqltref",
+            "name": "ActionCounter",
+            "driving_tag_path": "[default]Roastery/CurrentBatch/ActionCounter",
+            "target_data_type": "Int8",
+            "target_type": "NONE"
+        },
+        {
+            "type_key": "grouptag_sqltref",
+            "name": "BatchNumber",
+            "driving_tag_path": "[default]Roastery/CurrentBatch/BatchNumber",
+            "target_data_type": "Int4",
+            "target_name": "batch_number",
+            "target_type": "DB_FIELD"
+        },
+        {
+            "type_key": "grouptag_sqltref",
+            "name": "LastAction",
+            "driving_tag_path": "[default]Roastery/CurrentBatch/LastAction",
+            "target_data_type": "String",
+            "target_name": "action",
+            "target_type": "DB_FIELD"
+        },
+        {
+            "type_key": "grouptag_sqltref",
+            "name": "LastActionElapsedSec",
+            "driving_tag_path": "[default]Roastery/CurrentBatch/LastActionElapsedSec",
+            "target_data_type": "Int4",
+            "target_name": "t_offset_sec",
+            "target_type": "DB_FIELD"
+        },
+        {
+            "type_key": "grouptag_sqltref",
+            "name": "BeanTempF",
+            "driving_tag_path": "[default]Roastery/CurrentBatch/BeanTempF",
+            "target_data_type": "Float8",
+            "target_name": "bean_temp_f",
+            "target_type": "DB_FIELD"
+        },
+        {
+            "type_key": "grouptag_sqltref",
+            "name": "RateOfRiseF",
+            "driving_tag_path": "[default]Roastery/CurrentBatch/RateOfRiseF",
+            "target_data_type": "Float8",
+            "target_name": "rate_of_rise_f",
+            "target_type": "DB_FIELD"
+        },
+        {
+            "type_key": "grouptag_sqltref",
+            "name": "FanLevel",
+            "driving_tag_path": "[default]Roastery/CurrentBatch/FanLevel",
+            "target_data_type": "Int4",
+            "target_name": "fan_level",
+            "target_type": "DB_FIELD"
+        },
+        {
+            "type_key": "grouptag_sqltref",
+            "name": "HeatLevel",
+            "driving_tag_path": "[default]Roastery/CurrentBatch/HeatLevel",
+            "target_data_type": "Int4",
+            "target_name": "heat_level",
+            "target_type": "DB_FIELD"
+        }
+    ],
+    "custom_index_column": true,
+    "index_column": "id"
+}

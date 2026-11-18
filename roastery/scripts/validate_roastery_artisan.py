@@ -29,7 +29,10 @@ VIEWS = ('Views/RoastPage', 'Views/SettingsPage', 'Views/LogPage',
          'Views/BatchDetail', 'Views/TabBar', 'Views/HudBar',
          'Views/ControlDock', 'Views/SettingsRoaster',
          'Views/SettingsTargets', 'Views/SettingsRor',
-         'Views/SettingsAlarms', 'Views/SettingsMetadata',
+         'Views/SettingsAuc', 'Views/SettingsProjection',
+         'Views/SettingsPlayback',
+         'Views/SettingsAlarms',
+         'Views/SettingsMetadata',
          'Views/SettingsCustoms', 'Views/BatchesPanel',
          'Views/BatchEdit', 'Views/Tile', 'Views/EventCell',
          'Views/EventsStrip', 'Views/PhasesBar', 'Views/Controls',
@@ -153,6 +156,11 @@ def main():
         # Alarm banner: red only while an alarm is active.
         ('RoastPage', 'AlarmBanner', 'props.style.backgroundColor'),
         ('RoastPage', 'AlarmBannerM', 'props.style.backgroundColor'),
+        # Prompt strip (Tier 2 items 11 and 14): amber while a
+        # background playback prompt is active, blue while an
+        # event suggestion is active, transparent otherwise.
+        ('RoastPage', 'PromptStrip', 'props.style.backgroundColor'),
+        ('RoastPage', 'PromptStripM', 'props.style.backgroundColor'),
         # Tile accent bar: the accent is a per instance param.
         ('Tile', 'AccentBar', 'props.style.backgroundColor'),
         # Event cell name color: done state is a param (a map

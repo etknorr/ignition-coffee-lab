@@ -125,6 +125,24 @@ BEANTEMP_EXPR = (
     "if({[.]ActiveSource} = 'Mqtt', {[.]Sources/Mqtt/BeanTempF}, "
     "{[.]Sources/Simulated/BeanTempF}))")
 
+# Default alarm table (Tier 1 item 6): the three former lite
+# alarms carried into the new definitions format. The drop
+# approach value is the default target drop temp (415) minus the
+# old 5 F delta; the FC watch latches as a message at the old
+# window start (target FC 510 minus the 90 s window).
+ALARM_DEFS_JSON = json.dumps([
+    {'name': 'High bean temp', 'enabled': True, 'guard': 'None',
+     'offsetSec': 0, 'source': 'BT', 'cond': '>=', 'value': 430,
+     'message': 'Bean temperature high', 'action': 'Banner'},
+    {'name': 'Drop approaching', 'enabled': True, 'guard': 'None',
+     'offsetSec': 0, 'source': 'BT', 'cond': '>=', 'value': 410,
+     'message': 'Drop approaching', 'action': 'Banner'},
+    {'name': 'First crack watch', 'enabled': True, 'guard': 'Charge',
+     'offsetSec': 420, 'source': 'Time', 'cond': '>=', 'value': 420,
+     'message': 'First crack watch: listen for cracks',
+     'action': 'Message'},
+])
+
 MEMBERS = [
     # canonical probe value, driven by the selected source (see above)
     {'name': 'BeanTempF', 'tagType': 'AtomicTag', 'valueSource': 'expr',
@@ -192,6 +210,20 @@ MEMBERS += [
     mem('TargetFCSec', 'Int4', 510),
     mem('TargetFCTempF', 'Float8', 385.0),
     mem('TargetDropSec', 'Int4', 630),
+    # ---- Tier 3 item 17: full profile designer for the target plan ----
+    mem('TargetPlanJson', 'String', '',
+        doc='Tier 3 item 17: the target plan as a JSON list of '
+            '[sec, tempF] pairs, written by the Settings Targets '
+            'designer through roastery.core.set_target_plan. '
+            'Empty means the plan is the legacy four points '
+            'above (the default list). The plan line and the '
+            'deviation tile read it through '
+            'roastery.core.target_plan_points.'),
+    mem('PlanDeviationText', 'String', '--',
+        doc='Tier 3 item 17: live BT minus the target plan at '
+            'the elapsed seconds, published by '
+            'roastery.core.update_plan_deviation for the '
+            'deviation tile. Two dashes outside a roast.'),
     # alarms (lite)
     mem('AlarmHighTempEnabled', 'Boolean', True),
     mem('AlarmHighTempF', 'Float8', 430.0),
@@ -200,6 +232,193 @@ MEMBERS += [
     mem('AlarmDropDeltaF', 'Float8', 5.0),
     mem('AlarmFCWatchEnabled', 'Boolean', True),
     mem('AlarmFCWindowSec', 'Int4', 90),
+    # ---- Tier 1 (2026-11-17): Roast Properties completeness ----
+    # The extended Artisan Roast Properties set. These are batch
+    # metadata like the members above (core.FORM_MEMBERS carries
+    # them into the form, the document and the .alog mapping).
+    mem('RoastTitle', 'String', ''),
+    mem('RoasterType', 'String', 'FreshRoast SR800'),
+    mem('RoasterSizeKg', 'Float8', 0.25),
+    mem('RoasterHeating', 'Int4', 0,
+        doc='Artisan roasterheating code (0 is electric).'),
+    mem('Organization', 'String', ''),
+    mem('VolumeInMl', 'Float8', 0.0, doc='Green volume in, millilitres.'),
+    mem('VolumeOutMl', 'Float8', 0.0,
+        doc='Roasted volume out, millilitres.'),
+    mem('DefectsWeightG', 'Float8', 0.0,
+        doc='Defects picked out, grams.'),
+    mem('RoastedDensityGL', 'Float8', 0.0,
+        doc='Roasted density, grams per litre.'),
+    mem('BeanSizeMinMm', 'Float8', 0.0),
+    mem('BeanSizeMaxMm', 'Float8', 0.0),
+    mem('DefectHeavyFC', 'Boolean', False),
+    mem('DefectLowFC', 'Boolean', False),
+    mem('DefectLightCut', 'Boolean', False),
+    mem('DefectDarkCut', 'Boolean', False),
+    mem('DefectDrops', 'Boolean', False),
+    mem('DefectOily', 'Boolean', False),
+    mem('DefectUneven', 'Boolean', False),
+    mem('DefectTipping', 'Boolean', False),
+    mem('DefectScorching', 'Boolean', False),
+    mem('DefectDivots', 'Boolean', False),
+    mem('WholeColor', 'Float8', 0.0, doc='Whole bean color reading.'),
+    mem('GroundColor', 'Float8', 0.0, doc='Ground bean color reading.'),
+    mem('ColorSystem', 'String', '',
+        doc='Color reading system (for example Agtron).'),
+    mem('AmbientTempF', 'Float8', 0.0),
+    mem('AmbientHumidityPct', 'Float8', 0.0),
+    mem('AmbientPressureHPa', 'Float8', 0.0),
+    mem('RoastedMoisturePct', 'Float8', 0.0),
+    mem('GreensTempF', 'Float8', 0.0),
+    mem('CuppingNotes', 'String', ''),
+    # ---- Tier 1: live turning point (roastery.core) ----
+    mem('TurningPointElapsedSec', 'Int4', -1,
+        doc='Live turning point: seconds since charge of the bean '
+            'temp minimum after charge, once the curve has risen '
+            'clear of it. -1 until detected.'),
+    mem('TurningPointTempF', 'Float8', 0.0),
+    mem('_TpMinTempF', 'Float8', 0.0,
+        doc='Scratch: running bean temp minimum since charge.'),
+    mem('_TpMinElapsedSec', 'Int4', -1),
+    # ---- Tier 1: live AUC (Artisan settings shape) ----
+    mem('AucBegin', 'String', 'TP',
+        doc='AUC begin event: Charge, TP, Dry End or FC Start '
+            '(Artisan AUCbegin, default TP).'),
+    mem('AucBaseTempF', 'Float8', 212.0,
+        doc='AUC base temperature (Artisan AUCbase, default 212 F).'),
+    mem('AucBaseFromEvent', 'Boolean', False,
+        doc='Artisan AUCbaseFlag: take the base from the bean temp '
+            'at the begin event instead of AucBaseTempF.'),
+    mem('AucTargetFMin', 'Float8', 1152.0,
+        doc='AUC target in F min (Artisan AUCtarget 640 is in '
+            'C min; Roastery works in F throughout).'),
+    mem('AucGuideEnabled', 'Boolean', True,
+        doc='Artisan AUCguideFlag: predict when the target AUC is '
+            'reached at the current RoR.'),
+    mem('AucLiveFMin', 'Float8', 0.0,
+        doc='Live AUC from the begin event, F min.'),
+    mem('AucSinceFcFMin', 'Float8', 0.0,
+        doc='Live AUC accumulated since FC Start, F min.'),
+    mem('AucGuideElapsedSec', 'Int4', -1,
+        doc='Predicted elapsed seconds when the AUC target is '
+            'reached; -1 when no prediction applies.'),
+    # ---- Tier 2: BT projection + background deviation ----
+    mem('ProjectionEnabled', 'Boolean', True,
+        doc='Tier 2 item 9: show the BT projection series on the '
+            'live chart (roastery.core.projection_points).'),
+    mem('ProjectionMode', 'String', 'Linear',
+        doc='Projection mode: Linear (current RoR) or Quadratic '
+            '(linear RoR trend, after five minutes elapsed).'),
+    mem('BgDeviationText', 'String', '--',
+        doc='Tier 2 item 10: live BT minus the staged background '
+            'BT at the same elapsed time, written by '
+            'roastery.core.update_bg_deviation.'),
+    # ---- Tier 2 items 11 to 14 (2026-11-17) ----
+    mem('PlaybackEnabled', 'Boolean', True,
+        doc='Tier 2 item 11: background playback prompts on. '
+            'Prompts only; Fan and Heat stay manual.'),
+    mem('PlaybackSound', 'Boolean', False,
+        doc='Tier 2 item 11: beep with playback prompts. Stored '
+            'setting; Perspective has no clean client beep API '
+            'in this build, so prompts are visual only.'),
+    mem('PlaybackText', 'String', '',
+        doc='Current background playback prompt, written by '
+            'roastery.core.evaluate_playback.'),
+    mem('PlaybackActive', 'Boolean', False),
+    mem('_PlaybackFiredJson', 'String', '',
+        doc='Scratch: indexes of ghost playback events already '
+            'prompted this roast (JSON list).'),
+    mem('DisplaySmoothing', 'Int4', 0,
+        doc='Tier 2 item 12: display only smoothing level for '
+            'the BT line in LiveCurveDS (0 off, 1 to 5). Stored '
+            'temps and RoR are never smoothed.'),
+    # ---- Tier 3 items 15 and 16 (2026-11-17) ----
+    mem('DispBtWidth', 'Int4', 3,
+        doc='Tier 3 item 15: bean temp line width on the live '
+            'chart (Settings Display; binds onto the canvas '
+            'series line width). Default 3 is the fixed look '
+            'from before Tier 3.'),
+    mem('DispBtStyle', 'String', 'solid',
+        doc='Tier 3 item 15: bean temp line style (solid, '
+            'dashed or dotted).'),
+    mem('DispRorWidth', 'Int4', 2,
+        doc='Tier 3 item 15: rate of rise line width.'),
+    mem('DispRorStyle', 'String', 'solid',
+        doc='Tier 3 item 15: rate of rise line style.'),
+    mem('DispGhostWidth', 'Int4', 2,
+        doc='Tier 3 item 15: ghost (background) line width, '
+            'applies to the ghost BT and ghost RoR series.'),
+    mem('DispGhostStyle', 'String', 'solid',
+        doc='Tier 3 item 15: ghost line style.'),
+    mem('DispRorFill', 'Boolean', False,
+        doc='Tier 3 item 15: fill under the RoR curve on the '
+            'live chart (series area opacity 0.22 when on).'),
+    mem('DispMarkerSize', 'Int4', 4,
+        doc='Tier 3 item 15: event marker size (the reference '
+            'line endpoint size on the bean series).'),
+    mem('PhaseFromBg', 'Boolean', False,
+        doc='Tier 3 item 16: when on, the phase bar and the '
+            'chart phase bands follow the staged ghost phase '
+            'boundaries (BgPhase tags) instead of the saved '
+            'phase targets. Saved targets are never '
+            'overwritten by this option.'),
+    mem('BgPhaseDrySec', 'Int4', -1,
+        doc='Tier 3 item 16: staged ghost dry end, elapsed '
+            'seconds since its charge; -1 when no ghost '
+            'phases are staged. Written by both ghost routes '
+            'through roastery.core.stage_bg_phases and '
+            'cleared with the ghost.'),
+    mem('BgPhaseFcSec', 'Int4', -1,
+        doc='Tier 3 item 16: staged ghost FC start, elapsed '
+            'seconds.'),
+    mem('BgPhaseDropSec', 'Int4', -1,
+        doc='Tier 3 item 16: staged ghost drop, elapsed '
+            'seconds.'),
+    mem('SuggestDryEndEnabled', 'Boolean', True,
+        doc='Tier 2 item 14: suggest Dry End when BT crosses '
+            'TargetDryEndTempF. Suggestion only.'),
+    mem('SuggestFcEnabled', 'Boolean', True,
+        doc='Tier 2 item 14: suggest FC Start when BT crosses '
+            'TargetFCTempF. Suggestion only.'),
+    mem('SuggestionText', 'String', '',
+        doc='Current auto event suggestion, written by '
+            'roastery.core.evaluate_suggestions.'),
+    mem('SuggestionActive', 'Boolean', False),
+    mem('SuggestionKind', 'String', '',
+        doc='Which event the live suggestion names: DryEnd or '
+            'FCStart.'),
+    mem('_DrySuggested', 'Boolean', False,
+        doc='Scratch: Dry End already suggested this roast.'),
+    mem('_FcSuggested', 'Boolean', False,
+        doc='Scratch: FC Start already suggested this roast.'),
+    mem('AnalyzerSec', 'Int4', -1,
+        doc='Tier 2 item 13: analyzer selected elapsed seconds '
+            'on the live chart; -1 follows the latest sample.'),
+    mem('AnalyzerTimeText', 'String', '--:--'),
+    mem('AnalyzerBtText', 'String', '--'),
+    mem('AnalyzerRorText', 'String', '--'),
+    mem('AnalyzerBgText', 'String', '--'),
+    mem('AnalyzerDevText', 'String', '--'),
+    mem('AnalyzerBtF', 'Float8', 0.0),
+    mem('AnalyzerRorF', 'Float8', 0.0),
+    mem('AnalyzerBgF', 'Float8', 0.0),
+    mem('AnalyzerDevF', 'Float8', 0.0),
+    mem('AnalyzerHasBg', 'Boolean', False),
+    # ---- Tier 1: full alarm table (replaces the lite alarms) ----
+    mem('AlarmDefsJson', 'String', ALARM_DEFS_JSON,
+        doc='Alarm definitions (JSON list) evaluated by '
+            'roastery.core.evaluate_alarms. Fields: name, enabled, '
+            'guard (None, Charge, TP, Dry End, FC Start, FC End, '
+            'SC Start, SC End, Drop), offsetSec, source (BT, RoR, '
+            'Time), cond (>= or <=), value, message, action '
+            '(Banner or Message).'),
+    mem('AlarmText', 'String', '',
+        doc='Current alarm banner text, written by '
+            'roastery.core.evaluate_alarms.'),
+    mem('AlarmActive', 'Boolean', False),
+    mem('_AlarmFiredJson', 'String', '',
+        doc='Scratch: indexes of Message alarms already latched '
+            'this roast (JSON list).'),
     # config
     mem('WsUrl', 'String', 'ws://sr800.local:8080',
         doc='SR800 WebSocket endpoint (placeholder). Mirrored into '
@@ -257,9 +476,11 @@ MEMBERS += [
         doc='Seconds since charge at the last press.'),
     mem('LastActionAt', 'DateTime', None, omit_value=True,
         doc='Wall clock time of the last press.'),
-    mem('PressCaptureMode', 'String', 'Library',
+    mem('PressCaptureMode', 'String', 'Group',
         doc='Who writes batch_events rows: Library (named query) '
-            'or Group (SQLBridge transaction group).'),
+            'or Group (SQLBridge transaction group). Default is '
+            'Group since 2026-11-17: the PressEvents transaction '
+            'group is authored and RUNNING on the lab gateway.'),
     mem('SeriesCaptureMode', 'String', 'Library',
         doc='Who writes batch_series rows: Library (CurveSamples '
             'at save) or Group (transaction group, live).'),
@@ -287,8 +508,61 @@ INSTANCE_FOLDER = {'name': 'Roastery', 'tagType': 'Folder', 'tags': [
     ds_tag('EventsLog'), ds_tag('RoastLog'),
     ds_tag('TargetProfileDS'), ds_tag('BackgroundDS'),
     ds_tag('CurveSamples'),
+    # ---- Tier 3 item 20: between batch protocol staging ----
+    # The BBP window samples (t_offset_sec is float seconds
+    # since the previous DROP) live in their own dataset tag
+    # and the staged metrics in the Bbp folder, outside the
+    # batch workspace, so the window survives Save Batch.
+    # Reset discards the window (roastery.core._bbp_clear_all).
+    ds_tag('BbpSamplesDS'),
+    {'name': 'Bbp', 'tagType': 'Folder', 'tags': [
+        mem('WindowActive', 'Boolean', False,
+            doc='A between batch window is open (DROP staged, '
+                'next CHARGE not yet seen).'),
+        mem('DropMs', 'Float8', 0.0,
+            doc='Epoch milliseconds of the DROP that opened '
+                'the window (float, so no Int4 overflow).'),
+        mem('HasMetrics', 'Boolean', False,
+            doc='Metrics were finalized at a CHARGE and are '
+                'staged for the next batch document.'),
+        mem('TimeSec', 'Float8', 0.0),
+        mem('BottomTempF', 'Float8', 0.0),
+        mem('BottomSec', 'Float8', 0.0),
+        mem('RorInFMin', 'Float8', 0.0),
+        mem('RorOutFMin', 'Float8', 0.0),
+        mem('SampleCount', 'Int4', 0),
+    ]},
+    # ---- Tier 3 item 17: target plan editor staging ----
+    {'name': 'TargetEditor', 'tagType': 'Folder', 'tags': [
+        mem('Idx', 'Int4', 0),
+        mem('TimeSec', 'Int4', 0),
+        mem('TempF', 'Float8', 0.0),
+    ]},
     mem('BackgroundCurveJson', 'String', ''),
     mem('BackgroundLabel', 'String', ''),
+    mem('BackgroundDropSec', 'Float8', -1.0,
+        doc='Drop elapsed seconds of the staged background '
+            'profile, for the BT similarity alignment '
+            '(roastery.batches.bt_similarity). -1 when none.'),
+    mem('BackgroundEventsJson', 'String', '',
+        doc='Tier 2 item 11: playback events of the staged '
+            'background (JSON list of {t, kind, level}), '
+            'written by both ghost staging routes and read by '
+            'roastery.core.evaluate_playback.'),
+    # ---- Tier 2 item 13: BatchDetail analyzer staging ----
+    {'name': 'DetailAnalyzer', 'tagType': 'Folder', 'tags': [
+        mem('Sec', 'Int4', -1),
+        mem('TimeText', 'String', '--:--'),
+        mem('BtText', 'String', '--'),
+        mem('RorText', 'String', '--'),
+        mem('BgText', 'String', '--'),
+        mem('DevText', 'String', '--'),
+        mem('BtF', 'Float8', 0.0),
+        mem('RorF', 'Float8', 0.0),
+        mem('BgF', 'Float8', 0.0),
+        mem('DevF', 'Float8', 0.0),
+        mem('HasBg', 'Boolean', False),
+    ]},
     # ---- v4 additions ----
     ds_tag('EventMarksDS'),
     ds_tag('BackgroundRorDS'),
@@ -302,6 +576,59 @@ INSTANCE_FOLDER = {'name': 'Roastery', 'tagType': 'Folder', 'tags': [
         doc='Slide over editor mode: True creates a manual batch.'),
     mem('DetailDocJson', 'String', '',
         doc='Staged batch document (JSON) for the detail view.'),
+    # ---- Tier 3 item 21: yield and conversion calculator ----
+    # Inputs are memory tags; the readouts are expression tags,
+    # so the math (expected out from charge and loss percent,
+    # loss percent from charge and out, F/C and g/oz) updates
+    # live as the bidirectional tag bound inputs on BatchDetail
+    # are edited. Added live on the gateway by a folder import
+    # at Roastery/Calculator; this entry keeps a full tag
+    # rebuild equivalent.
+    {'name': 'Calculator', 'tagType': 'Folder', 'tags': [
+        mem('ChargeG', 'Float8', 200.0),
+        mem('LossPct', 'Float8', 15.0),
+        {'name': 'ExpectedOutG', 'tagType': 'AtomicTag',
+         'valueSource': 'expr', 'dataType': 'Float8',
+         'expression': '{[.]ChargeG} * (1 - {[.]LossPct} / 100.0)'},
+        {'name': 'ExpectedOutOz', 'tagType': 'AtomicTag',
+         'valueSource': 'expr', 'dataType': 'Float8',
+         'expression': '{[.]ExpectedOutG} / 28.349523125'},
+        mem('OutG', 'Float8', 170.0),
+        {'name': 'ActualLossPct', 'tagType': 'AtomicTag',
+         'valueSource': 'expr', 'dataType': 'Float8',
+         'expression': 'if({[.]ChargeG} > 0, ({[.]ChargeG} - {[.]OutG}) * 100.0 / {[.]ChargeG}, 0)'},
+        mem('TempF', 'Float8', 415.0),
+        {'name': 'TempC', 'tagType': 'AtomicTag',
+         'valueSource': 'expr', 'dataType': 'Float8',
+         'expression': '({[.]TempF} - 32) * 5.0 / 9.0'},
+        mem('TempCIn', 'Float8', 200.0),
+        {'name': 'TempFOut', 'tagType': 'AtomicTag',
+         'valueSource': 'expr', 'dataType': 'Float8',
+         'expression': '{[.]TempCIn} * 9.0 / 5.0 + 32'},
+        mem('ConvG', 'Float8', 200.0),
+        {'name': 'ConvOz', 'tagType': 'AtomicTag',
+         'valueSource': 'expr', 'dataType': 'Float8',
+         'expression': '{[.]ConvG} / 28.349523125'},
+        mem('ConvOzIn', 'Float8', 7.0),
+        {'name': 'ConvGOut', 'tagType': 'AtomicTag',
+         'valueSource': 'expr', 'dataType': 'Float8',
+         'expression': '{[.]ConvOzIn} * 28.349523125'},
+    ]},
+    # ---- Tier 1: alarm editor staging (tag bound editor fields;
+    # view.custom property bindings do not write user edits back
+    # in this build, tags are the proven bidirectional path) ----
+    {'name': 'AlarmEditor', 'tagType': 'Folder', 'tags': [
+        mem('Idx', 'Int4', 0),
+        mem('Name', 'String', ''),
+        mem('Message', 'String', ''),
+        mem('Enabled', 'Boolean', True),
+        mem('Guard', 'String', 'None'),
+        mem('OffsetSec', 'Int4', 0),
+        mem('Source', 'String', 'BT'),
+        mem('Cond', 'String', '>='),
+        mem('Value', 'Float8', 0.0),
+        mem('Action', 'String', 'Banner'),
+    ]},
 ]}
 
 def ds_json(cols, rows):
@@ -335,11 +662,15 @@ MARKS_COLS = [('t_stamp', 'java.util.Date'),
               ('drop', 'java.lang.Double'),
               ('notes', 'java.lang.Double')]
 BGROR_COLS = [('t_stamp', 'java.util.Date'), ('bgRor', 'java.lang.Double')]
+BBP_COLS = [('t_offset_sec', 'java.lang.Double'),
+            ('t_stamp', 'java.util.Date'),
+            ('bean_temp_f', 'java.lang.Double')]
 LIVE_COLS = [('t_stamp', 'java.util.Date'), ('bean', 'java.lang.Double'),
              ('ror', 'java.lang.Double'), ('fan', 'java.lang.Double'),
              ('heat', 'java.lang.Double'), ('bg', 'java.lang.Double'),
              ('bgRor', 'java.lang.Double'),
-             ('plan', 'java.lang.Double')]
+             ('plan', 'java.lang.Double'),
+             ('proj', 'java.lang.Double')]
 DETAIL_COLS = [('t_stamp', 'java.util.Date'), ('bt', 'java.lang.Double'),
                ('ror', 'java.lang.Double')]
 
@@ -405,6 +736,7 @@ def main():
              '[default]Roastery/EventMarksDS': ds_json(MARKS_COLS, []),
              '[default]Roastery/BackgroundRorDS': ds_json(BGROR_COLS, []),
              '[default]Roastery/LiveCurveDS': ds_json(LIVE_COLS, []),
+             '[default]Roastery/BbpSamplesDS': ds_json(BBP_COLS, []),
              '[default]Roastery/DetailDS': ds_json(DETAIL_COLS, []),
              '[default]Roastery/DetailMarksDS': ds_json(MARKS_COLS, [])}
     st, out = api('POST', '/tags/write',

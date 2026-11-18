@@ -22,6 +22,7 @@ batch is deleted from the database at the end.
 """
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -199,9 +200,15 @@ def main():
         tops = [i for i, r in enumerate(marks)
                 if any(v == 455.0 for v in r[1:])]
         check('event marker rows built', len(marks) >= 9, len(marks))
+        # Column based, not row count based (Tier 1 hardening):
+        # the live turning point marker (notes column) is a
+        # legitimate extra row since v5; the contract is that
+        # each stamped event tops its OWN column.
+        def _top_in(col):
+            return any(marks[t][col] == 455.0 for t in tops)
         check('marker columns carry CHARGE, DRY END and FC START',
-              len(tops) == 3 and marks[tops[1]][2] == 455.0
-              and marks[tops[2]][3] == 455.0,
+              len(tops) >= 3 and _top_in(1) and _top_in(2)
+              and _top_in(3),
               [marks[t][1:] for t in tops])
 
         # ---- v4.1: elapsed axis + live curve dataset -------------
@@ -409,10 +416,54 @@ def main():
               ('Batch %d' % batch_no) in body)
         check('detail shows captured presses',
               'CAPTURED BUTTON PRESSES' in body and 'Charge' in body)
+        # Hardened phase analysis check. The old form was a raw
+        # body text substring conjunction and it failed even though
+        # the data was right: the Turning point caption carries
+        # the roast-kv-cap style class (textTransform uppercase),
+        # so extracted body text reads TURNING POINT and the mixed
+        # case literal could never match, and any card layout
+        # change reshuffles extracted text across cards. This form
+        # verifies content against database truth instead: the
+        # stored document phases must equal the durations derived
+        # from the stored event times, and the detail page Summary
+        # phase line and DTR readout must show those same values.
+        # Only the summary line itself is parsed, never the global
+        # ordering of text across unrelated cards.
+        _ev = doc['events']
+        _dry = int(round(_ev['dryEnd']['t'] - _ev['charge']['t']))
+        _mai = int(round(_ev['fcStart']['t'] - _ev['dryEnd']['t']))
+        _dev = int(round(_ev['drop']['t'] - _ev['fcStart']['t']))
+        _tot = int(round(_ev['drop']['t'] - _ev['charge']['t']))
+        _ph = doc['phases']
+        _doc_ok = (int(round(_ph['dryingSec'])) == _dry
+                   and int(round(_ph['maillardSec'])) == _mai
+                   and int(round(_ph['developmentSec'])) == _dev
+                   and abs(_ph['dtrPct'] - _dev * 100.0 / _tot) < 0.6)
+
+        def _mmss(s):
+            return '%02d:%02d' % (s // 60, s % 60)
+
+        _line = re.search(
+            r'Drying (\d+:\d+) - Maillard (\d+:\d+) - '
+            r'Development (\d+:\d+)', body)
+        _line_ok = (_line is not None
+                    and _line.groups() == (_mmss(_dry), _mmss(_mai),
+                                           _mmss(_dev)))
+        _dtr = re.search(r'DEV RATIO \(DTR\)\s*\n\s*([\d.]+)%', body)
+        _dtr_ok = (_dtr is not None
+                   and abs(float(_dtr.group(1))
+                           - _dev * 100.0 / _tot) < 0.6)
+        _tp_ok = re.search(
+            r'TURNING POINT\s*\n\s*\d+ F at \d+:\d+', body) is not None
         check('detail shows phase analysis',
-              'PHASE ANALYSIS' in body and 'Turning point' in body
-              and 'Drying' in body and 'Maillard' in body
-              and 'Development' in body)
+              'PHASE ANALYSIS' in body and _doc_ok and _line_ok
+              and _dtr_ok and _tp_ok,
+              'doc phases %s | line %s | dtr %s | expected %s/%s/%s '
+              'dtr %.1f' % (_ph,
+                            _line.groups() if _line else None,
+                            _dtr.group(1) if _dtr else None,
+                            _mmss(_dry), _mmss(_mai), _mmss(_dev),
+                            _dev * 100.0 / _tot))
         check('no overlays on detail', overlays(desk) == 0)
         desk.screenshot(path=os.path.join(
             SHOTS, 'roastery-v4-detail-desktop.png'))
