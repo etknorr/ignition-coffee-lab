@@ -11,7 +11,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "root"
+      "name": "LogPageRoot"
     },
     "props": {
       "direction": "column",
@@ -43,7 +43,7 @@
               "alignItems": "center",
               "wrap": "wrap",
               "style": {
-                "classes": "roast-gap-12"
+                "classes": "roast-gap-12 roast-log-head"
               }
             },
             "children": [
@@ -55,7 +55,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "classes": "roast-gap-8"
+                    "classes": "roast-gap-8 roast-log-headcol"
                   }
                 },
                 "children": [
@@ -135,6 +135,41 @@
                     }
                   }
                 }
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "GearButton"
+                },
+                "props": {
+                  "text": "",
+                  "image": {
+                    "icon": {
+                      "path": "material/settings"
+                    },
+                    "width": 22,
+                    "height": 22
+                  },
+                  "style": {
+                    "classes": "roast-btn roast-btn-ghost roast-gear-btn"
+                  }
+                },
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "40px"
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core\n\troastery.core.toggle_app_settings(self)\n"
+                      }
+                    }
+                  }
+                }
               }
             ],
             "position": {
@@ -161,5 +196,16 @@
         ]
       }
     ]
+  },
+  "events": {
+    "system": {
+      "onStartup": {
+        "scope": "G",
+        "type": "script",
+        "config": {
+          "script": "\timport roastery.core\n\troastery.core.page_startup(self)\n"
+        }
+      }
+    }
   }
 }

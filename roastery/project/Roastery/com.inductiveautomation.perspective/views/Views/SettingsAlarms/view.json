@@ -3,7 +3,8 @@
     "alarmsDs": null,
     "alarmCount": 0,
     "alarmIdx": 0,
-    "alarmNote": ""
+    "alarmNote": "",
+    "showAllCols": false
   },
   "params": {},
   "propConfig": {},
@@ -27,7 +28,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "AlarmSection"
+      "name": "SettingsAlarmsRoot"
     },
     "props": {
       "direction": "column",
@@ -118,7 +119,7 @@
               "width": 46
             },
             {
-              "field": "threshold",
+              "field": "value",
               "header": {
                 "title": "Value"
               },
@@ -152,7 +153,7 @@
             }
           },
           "style": {
-            "classes": "roast-table-sm"
+            "classes": "roast-table-sm roast-cols-full"
           }
         },
         "propConfig": {
@@ -169,6 +170,270 @@
           "grow": 0,
           "shrink": 0,
           "basis": "190px"
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "AlarmTablePhoneWrap"
+        },
+        "props": {
+          "direction": "column",
+          "style": {
+            "classes": "roast-gap-8 roast-cols-phone"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "ColsToggleRow"
+            },
+            "props": {
+              "direction": "row",
+              "justify": "flex-end",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-gap-12"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "AlColsToggleButton"
+                },
+                "props": {
+                  "text": "All columns",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "if({view.custom.showAllCols}, 'Fewer columns', 'All columns')"
+                      }
+                    }
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core\n\troastery.core.toggle_all_cols(self)\n"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "ia.display.table",
+            "meta": {
+              "name": "AlarmTablePhone"
+            },
+            "props": {
+              "data": [],
+              "columns": [
+                {
+                  "field": "name",
+                  "header": {
+                    "title": "Name"
+                  },
+                  "width": 90
+                },
+                {
+                  "field": "enabled",
+                  "header": {
+                    "title": "On"
+                  },
+                  "width": 34
+                },
+                {
+                  "field": "source",
+                  "header": {
+                    "title": "Source"
+                  },
+                  "width": 60
+                },
+                {
+                  "field": "value",
+                  "header": {
+                    "title": "Value"
+                  },
+                  "width": 56
+                }
+              ],
+              "pager": {
+                "enabled": false
+              },
+              "rows": {
+                "height": 32
+              },
+              "header": {
+                "height": 32,
+                "style": {
+                  "classes": "roast-table-header"
+                }
+              },
+              "style": {
+                "classes": "roast-table-sm"
+              }
+            },
+            "propConfig": {
+              "props.data": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.alarmsDs"
+                  }
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({view.custom.showAllCols}, 'roast-table-sm roast-hidden', 'roast-table-sm')"
+                  }
+                }
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "190px"
+            }
+          },
+          {
+            "type": "ia.display.table",
+            "meta": {
+              "name": "AlarmTableFullPhone"
+            },
+            "props": {
+              "data": [],
+              "columns": [
+                {
+                  "field": "idx",
+                  "header": {
+                    "title": "#"
+                  },
+                  "width": 32
+                },
+                {
+                  "field": "name",
+                  "header": {
+                    "title": "Name"
+                  },
+                  "width": 128
+                },
+                {
+                  "field": "enabled",
+                  "header": {
+                    "title": "On"
+                  },
+                  "width": 38
+                },
+                {
+                  "field": "guard",
+                  "header": {
+                    "title": "Guard"
+                  },
+                  "width": 74
+                },
+                {
+                  "field": "offsetSec",
+                  "header": {
+                    "title": "Offset (s)"
+                  },
+                  "width": 72
+                },
+                {
+                  "field": "source",
+                  "header": {
+                    "title": "Source"
+                  },
+                  "width": 54
+                },
+                {
+                  "field": "cond",
+                  "header": {
+                    "title": "Cond"
+                  },
+                  "width": 46
+                },
+                {
+                  "field": "value",
+                  "header": {
+                    "title": "Value"
+                  },
+                  "width": 58
+                },
+                {
+                  "field": "message",
+                  "header": {
+                    "title": "Message"
+                  },
+                  "width": 180
+                },
+                {
+                  "field": "action",
+                  "header": {
+                    "title": "Action"
+                  },
+                  "width": 68
+                }
+              ],
+              "pager": {
+                "enabled": false
+              },
+              "rows": {
+                "height": 32
+              },
+              "header": {
+                "height": 32,
+                "style": {
+                  "classes": "roast-table-header"
+                }
+              },
+              "style": {
+                "classes": "roast-table-sm"
+              }
+            },
+            "propConfig": {
+              "props.data": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.alarmsDs"
+                  }
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({view.custom.showAllCols}, 'roast-table-sm', 'roast-table-sm roast-hidden')"
+                  }
+                }
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "190px"
+            }
+          }
+        ],
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "auto"
         }
       },
       {

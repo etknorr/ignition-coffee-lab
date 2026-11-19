@@ -11,7 +11,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "root"
+      "name": "SettingsDisplayRoot"
     },
     "props": {
       "direction": "column",
@@ -50,7 +50,7 @@
               "name": "DisplaySectionDesc"
             },
             "props": {
-              "text": "How the live curves are drawn, Artisan CurveStyles style: line width and style per curve, an optional fill under the rate of rise curve, and the size of the event markers on the bean curve. Colors do not change here; they stay the app palette in both themes.",
+              "text": "How the live curves are drawn, Artisan CurveStyles style: line width and style per curve, an optional fill under the rate of rise curve, and the size of the event markers on the bean curve. Colors do not change here; they stay the app palette in both themes. The time axis on every chart (Roast, batch detail, compare) reads elapsed time since Charge, formatted here as m:ss like Artisan or padded mm:ss; the labels are true elapsed in any browser timezone. Tick spacing adapts to the chart width on its own, the way Artisan fits its grid to the window; this Ignition build does not expose fixed tick steps for the chart, so there is no spacing setting to miss.",
               "style": {
                 "classes": "roast-section-desc"
               }
@@ -648,6 +648,87 @@
                           "type": "tag",
                           "config": {
                             "tagPath": "[default]Roastery/CurrentBatch/DispMarkerSize",
+                            "mode": "direct",
+                            "bidirectional": true
+                          },
+                          "bidirectional": true
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "170px"
+                }
+              }
+            ]
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "DispRow3"
+            },
+            "props": {
+              "direction": "row",
+              "wrap": "wrap",
+              "style": {
+                "classes": "roast-gap-12"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "DispAxisFmtField"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "DispAxisFmtFieldCap"
+                    },
+                    "props": {
+                      "text": "Time axis format",
+                      "style": {
+                        "classes": "roast-form-caption"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.dropdown",
+                    "meta": {
+                      "name": "DispAxisFmtDrop"
+                    },
+                    "props": {
+                      "options": [
+                        {
+                          "value": "m:ss",
+                          "label": "Artisan (m:ss)"
+                        },
+                        {
+                          "value": "mm:ss",
+                          "label": "Padded (mm:ss)"
+                        }
+                      ],
+                      "value": "m:ss",
+                      "style": {
+                        "classes": "roast-input"
+                      }
+                    },
+                    "propConfig": {
+                      "props.value": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispAxisFormat",
                             "mode": "direct",
                             "bidirectional": true
                           },

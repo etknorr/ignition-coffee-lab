@@ -26,7 +26,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "TargetSection"
+      "name": "SettingsTargetsRoot"
     },
     "props": {
       "direction": "column",
@@ -768,28 +768,28 @@
               "header": {
                 "title": "#"
               },
-              "width": 36
+              "width": 30
             },
             {
               "field": "timeSec",
               "header": {
                 "title": "Time (sec)"
               },
-              "width": 92
+              "width": 88
             },
             {
               "field": "timeText",
               "header": {
                 "title": "Time"
               },
-              "width": 70
+              "width": 66
             },
             {
               "field": "tempF",
               "header": {
                 "title": "Temp (F)"
               },
-              "width": 92
+              "width": 88
             }
           ],
           "pager": {
@@ -820,7 +820,7 @@
         },
         "position": {
           "grow": 0,
-          "shrink": 0,
+          "shrink": 1,
           "basis": "190px"
         }
       },

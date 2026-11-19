@@ -33,7 +33,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "root"
+      "name": "TileRoot"
     },
     "props": {
       "direction": "column",
@@ -160,6 +160,11 @@
                   }
                 }
               }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
             }
           }
         ]

@@ -44,6 +44,11 @@
         "type": "Parameter",
         "identifier": "heat_level",
         "sqlType": 2
+      },
+      {
+        "type": "Parameter",
+        "identifier": "press_counter",
+        "sqlType": 2
       }
     ],
     "permissions": [],

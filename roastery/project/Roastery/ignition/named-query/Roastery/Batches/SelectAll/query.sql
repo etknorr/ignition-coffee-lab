@@ -1,4 +1,8 @@
-SELECT id, batch_number, roast_start, roast_end, bean_name, drop_temp_f,
+SELECT id, batch_number, roast_start, roast_end,
+       CASE WHEN data->>'seedNote' IS NOT NULL
+            THEN bean_name || ' (stub)'
+            ELSE bean_name END AS bean_name,
+       drop_temp_f,
        data->>'roastDegree' AS roast_degree,
        (data->'phases'->>'dtrPct')::double precision AS dtr_pct,
        (data->'metadata'->>'ChargeWeightG')::double precision AS charge_g,

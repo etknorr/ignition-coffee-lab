@@ -1,0 +1,197 @@
+{
+  "custom": {
+    "bgNote": ""
+  },
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 900,
+      "height": 220
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "SettingsBackgroundRoot"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-card roast-gap-10"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "BgSectionHead"
+        },
+        "props": {
+          "text": "Background Profile",
+          "style": {
+            "classes": "roast-section-title"
+          }
+        }
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "BgSectionDesc"
+        },
+        "props": {
+          "text": "Stage an Artisan .alog file as the ghost curve behind the live roast. The staged background also drives playback prompts and the deviation readout.",
+          "style": {
+            "classes": "roast-section-desc"
+          }
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "BgRow"
+        },
+        "props": {
+          "direction": "row",
+          "alignItems": "center",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-8"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "BgFileLabel"
+            },
+            "props": {
+              "text": "Background .alog",
+              "style": {
+                "classes": "roast-note"
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "104px"
+            }
+          },
+          {
+            "type": "ia.input.fileupload",
+            "meta": {
+              "name": "BgUpload"
+            },
+            "props": {
+              "maxUploads": 1,
+              "supportedFileTypes": [
+                "alog"
+              ],
+              "fileSizeLimit": 5
+            },
+            "events": {
+              "component": {
+                "onFileReceived": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.artisan\n\troastery.artisan.stage_background_upload(self, event)\n"
+                  }
+                }
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 1,
+              "basis": "170px"
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "BgClearButton"
+            },
+            "props": {
+              "text": "Clear ghost",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.clear_background(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "BgCurrent"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-note"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/BackgroundLabel} != '', 'Staged: ' + {[default]Roastery/BackgroundLabel}, 'No background staged')"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "BgNote"
+        },
+        "props": {
+          "text": "",
+          "style": {
+            "classes": "roast-note"
+          }
+        },
+        "propConfig": {
+          "props.text": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "view.custom.bgNote"
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "BgLogNote"
+        },
+        "props": {
+          "text": "A saved batch can also be staged as the background from the Log page (Use as Ghost on a batch detail).",
+          "style": {
+            "classes": "roast-note-sm"
+          }
+        }
+      }
+    ]
+  }
+}

@@ -11,7 +11,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "RoasterSection"
+      "name": "SettingsRoasterRoot"
     },
     "props": {
       "direction": "column",

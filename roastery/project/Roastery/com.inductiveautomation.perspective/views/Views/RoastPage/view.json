@@ -6,7 +6,9 @@
     "phaseText": "Pre-charge",
     "alarmText": "",
     "bgNote": "",
-    "promptText": ""
+    "promptText": "",
+    "alarmMessageText": "",
+    "alarmMessageSeq": 0
   },
   "params": {},
   "propConfig": {
@@ -39,10 +41,13 @@
     },
     "custom.phaseText": {
       "binding": {
-        "type": "expr",
+        "type": "tag",
         "config": {
-          "expression": "if({[default]Roastery/CurrentBatch/State} = 'Idle', 'Pre-charge', if({[default]Roastery/CurrentBatch/State} = 'Dropped', 'Dropped', if({[default]Roastery/CurrentBatch/State} = 'Cooling', 'Cooling', if({[default]Roastery/CurrentBatch/State} = 'Complete', 'Complete', if({[default]Roastery/CurrentBatch/SecondCrackStartElapsedSec} >= 0, 'Second Crack', if({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, 'Development', if({[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, 'Maillard', 'Drying')))))))"
-        }
+          "tagPath": "[default]Roastery/CurrentBatch/PhaseLabel",
+          "mode": "direct",
+          "bidirectional": false
+        },
+        "bidirectional": false
       }
     },
     "custom.promptText": {
@@ -63,6 +68,32 @@
         },
         "bidirectional": false
       }
+    },
+    "custom.alarmMessageText": {
+      "binding": {
+        "type": "tag",
+        "config": {
+          "tagPath": "[default]Roastery/CurrentBatch/AlarmMessageText",
+          "mode": "direct",
+          "bidirectional": false
+        },
+        "bidirectional": false
+      }
+    },
+    "custom.alarmMessageSeq": {
+      "binding": {
+        "type": "tag",
+        "config": {
+          "tagPath": "[default]Roastery/CurrentBatch/AlarmMessageSeq",
+          "mode": "direct",
+          "bidirectional": false
+        },
+        "bidirectional": false
+      },
+      "onChange": {
+        "enabled": true,
+        "script": "\timport roastery.core\n\tprev = previousValue.value if previousValue is not None else 0\n\tcur = currentValue.value if currentValue is not None else 0\n\tif cur and cur != prev:\n\t\tmsg = system.tag.readBlocking(['[default]Roastery/CurrentBatch/AlarmMessageText'])[0].value\n\t\tif msg:\n\t\t\troastery.core.show_toast(self, msg, 'warning')\n"
+      }
     }
   },
   "props": {
@@ -74,7 +105,7 @@
   "root": {
     "type": "ia.container.breakpt",
     "meta": {
-      "name": "root"
+      "name": "RoastPageRoot"
     },
     "props": {
       "breakpoint": 900,
@@ -132,7 +163,8 @@
                       "style": {
                         "classes": "roast-title"
                       }
-                    }
+                    },
+                    "children": []
                   },
                   {
                     "type": "ia.display.label",
@@ -144,7 +176,8 @@
                       "style": {
                         "classes": "roast-subtitle"
                       }
-                    }
+                    },
+                    "children": []
                   }
                 ]
               },
@@ -187,7 +220,8 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "children": []
                   },
                   {
                     "type": "ia.display.label",
@@ -222,7 +256,8 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "children": []
                   },
                   {
                     "type": "ia.display.label",
@@ -292,7 +327,8 @@
                           ]
                         }
                       }
-                    }
+                    },
+                    "children": []
                   },
                   {
                     "type": "ia.container.flex",
@@ -324,7 +360,8 @@
                               }
                             }
                           }
-                        }
+                        },
+                        "children": []
                       },
                       {
                         "type": "ia.display.label",
@@ -346,9 +383,45 @@
                               }
                             }
                           }
-                        }
+                        },
+                        "children": []
                       }
                     ]
+                  },
+                  {
+                    "type": "ia.input.button",
+                    "meta": {
+                      "name": "GearButton"
+                    },
+                    "props": {
+                      "text": "",
+                      "image": {
+                        "icon": {
+                          "path": "material/settings"
+                        },
+                        "width": 22,
+                        "height": 22
+                      },
+                      "style": {
+                        "classes": "roast-btn roast-btn-ghost roast-gear-btn"
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "40px"
+                    },
+                    "events": {
+                      "dom": {
+                        "onClick": {
+                          "scope": "G",
+                          "type": "script",
+                          "config": {
+                            "script": "\timport roastery.core\n\troastery.core.toggle_app_settings(self)\n"
+                          }
+                        }
+                      }
+                    }
                   }
                 ]
               }
@@ -392,7 +465,8 @@
                       }
                     }
                   }
-                }
+                },
+                "children": []
               }
             ],
             "position": {
@@ -449,7 +523,8 @@
                       }
                     }
                   }
-                }
+                },
+                "children": []
               },
               {
                 "type": "ia.input.button",
@@ -470,6 +545,14 @@
                         "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive} || {[default]Roastery/CurrentBatch/SuggestionActive}, 'Dismiss', '')"
                       }
                     }
+                  },
+                  "props.style.classes": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive} || {[default]Roastery/CurrentBatch/SuggestionActive}, 'roast-btn roast-btn-sm roast-btn-ghost', 'roast-btn roast-btn-sm roast-btn-ghost roast-hidden')"
+                      }
+                    }
                   }
                 },
                 "events": {
@@ -482,13 +565,19 @@
                       }
                     }
                   }
+                },
+                "children": [],
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "92px"
                 }
               }
             ],
             "position": {
               "grow": 0,
               "shrink": 0,
-              "basis": "38px"
+              "basis": "56px"
             },
             "propConfig": {
               "props.style.backgroundColor": {
@@ -558,7 +647,8 @@
                               "style": {
                                 "classes": "roast-value-strong"
                               }
-                            }
+                            },
+                            "children": []
                           },
                           {
                             "type": "ia.display.label",
@@ -580,7 +670,8 @@
                                   }
                                 }
                               }
-                            }
+                            },
+                            "children": []
                           }
                         ],
                         "position": {
@@ -588,118 +679,6 @@
                           "shrink": 0,
                           "basis": "24px"
                         }
-                      },
-                      {
-                        "type": "ia.container.flex",
-                        "meta": {
-                          "name": "BgRow"
-                        },
-                        "props": {
-                          "direction": "row",
-                          "alignItems": "center",
-                          "wrap": "wrap",
-                          "style": {
-                            "classes": "roast-gap-8"
-                          }
-                        },
-                        "children": [
-                          {
-                            "type": "ia.display.label",
-                            "meta": {
-                              "name": "BgFileLabel"
-                            },
-                            "props": {
-                              "text": "Background .alog",
-                              "style": {
-                                "classes": "roast-note"
-                              }
-                            },
-                            "position": {
-                              "grow": 0,
-                              "shrink": 0,
-                              "basis": "104px"
-                            }
-                          },
-                          {
-                            "type": "ia.input.fileupload",
-                            "meta": {
-                              "name": "BgUpload"
-                            },
-                            "props": {
-                              "maxUploads": 1,
-                              "supportedFileTypes": [
-                                "alog"
-                              ],
-                              "fileSizeLimit": 5
-                            },
-                            "events": {
-                              "component": {
-                                "onFileReceived": {
-                                  "scope": "G",
-                                  "type": "script",
-                                  "config": {
-                                    "script": "\timport roastery.artisan\n\troastery.artisan.stage_background_upload(self, event)\n"
-                                  }
-                                }
-                              }
-                            },
-                            "position": {
-                              "grow": 0,
-                              "shrink": 1,
-                              "basis": "170px"
-                            }
-                          },
-                          {
-                            "type": "ia.input.button",
-                            "meta": {
-                              "name": "BgClearButton"
-                            },
-                            "props": {
-                              "text": "Clear ghost",
-                              "style": {
-                                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
-                              }
-                            },
-                            "events": {
-                              "dom": {
-                                "onClick": {
-                                  "scope": "G",
-                                  "type": "script",
-                                  "config": {
-                                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.clear_background()\n"
-                                  }
-                                }
-                              }
-                            }
-                          },
-                          {
-                            "type": "ia.display.label",
-                            "meta": {
-                              "name": "BgNote"
-                            },
-                            "props": {
-                              "text": "",
-                              "style": {
-                                "classes": "roast-note"
-                              }
-                            },
-                            "position": {
-                              "grow": 1,
-                              "shrink": 1,
-                              "basis": "0px"
-                            },
-                            "propConfig": {
-                              "props.text": {
-                                "binding": {
-                                  "type": "property",
-                                  "config": {
-                                    "path": "view.custom.bgNote"
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        ]
                       },
                       {
                         "type": "ia.canvas-charts.line",
@@ -760,7 +739,7 @@
                           "series": [
                             {
                               "advanced": {
-                                "connectNulls": false,
+                                "connectNulls": true,
                                 "step": "",
                                 "tooltip": {
                                   "enabled": true,
@@ -833,7 +812,7 @@
                             },
                             {
                               "advanced": {
-                                "connectNulls": false,
+                                "connectNulls": true,
                                 "step": "",
                                 "tooltip": {
                                   "enabled": true,
@@ -906,7 +885,7 @@
                             },
                             {
                               "advanced": {
-                                "connectNulls": false,
+                                "connectNulls": true,
                                 "step": "",
                                 "tooltip": {
                                   "enabled": true,
@@ -979,7 +958,7 @@
                             },
                             {
                               "advanced": {
-                                "connectNulls": false,
+                                "connectNulls": true,
                                 "step": "",
                                 "tooltip": {
                                   "enabled": true,
@@ -1508,8 +1487,8 @@
                               "visible": true,
                               "width": 1
                             },
-                            "boundaryGap": true,
-                            "field": "t_stamp",
+                            "boundaryGap": false,
+                            "field": "t_label",
                             "gridLines": {
                               "color": "",
                               "visible": false,
@@ -1525,14 +1504,8 @@
                               "visible": true
                             },
                             "max": "auto",
-                            "min": 1000,
+                            "min": "auto",
                             "position": "bottom",
-                            "ticks": {
-                              "displayInside": false,
-                              "majorSplit": 11,
-                              "minorSplit": 0,
-                              "visible": true
-                            },
                             "title": {
                               "color": "",
                               "elementStyle": {},
@@ -1540,10 +1513,10 @@
                               "gap": 15,
                               "position": "middle",
                               "rotation": 0,
-                              "text": "Elapsed (mm:ss)",
+                              "text": "",
                               "visible": true
                             },
-                            "type": "time",
+                            "type": "category",
                             "visible": true
                           },
                           "yAxis": [
@@ -1579,7 +1552,7 @@
                                 "visible": true,
                                 "width": null
                               },
-                              "max": 460,
+                              "max": 520,
                               "min": 150,
                               "ticks": {
                                 "displayInside": false,
@@ -1631,7 +1604,7 @@
                                 "visible": true,
                                 "width": null
                               },
-                              "max": 40,
+                              "max": 47,
                               "min": 0,
                               "ticks": {
                                 "displayInside": false,
@@ -1802,13 +1775,224 @@
                               },
                               "bidirectional": false
                             }
+                          },
+                          "props.xAxis.labels.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.xAxis.advanced.axisPointer.label.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].labels.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].title.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].advanced.axisPointer.label.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[1].labels.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[1].title.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[1].advanced.axisPointer.label.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.xAxis.advanced.axisPointer.label.backgroundColor": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].advanced.axisPointer.label.backgroundColor": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[1].advanced.axisPointer.label.backgroundColor": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.series[0].area.opacity": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.series[1].area.opacity": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.series[2].area.opacity": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.series[3].area.opacity": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                                }
+                              ]
+                            }
                           }
                         },
                         "position": {
                           "grow": 1,
                           "shrink": 1,
                           "basis": "0px"
-                        }
+                        },
+                        "children": []
                       },
                       {
                         "type": "ia.display.label",
@@ -1829,13 +2013,17 @@
                         "propConfig": {
                           "props.text": {
                             "binding": {
-                              "type": "expr",
+                              "type": "tag",
                               "config": {
-                                "expression": "'Dry ' + if({[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/DryEndElapsedSec} / 60), '0') + ':' + numberFormat({[default]Roastery/CurrentBatch/DryEndElapsedSec} % 60, '00'), '--:--') + ' ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0, {[default]Roastery/CurrentBatch/DryEndElapsedSec} * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) * 100.0 / if((if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})) > 0, (if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), 1)), '0') + '% \u00b7 ' + 'Mai ' + if({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0 && {[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, numberFormat(floor(({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) / 60), '0') + ':' + numberFormat(({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) % 60, '00'), '--:--') + ' ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) * 100.0 / if((if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})) > 0, (if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), 1)), '0') + '% \u00b7 ' + 'Dev ' + if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, numberFormat(floor(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) / 60), '0') + ':' + numberFormat(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) % 60, '00'), '--:--') + ' ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec}) * 100.0 / if((if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})) > 0, (if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), 1)), '0') + '% \u00b7 ' + 'DTR ' + if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, numberFormat(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, '0') + '%', '--')"
-                              }
+                                "tagPath": "[default]Roastery/CurrentBatch/StatsLineText",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
                             }
                           }
-                        }
+                        },
+                        "children": []
                       },
                       {
                         "type": "ia.container.flex",
@@ -1852,14 +2040,18 @@
                           {
                             "type": "ia.container.flex",
                             "meta": {
-                              "name": "AnalyzerControls"
+                              "name": "AnalyzerCapRow"
                             },
                             "props": {
                               "direction": "row",
-                              "alignItems": "center",
                               "style": {
                                 "classes": "roast-gap-8"
                               }
+                            },
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "16px"
                             },
                             "children": [
                               {
@@ -1876,9 +2068,25 @@
                                 "position": {
                                   "grow": 0,
                                   "shrink": 0,
-                                  "basis": "64px"
-                                }
-                              },
+                                  "basis": "auto"
+                                },
+                                "children": []
+                              }
+                            ]
+                          },
+                          {
+                            "type": "ia.container.flex",
+                            "meta": {
+                              "name": "AnalyzerControls"
+                            },
+                            "props": {
+                              "direction": "row",
+                              "alignItems": "center",
+                              "style": {
+                                "classes": "roast-gap-8"
+                              }
+                            },
+                            "children": [
                               {
                                 "type": "ia.input.button",
                                 "meta": {
@@ -1887,7 +2095,7 @@
                                 "props": {
                                   "text": "-10s",
                                   "style": {
-                                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                                    "classes": "roast-btn-sm roast-btn-ghost roast-btn-compact"
                                   }
                                 },
                                 "events": {
@@ -1900,6 +2108,12 @@
                                       }
                                     }
                                   }
+                                },
+                                "children": [],
+                                "position": {
+                                  "grow": 0,
+                                  "shrink": 0,
+                                  "basis": "auto"
                                 }
                               },
                               {
@@ -1930,7 +2144,8 @@
                                       "bidirectional": false
                                     }
                                   }
-                                }
+                                },
+                                "children": []
                               },
                               {
                                 "type": "ia.input.button",
@@ -1940,7 +2155,7 @@
                                 "props": {
                                   "text": "+10s",
                                   "style": {
-                                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                                    "classes": "roast-btn-sm roast-btn-ghost roast-btn-compact"
                                   }
                                 },
                                 "events": {
@@ -1953,6 +2168,12 @@
                                       }
                                     }
                                   }
+                                },
+                                "children": [],
+                                "position": {
+                                  "grow": 0,
+                                  "shrink": 0,
+                                  "basis": "auto"
                                 }
                               },
                               {
@@ -1963,7 +2184,7 @@
                                 "props": {
                                   "text": "Latest",
                                   "style": {
-                                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                                    "classes": "roast-btn-sm roast-btn-ghost roast-btn-compact"
                                   }
                                 },
                                 "events": {
@@ -1976,6 +2197,12 @@
                                       }
                                     }
                                   }
+                                },
+                                "children": [],
+                                "position": {
+                                  "grow": 0,
+                                  "shrink": 0,
+                                  "basis": "auto"
                                 }
                               }
                             ],
@@ -2019,7 +2246,8 @@
                                       "style": {
                                         "classes": "roast-caption"
                                       }
-                                    }
+                                    },
+                                    "children": []
                                   },
                                   {
                                     "type": "ia.display.label",
@@ -2044,7 +2272,8 @@
                                           "bidirectional": false
                                         }
                                       }
-                                    }
+                                    },
+                                    "children": []
                                   }
                                 ],
                                 "position": {
@@ -2075,7 +2304,8 @@
                                       "style": {
                                         "classes": "roast-caption"
                                       }
-                                    }
+                                    },
+                                    "children": []
                                   },
                                   {
                                     "type": "ia.display.label",
@@ -2100,7 +2330,8 @@
                                           "bidirectional": false
                                         }
                                       }
-                                    }
+                                    },
+                                    "children": []
                                   }
                                 ],
                                 "position": {
@@ -2131,7 +2362,8 @@
                                       "style": {
                                         "classes": "roast-caption"
                                       }
-                                    }
+                                    },
+                                    "children": []
                                   },
                                   {
                                     "type": "ia.display.label",
@@ -2156,7 +2388,8 @@
                                           "bidirectional": false
                                         }
                                       }
-                                    }
+                                    },
+                                    "children": []
                                   }
                                 ],
                                 "position": {
@@ -2187,7 +2420,8 @@
                                       "style": {
                                         "classes": "roast-caption"
                                       }
-                                    }
+                                    },
+                                    "children": []
                                   },
                                   {
                                     "type": "ia.display.label",
@@ -2212,7 +2446,8 @@
                                           "bidirectional": false
                                         }
                                       }
-                                    }
+                                    },
+                                    "children": []
                                   }
                                 ],
                                 "position": {
@@ -2232,7 +2467,7 @@
                         "position": {
                           "grow": 0,
                           "shrink": 0,
-                          "basis": "88px"
+                          "basis": "112px"
                         }
                       },
                       {
@@ -2250,7 +2485,8 @@
                           "grow": 0,
                           "shrink": 0,
                           "basis": "16px"
-                        }
+                        },
+                        "children": []
                       },
                       {
                         "type": "ia.container.flex",
@@ -2500,8 +2736,8 @@
                                   "visible": true,
                                   "width": 1
                                 },
-                                "boundaryGap": true,
-                                "field": "t_stamp",
+                                "boundaryGap": false,
+                                "field": "t_label",
                                 "gridLines": {
                                   "color": "",
                                   "visible": false,
@@ -2517,14 +2753,8 @@
                                   "visible": true
                                 },
                                 "max": "auto",
-                                "min": 1000,
+                                "min": "auto",
                                 "position": "bottom",
-                                "ticks": {
-                                  "displayInside": false,
-                                  "majorSplit": 11,
-                                  "minorSplit": 0,
-                                  "visible": true
-                                },
                                 "title": {
                                   "color": "",
                                   "elementStyle": {},
@@ -2535,7 +2765,7 @@
                                   "text": "",
                                   "visible": false
                                 },
-                                "type": "time",
+                                "type": "category",
                                 "visible": true
                               },
                               "yAxis": [
@@ -2617,13 +2847,112 @@
                                   },
                                   "bidirectional": false
                                 }
+                              },
+                              "props.xAxis.labels.color": {
+                                "binding": {
+                                  "type": "property",
+                                  "config": {
+                                    "path": "session.custom.chartDark"
+                                  },
+                                  "transforms": [
+                                    {
+                                      "type": "script",
+                                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                    }
+                                  ]
+                                }
+                              },
+                              "props.xAxis.advanced.axisPointer.label.color": {
+                                "binding": {
+                                  "type": "property",
+                                  "config": {
+                                    "path": "session.custom.chartDark"
+                                  },
+                                  "transforms": [
+                                    {
+                                      "type": "script",
+                                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                    }
+                                  ]
+                                }
+                              },
+                              "props.yAxis[0].labels.color": {
+                                "binding": {
+                                  "type": "property",
+                                  "config": {
+                                    "path": "session.custom.chartDark"
+                                  },
+                                  "transforms": [
+                                    {
+                                      "type": "script",
+                                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                    }
+                                  ]
+                                }
+                              },
+                              "props.yAxis[0].title.color": {
+                                "binding": {
+                                  "type": "property",
+                                  "config": {
+                                    "path": "session.custom.chartDark"
+                                  },
+                                  "transforms": [
+                                    {
+                                      "type": "script",
+                                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                    }
+                                  ]
+                                }
+                              },
+                              "props.yAxis[0].advanced.axisPointer.label.color": {
+                                "binding": {
+                                  "type": "property",
+                                  "config": {
+                                    "path": "session.custom.chartDark"
+                                  },
+                                  "transforms": [
+                                    {
+                                      "type": "script",
+                                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                    }
+                                  ]
+                                }
+                              },
+                              "props.xAxis.advanced.axisPointer.label.backgroundColor": {
+                                "binding": {
+                                  "type": "property",
+                                  "config": {
+                                    "path": "session.custom.chartDark"
+                                  },
+                                  "transforms": [
+                                    {
+                                      "type": "script",
+                                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                                    }
+                                  ]
+                                }
+                              },
+                              "props.yAxis[0].advanced.axisPointer.label.backgroundColor": {
+                                "binding": {
+                                  "type": "property",
+                                  "config": {
+                                    "path": "session.custom.chartDark"
+                                  },
+                                  "transforms": [
+                                    {
+                                      "type": "script",
+                                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                                    }
+                                  ]
+                                }
                               }
                             },
                             "position": {
                               "grow": 1,
                               "shrink": 1,
                               "basis": "0px"
-                            }
+                            },
+                            "children": []
                           }
                         ],
                         "position": {
@@ -2652,7 +2981,8 @@
                       "grow": 0,
                       "shrink": 0,
                       "basis": "auto"
-                    }
+                    },
+                    "children": []
                   },
                   {
                     "type": "ia.display.view",
@@ -2667,7 +2997,8 @@
                       "grow": 0,
                       "shrink": 0,
                       "basis": "auto"
-                    }
+                    },
+                    "children": []
                   },
                   {
                     "type": "ia.container.flex",
@@ -2720,7 +3051,8 @@
                               ]
                             }
                           }
-                        }
+                        },
+                        "children": []
                       },
                       {
                         "type": "ia.display.view",
@@ -2746,21 +3078,15 @@
                             "binding": {
                               "type": "tag",
                               "config": {
-                                "tagPath": "[default]Roastery/CurrentBatch/RateOfRiseF",
+                                "tagPath": "[default]Roastery/CurrentBatch/RateOfRiseDisplayText",
                                 "mode": "direct",
                                 "bidirectional": false
                               },
-                              "bidirectional": false,
-                              "transforms": [
-                                {
-                                  "type": "format",
-                                  "formatType": "numeric",
-                                  "formatValue": "0.0"
-                                }
-                              ]
+                              "bidirectional": false
                             }
                           }
-                        }
+                        },
+                        "children": []
                       },
                       {
                         "type": "ia.display.view",
@@ -2790,7 +3116,8 @@
                               }
                             }
                           }
-                        }
+                        },
+                        "children": []
                       },
                       {
                         "type": "ia.display.view",
@@ -2830,7 +3157,8 @@
                               ]
                             }
                           }
-                        }
+                        },
+                        "children": []
                       },
                       {
                         "type": "ia.display.view",
@@ -2870,7 +3198,8 @@
                               ]
                             }
                           }
-                        }
+                        },
+                        "children": []
                       },
                       {
                         "type": "ia.display.view",
@@ -2901,7 +3230,8 @@
                               }
                             }
                           }
-                        }
+                        },
+                        "children": []
                       },
                       {
                         "type": "ia.display.view",
@@ -2941,7 +3271,8 @@
                               ]
                             }
                           }
-                        }
+                        },
+                        "children": []
                       },
                       {
                         "type": "ia.display.view",
@@ -2971,7 +3302,8 @@
                               }
                             }
                           }
-                        }
+                        },
+                        "children": []
                       },
                       {
                         "type": "ia.display.view",
@@ -3011,7 +3343,8 @@
                               ]
                             }
                           }
-                        }
+                        },
+                        "children": []
                       },
                       {
                         "type": "ia.display.view",
@@ -3044,7 +3377,8 @@
                               "bidirectional": false
                             }
                           }
-                        }
+                        },
+                        "children": []
                       }
                     ],
                     "position": {
@@ -3085,7 +3419,8 @@
                       "grow": 0,
                       "shrink": 0,
                       "basis": "auto"
-                    }
+                    },
+                    "children": []
                   },
                   {
                     "type": "ia.display.view",
@@ -3100,7 +3435,8 @@
                       "grow": 0,
                       "shrink": 0,
                       "basis": "auto"
-                    }
+                    },
+                    "children": []
                   },
                   {
                     "type": "ia.display.view",
@@ -3115,7 +3451,8 @@
                       "grow": 0,
                       "shrink": 0,
                       "basis": "auto"
-                    }
+                    },
+                    "children": []
                   }
                 ],
                 "position": {
@@ -3151,7 +3488,7 @@
           {
             "type": "ia.container.flex",
             "meta": {
-              "name": "AlarmBannerM"
+              "name": "AlarmBannerMobile"
             },
             "props": {
               "direction": "row",
@@ -3164,7 +3501,7 @@
               {
                 "type": "ia.display.label",
                 "meta": {
-                  "name": "AlarmBannerMText"
+                  "name": "AlarmBannerMobileText"
                 },
                 "props": {
                   "text": "",
@@ -3181,7 +3518,8 @@
                       }
                     }
                   }
-                }
+                },
+                "children": []
               }
             ],
             "position": {
@@ -3203,7 +3541,7 @@
           {
             "type": "ia.container.flex",
             "meta": {
-              "name": "PromptStripM"
+              "name": "PromptStripMobile"
             },
             "props": {
               "direction": "row",
@@ -3216,7 +3554,7 @@
               {
                 "type": "ia.display.label",
                 "meta": {
-                  "name": "PromptStripMText"
+                  "name": "PromptStripMobileText"
                 },
                 "props": {
                   "text": "",
@@ -3238,12 +3576,13 @@
                       }
                     }
                   }
-                }
+                },
+                "children": []
               },
               {
                 "type": "ia.input.button",
                 "meta": {
-                  "name": "PromptStripMDismiss"
+                  "name": "PromptStripMobileDismiss"
                 },
                 "props": {
                   "text": "",
@@ -3259,6 +3598,14 @@
                         "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive} || {[default]Roastery/CurrentBatch/SuggestionActive}, 'Dismiss', '')"
                       }
                     }
+                  },
+                  "props.style.classes": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive} || {[default]Roastery/CurrentBatch/SuggestionActive}, 'roast-btn roast-btn-sm roast-btn-ghost', 'roast-btn roast-btn-sm roast-btn-ghost roast-hidden')"
+                      }
+                    }
                   }
                 },
                 "events": {
@@ -3271,13 +3618,19 @@
                       }
                     }
                   }
+                },
+                "children": [],
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "92px"
                 }
               }
             ],
             "position": {
               "grow": 0,
               "shrink": 0,
-              "basis": "38px"
+              "basis": "56px"
             },
             "propConfig": {
               "props.style.backgroundColor": {
@@ -3322,7 +3675,8 @@
                       }
                     }
                   }
-                }
+                },
+                "children": []
               },
               {
                 "type": "ia.container.flex",
@@ -3359,7 +3713,8 @@
                           "style": {
                             "classes": "roast-value-strong"
                           }
-                        }
+                        },
+                        "children": []
                       },
                       {
                         "type": "ia.display.label",
@@ -3381,7 +3736,8 @@
                               }
                             }
                           }
-                        }
+                        },
+                        "children": []
                       }
                     ],
                     "position": {
@@ -3389,118 +3745,6 @@
                       "shrink": 0,
                       "basis": "44px"
                     }
-                  },
-                  {
-                    "type": "ia.container.flex",
-                    "meta": {
-                      "name": "BgRow"
-                    },
-                    "props": {
-                      "direction": "row",
-                      "alignItems": "center",
-                      "wrap": "wrap",
-                      "style": {
-                        "classes": "roast-gap-8"
-                      }
-                    },
-                    "children": [
-                      {
-                        "type": "ia.display.label",
-                        "meta": {
-                          "name": "BgFileLabel"
-                        },
-                        "props": {
-                          "text": "Background .alog",
-                          "style": {
-                            "classes": "roast-note"
-                          }
-                        },
-                        "position": {
-                          "grow": 0,
-                          "shrink": 0,
-                          "basis": "104px"
-                        }
-                      },
-                      {
-                        "type": "ia.input.fileupload",
-                        "meta": {
-                          "name": "BgUpload"
-                        },
-                        "props": {
-                          "maxUploads": 1,
-                          "supportedFileTypes": [
-                            "alog"
-                          ],
-                          "fileSizeLimit": 5
-                        },
-                        "events": {
-                          "component": {
-                            "onFileReceived": {
-                              "scope": "G",
-                              "type": "script",
-                              "config": {
-                                "script": "\timport roastery.artisan\n\troastery.artisan.stage_background_upload(self, event)\n"
-                              }
-                            }
-                          }
-                        },
-                        "position": {
-                          "grow": 0,
-                          "shrink": 1,
-                          "basis": "170px"
-                        }
-                      },
-                      {
-                        "type": "ia.input.button",
-                        "meta": {
-                          "name": "BgClearButton"
-                        },
-                        "props": {
-                          "text": "Clear ghost",
-                          "style": {
-                            "classes": "roast-btn roast-btn-sm roast-btn-ghost"
-                          }
-                        },
-                        "events": {
-                          "dom": {
-                            "onClick": {
-                              "scope": "G",
-                              "type": "script",
-                              "config": {
-                                "script": "\timport roastery.core, roastery.batches\n\troastery.core.clear_background()\n"
-                              }
-                            }
-                          }
-                        }
-                      },
-                      {
-                        "type": "ia.display.label",
-                        "meta": {
-                          "name": "BgNote"
-                        },
-                        "props": {
-                          "text": "",
-                          "style": {
-                            "classes": "roast-note"
-                          }
-                        },
-                        "position": {
-                          "grow": 1,
-                          "shrink": 1,
-                          "basis": "0px"
-                        },
-                        "propConfig": {
-                          "props.text": {
-                            "binding": {
-                              "type": "property",
-                              "config": {
-                                "path": "view.custom.bgNote"
-                              }
-                            }
-                          }
-                        }
-                      }
-                    ]
                   },
                   {
                     "type": "ia.canvas-charts.line",
@@ -3561,7 +3805,7 @@
                       "series": [
                         {
                           "advanced": {
-                            "connectNulls": false,
+                            "connectNulls": true,
                             "step": "",
                             "tooltip": {
                               "enabled": true,
@@ -3634,7 +3878,7 @@
                         },
                         {
                           "advanced": {
-                            "connectNulls": false,
+                            "connectNulls": true,
                             "step": "",
                             "tooltip": {
                               "enabled": true,
@@ -3707,7 +3951,7 @@
                         },
                         {
                           "advanced": {
-                            "connectNulls": false,
+                            "connectNulls": true,
                             "step": "",
                             "tooltip": {
                               "enabled": true,
@@ -3780,7 +4024,7 @@
                         },
                         {
                           "advanced": {
-                            "connectNulls": false,
+                            "connectNulls": true,
                             "step": "",
                             "tooltip": {
                               "enabled": true,
@@ -4309,8 +4553,8 @@
                           "visible": true,
                           "width": 1
                         },
-                        "boundaryGap": true,
-                        "field": "t_stamp",
+                        "boundaryGap": false,
+                        "field": "t_label",
                         "gridLines": {
                           "color": "",
                           "visible": false,
@@ -4326,14 +4570,8 @@
                           "visible": true
                         },
                         "max": "auto",
-                        "min": 1000,
+                        "min": "auto",
                         "position": "bottom",
-                        "ticks": {
-                          "displayInside": false,
-                          "majorSplit": 11,
-                          "minorSplit": 0,
-                          "visible": true
-                        },
                         "title": {
                           "color": "",
                           "elementStyle": {},
@@ -4341,10 +4579,10 @@
                           "gap": 15,
                           "position": "middle",
                           "rotation": 0,
-                          "text": "Elapsed (mm:ss)",
+                          "text": "",
                           "visible": true
                         },
-                        "type": "time",
+                        "type": "category",
                         "visible": true
                       },
                       "yAxis": [
@@ -4381,7 +4619,7 @@
                             "width": null,
                             "gap": 2
                           },
-                          "max": 460,
+                          "max": 520,
                           "min": 150,
                           "ticks": {
                             "displayInside": false,
@@ -4434,7 +4672,7 @@
                             "width": null,
                             "gap": 2
                           },
-                          "max": 40,
+                          "max": 47,
                           "min": 0,
                           "ticks": {
                             "displayInside": false,
@@ -4605,13 +4843,224 @@
                           },
                           "bidirectional": false
                         }
+                      },
+                      "props.xAxis.labels.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.xAxis.advanced.axisPointer.label.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[0].labels.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[0].title.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[0].advanced.axisPointer.label.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[1].labels.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[1].title.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[1].advanced.axisPointer.label.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.xAxis.advanced.axisPointer.label.backgroundColor": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[0].advanced.axisPointer.label.backgroundColor": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[1].advanced.axisPointer.label.backgroundColor": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.series[0].area.opacity": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.series[1].area.opacity": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.series[2].area.opacity": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.series[3].area.opacity": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                            }
+                          ]
+                        }
                       }
                     },
                     "position": {
                       "grow": 1,
                       "shrink": 1,
                       "basis": "0px"
-                    }
+                    },
+                    "children": []
                   },
                   {
                     "type": "ia.display.label",
@@ -4632,13 +5081,17 @@
                     "propConfig": {
                       "props.text": {
                         "binding": {
-                          "type": "expr",
+                          "type": "tag",
                           "config": {
-                            "expression": "'Dry ' + if({[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, numberFormat(floor({[default]Roastery/CurrentBatch/DryEndElapsedSec} / 60), '0') + ':' + numberFormat({[default]Roastery/CurrentBatch/DryEndElapsedSec} % 60, '00'), '--:--') + ' ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0, {[default]Roastery/CurrentBatch/DryEndElapsedSec} * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) * 100.0 / if((if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})) > 0, (if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), 1)), '0') + '% \u00b7 ' + 'Mai ' + if({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0 && {[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, numberFormat(floor(({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) / 60), '0') + ':' + numberFormat(({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) % 60, '00'), '--:--') + ' ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} - {[default]Roastery/CurrentBatch/DryEndElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) * 100.0 / if((if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})) > 0, (if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), 1)), '0') + '% \u00b7 ' + 'Dev ' + if({[default]Roastery/CurrentBatch/DropElapsedSec} >= 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, numberFormat(floor(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) / 60), '0') + ':' + numberFormat(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) % 60, '00'), '--:--') + ' ' + numberFormat(if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, ({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec}) * 100.0 / if((if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})) > 0, (if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/BgPhaseDrySec}, {[default]Roastery/CurrentBatch/PhaseDryTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseFcSec} - {[default]Roastery/CurrentBatch/BgPhaseDrySec}), {[default]Roastery/CurrentBatch/PhaseMaillardTargetSec}) + if(({[default]Roastery/CurrentBatch/PhaseFromBg} && {[default]Roastery/CurrentBatch/BgPhaseDrySec} > 0 && {[default]Roastery/CurrentBatch/BgPhaseFcSec} > {[default]Roastery/CurrentBatch/BgPhaseDrySec} && {[default]Roastery/CurrentBatch/BgPhaseDropSec} > {[default]Roastery/CurrentBatch/BgPhaseFcSec}), ({[default]Roastery/CurrentBatch/BgPhaseDropSec} - {[default]Roastery/CurrentBatch/BgPhaseFcSec}), {[default]Roastery/CurrentBatch/PhaseDevTargetSec})), 1)), '0') + '% \u00b7 ' + 'DTR ' + if({[default]Roastery/CurrentBatch/DropElapsedSec} > 0 && {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, numberFormat(({[default]Roastery/CurrentBatch/DropElapsedSec} - {[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec}) * 100.0 / {[default]Roastery/CurrentBatch/DropElapsedSec}, '0') + '%', '--')"
-                          }
+                            "tagPath": "[default]Roastery/CurrentBatch/StatsLineText",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
                         }
                       }
-                    }
+                    },
+                    "children": []
                   },
                   {
                     "type": "ia.container.flex",
@@ -4655,14 +5108,18 @@
                       {
                         "type": "ia.container.flex",
                         "meta": {
-                          "name": "AnalyzerControls"
+                          "name": "AnalyzerCapRow"
                         },
                         "props": {
                           "direction": "row",
-                          "alignItems": "center",
                           "style": {
                             "classes": "roast-gap-8"
                           }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "16px"
                         },
                         "children": [
                           {
@@ -4679,9 +5136,25 @@
                             "position": {
                               "grow": 0,
                               "shrink": 0,
-                              "basis": "64px"
-                            }
-                          },
+                              "basis": "auto"
+                            },
+                            "children": []
+                          }
+                        ]
+                      },
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "AnalyzerControls"
+                        },
+                        "props": {
+                          "direction": "row",
+                          "alignItems": "center",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
                           {
                             "type": "ia.input.button",
                             "meta": {
@@ -4690,7 +5163,7 @@
                             "props": {
                               "text": "-10s",
                               "style": {
-                                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                                "classes": "roast-btn-sm roast-btn-ghost roast-btn-compact"
                               }
                             },
                             "events": {
@@ -4703,6 +5176,12 @@
                                   }
                                 }
                               }
+                            },
+                            "children": [],
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "auto"
                             }
                           },
                           {
@@ -4733,7 +5212,8 @@
                                   "bidirectional": false
                                 }
                               }
-                            }
+                            },
+                            "children": []
                           },
                           {
                             "type": "ia.input.button",
@@ -4743,7 +5223,7 @@
                             "props": {
                               "text": "+10s",
                               "style": {
-                                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                                "classes": "roast-btn-sm roast-btn-ghost roast-btn-compact"
                               }
                             },
                             "events": {
@@ -4756,6 +5236,12 @@
                                   }
                                 }
                               }
+                            },
+                            "children": [],
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "auto"
                             }
                           },
                           {
@@ -4766,7 +5252,7 @@
                             "props": {
                               "text": "Latest",
                               "style": {
-                                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                                "classes": "roast-btn-sm roast-btn-ghost roast-btn-compact"
                               }
                             },
                             "events": {
@@ -4779,6 +5265,12 @@
                                   }
                                 }
                               }
+                            },
+                            "children": [],
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "auto"
                             }
                           }
                         ],
@@ -4822,7 +5314,8 @@
                                   "style": {
                                     "classes": "roast-caption"
                                   }
-                                }
+                                },
+                                "children": []
                               },
                               {
                                 "type": "ia.display.label",
@@ -4847,7 +5340,8 @@
                                       "bidirectional": false
                                     }
                                   }
-                                }
+                                },
+                                "children": []
                               }
                             ],
                             "position": {
@@ -4878,7 +5372,8 @@
                                   "style": {
                                     "classes": "roast-caption"
                                   }
-                                }
+                                },
+                                "children": []
                               },
                               {
                                 "type": "ia.display.label",
@@ -4903,7 +5398,8 @@
                                       "bidirectional": false
                                     }
                                   }
-                                }
+                                },
+                                "children": []
                               }
                             ],
                             "position": {
@@ -4934,7 +5430,8 @@
                                   "style": {
                                     "classes": "roast-caption"
                                   }
-                                }
+                                },
+                                "children": []
                               },
                               {
                                 "type": "ia.display.label",
@@ -4959,7 +5456,8 @@
                                       "bidirectional": false
                                     }
                                   }
-                                }
+                                },
+                                "children": []
                               }
                             ],
                             "position": {
@@ -4990,7 +5488,8 @@
                                   "style": {
                                     "classes": "roast-caption"
                                   }
-                                }
+                                },
+                                "children": []
                               },
                               {
                                 "type": "ia.display.label",
@@ -5015,7 +5514,8 @@
                                       "bidirectional": false
                                     }
                                   }
-                                }
+                                },
+                                "children": []
                               }
                             ],
                             "position": {
@@ -5035,7 +5535,7 @@
                     "position": {
                       "grow": 0,
                       "shrink": 0,
-                      "basis": "88px"
+                      "basis": "112px"
                     }
                   }
                 ],
@@ -5096,7 +5596,8 @@
                           ]
                         }
                       }
-                    }
+                    },
+                    "children": []
                   },
                   {
                     "type": "ia.display.view",
@@ -5122,21 +5623,15 @@
                         "binding": {
                           "type": "tag",
                           "config": {
-                            "tagPath": "[default]Roastery/CurrentBatch/RateOfRiseF",
+                            "tagPath": "[default]Roastery/CurrentBatch/RateOfRiseDisplayText",
                             "mode": "direct",
                             "bidirectional": false
                           },
-                          "bidirectional": false,
-                          "transforms": [
-                            {
-                              "type": "format",
-                              "formatType": "numeric",
-                              "formatValue": "0.0"
-                            }
-                          ]
+                          "bidirectional": false
                         }
                       }
-                    }
+                    },
+                    "children": []
                   },
                   {
                     "type": "ia.display.view",
@@ -5176,7 +5671,8 @@
                           ]
                         }
                       }
-                    }
+                    },
+                    "children": []
                   },
                   {
                     "type": "ia.display.view",
@@ -5216,7 +5712,8 @@
                           ]
                         }
                       }
-                    }
+                    },
+                    "children": []
                   }
                 ],
                 "position": {
@@ -5252,12 +5749,13 @@
                       "grow": 0,
                       "shrink": 0,
                       "basis": "16px"
-                    }
+                    },
+                    "children": []
                   },
                   {
                     "type": "ia.container.flex",
                     "meta": {
-                      "name": "TraceWrapM"
+                      "name": "TraceWrapMobile"
                     },
                     "props": {
                       "direction": "row"
@@ -5502,8 +6000,8 @@
                               "visible": true,
                               "width": 1
                             },
-                            "boundaryGap": true,
-                            "field": "t_stamp",
+                            "boundaryGap": false,
+                            "field": "t_label",
                             "gridLines": {
                               "color": "",
                               "visible": false,
@@ -5519,14 +6017,8 @@
                               "visible": true
                             },
                             "max": "auto",
-                            "min": 1000,
+                            "min": "auto",
                             "position": "bottom",
-                            "ticks": {
-                              "displayInside": false,
-                              "majorSplit": 11,
-                              "minorSplit": 0,
-                              "visible": true
-                            },
                             "title": {
                               "color": "",
                               "elementStyle": {},
@@ -5537,7 +6029,7 @@
                               "text": "",
                               "visible": false
                             },
-                            "type": "time",
+                            "type": "category",
                             "visible": true
                           },
                           "yAxis": [
@@ -5619,13 +6111,112 @@
                               },
                               "bidirectional": false
                             }
+                          },
+                          "props.xAxis.labels.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.xAxis.advanced.axisPointer.label.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].labels.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].title.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].advanced.axisPointer.label.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.xAxis.advanced.axisPointer.label.backgroundColor": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].advanced.axisPointer.label.backgroundColor": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                                }
+                              ]
+                            }
                           }
                         },
                         "position": {
                           "grow": 1,
                           "shrink": 1,
                           "basis": "0px"
-                        }
+                        },
+                        "children": []
                       }
                     ],
                     "position": {
@@ -5654,7 +6245,8 @@
                   "grow": 0,
                   "shrink": 0,
                   "basis": "auto"
-                }
+                },
+                "children": []
               },
               {
                 "type": "ia.display.view",
@@ -5669,12 +6261,13 @@
                   "grow": 0,
                   "shrink": 0,
                   "basis": "auto"
-                }
+                },
+                "children": []
               },
               {
                 "type": "ia.display.view",
                 "meta": {
-                  "name": "ControlsEmbedM"
+                  "name": "ControlsEmbedMobile"
                 },
                 "props": {
                   "path": "Views/Controls",
@@ -5684,12 +6277,13 @@
                   "grow": 0,
                   "shrink": 0,
                   "basis": "auto"
-                }
+                },
+                "children": []
               },
               {
                 "type": "ia.display.view",
                 "meta": {
-                  "name": "SummaryEmbedM"
+                  "name": "SummaryEmbedMobile"
                 },
                 "props": {
                   "path": "Views/Summary",
@@ -5699,12 +6293,13 @@
                   "grow": 0,
                   "shrink": 0,
                   "basis": "auto"
-                }
+                },
+                "children": []
               },
               {
                 "type": "ia.display.view",
                 "meta": {
-                  "name": "MetaCardEmbedM"
+                  "name": "MetaCardEmbedMobile"
                 },
                 "props": {
                   "path": "Views/MetaCard",
@@ -5714,7 +6309,8 @@
                   "grow": 0,
                   "shrink": 0,
                   "basis": "auto"
-                }
+                },
+                "children": []
               }
             ],
             "position": {
@@ -5736,7 +6332,8 @@
               "grow": 0,
               "shrink": 0,
               "basis": "auto"
-            }
+            },
+            "children": []
           }
         ],
         "position": {
@@ -5744,5 +6341,16 @@
         }
       }
     ]
+  },
+  "events": {
+    "system": {
+      "onStartup": {
+        "scope": "G",
+        "type": "script",
+        "config": {
+          "script": "\timport roastery.core\n\troastery.core.main_startup(self)\n"
+        }
+      }
+    }
   }
 }

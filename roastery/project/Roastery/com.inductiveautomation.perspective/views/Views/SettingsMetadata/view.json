@@ -16,7 +16,7 @@
         "scope": "G",
         "type": "script",
         "config": {
-          "script": "\timport roastery.core\n\tself.getChild('root').getChild('MetaForm').props.data = roastery.core.config_form_data()\n"
+          "script": "\timport roastery.core\n\tself.getChild('SettingsMetadataRoot').getChild('MetaForm').props.data = roastery.core.config_form_data()\n"
         }
       }
     }
@@ -24,7 +24,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "root"
+      "name": "SettingsMetadataRoot"
     },
     "props": {
       "direction": "column",
@@ -23681,7 +23681,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -24289,7 +24289,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -24897,7 +24897,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -25514,7 +25514,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -26122,7 +26122,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -26730,7 +26730,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -27347,7 +27347,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -27955,7 +27955,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -28563,7 +28563,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -29180,7 +29180,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }

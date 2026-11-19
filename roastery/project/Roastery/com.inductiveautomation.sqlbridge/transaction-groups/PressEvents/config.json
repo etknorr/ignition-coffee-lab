@@ -26,6 +26,14 @@
         },
         {
             "type_key": "grouptag_sqltref",
+            "name": "ActionCounterValue",
+            "driving_tag_path": "[default]Roastery/CurrentBatch/ActionCounter",
+            "target_data_type": "Int8",
+            "target_name": "press_counter",
+            "target_type": "DB_FIELD"
+        },
+        {
+            "type_key": "grouptag_sqltref",
             "name": "BatchNumber",
             "driving_tag_path": "[default]Roastery/CurrentBatch/BatchNumber",
             "target_data_type": "Int4",

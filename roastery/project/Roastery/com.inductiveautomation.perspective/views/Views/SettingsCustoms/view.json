@@ -11,7 +11,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "CustomSection"
+      "name": "SettingsCustomsRoot"
     },
     "props": {
       "direction": "column",
@@ -38,7 +38,7 @@
           "name": "CustomSectionDesc"
         },
         "props": {
-          "text": "Names and kinds for the four custom event buttons. Kind is a free label (Airflow, Note, Info, ...).",
+          "text": "Custom buttons are your own event markers for anything the standard events do not cover, for example a fan change you want to remember or a note about the beans. During a roast they appear in the roast controls and in the phone dock, next to the standard events. Stamping one drops a labeled marker on the chart at that moment and saves the event in the batch record. Use Show to keep a button on the controls, or turn Show off to hide it. Name and kind are free text: the name is the button label and the marker text, the kind is a short category note (Airflow, Note, Info, ...).",
           "style": {
             "classes": "roast-section-desc"
           }
@@ -170,6 +170,63 @@
               "shrink": 1,
               "basis": "180px"
             }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "CustomShowField1"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "110px"
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "CustomShowField1Cap"
+                },
+                "props": {
+                  "text": "Show on controls",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.checkbox",
+                "meta": {
+                  "name": "CustomShowIn1"
+                },
+                "props": {
+                  "selected": true,
+                  "style": {
+                    "classes": "roast-checkbox"
+                  },
+                  "text": ""
+                },
+                "propConfig": {
+                  "props.selected": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/CustomEvent1Enabled",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ]
           }
         ]
       },
@@ -299,6 +356,63 @@
               "shrink": 1,
               "basis": "180px"
             }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "CustomShowField2"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "110px"
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "CustomShowField2Cap"
+                },
+                "props": {
+                  "text": "Show on controls",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.checkbox",
+                "meta": {
+                  "name": "CustomShowIn2"
+                },
+                "props": {
+                  "selected": true,
+                  "style": {
+                    "classes": "roast-checkbox"
+                  },
+                  "text": ""
+                },
+                "propConfig": {
+                  "props.selected": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/CustomEvent2Enabled",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ]
           }
         ]
       },
@@ -428,6 +542,63 @@
               "shrink": 1,
               "basis": "180px"
             }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "CustomShowField3"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "110px"
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "CustomShowField3Cap"
+                },
+                "props": {
+                  "text": "Show on controls",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.checkbox",
+                "meta": {
+                  "name": "CustomShowIn3"
+                },
+                "props": {
+                  "selected": true,
+                  "style": {
+                    "classes": "roast-checkbox"
+                  },
+                  "text": ""
+                },
+                "propConfig": {
+                  "props.selected": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/CustomEvent3Enabled",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ]
           }
         ]
       },
@@ -557,6 +728,63 @@
               "shrink": 1,
               "basis": "180px"
             }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "CustomShowField4"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "110px"
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "CustomShowField4Cap"
+                },
+                "props": {
+                  "text": "Show on controls",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.checkbox",
+                "meta": {
+                  "name": "CustomShowIn4"
+                },
+                "props": {
+                  "selected": true,
+                  "style": {
+                    "classes": "roast-checkbox"
+                  },
+                  "text": ""
+                },
+                "propConfig": {
+                  "props.selected": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/CustomEvent4Enabled",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ]
           }
         ]
       }

@@ -11,7 +11,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "root"
+      "name": "SettingsPlaybackRoot"
     },
     "props": {
       "direction": "column",
@@ -182,7 +182,18 @@
                   "shrink": 1,
                   "basis": "170px"
                 }
-              },
+              }
+            ]
+          },
+          {
+            "meta": {
+              "name": "PbRow2"
+            },
+            "type": "ia.container.flex",
+            "props": {
+              "direction": "row"
+            },
+            "children": [
               {
                 "type": "ia.container.flex",
                 "meta": {
@@ -228,7 +239,7 @@
                 "position": {
                   "grow": 1,
                   "shrink": 1,
-                  "basis": "320px"
+                  "basis": "0px"
                 }
               }
             ]

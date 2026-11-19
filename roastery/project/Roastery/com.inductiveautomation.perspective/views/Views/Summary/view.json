@@ -13,7 +13,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "root"
+      "name": "SummaryRoot"
     },
     "props": {
       "direction": "column",

@@ -1,30 +1,17 @@
 {
-  "custom": {
-    "themeText": "Light"
-  },
+  "custom": {},
   "params": {},
   "propConfig": {},
   "props": {
     "defaultSize": {
-      "width": 900,
+      "width": 800,
       "height": 62
-    }
-  },
-  "events": {
-    "system": {
-      "onStartup": {
-        "scope": "G",
-        "type": "script",
-        "config": {
-          "script": "\timport roastery.core\n\troastery.core.main_startup(self)\n"
-        }
-      }
     }
   },
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "root"
+      "name": "TabBarRoot"
     },
     "props": {
       "direction": "row",
@@ -35,123 +22,144 @@
     },
     "children": [
       {
-        "type": "ia.input.button",
+        "type": "ia.navigation.horizontalmenu",
         "meta": {
-          "name": "ThemeButton"
+          "name": "TabMenu"
         },
         "props": {
-          "text": "",
+          "items": [
+            {
+              "enabled": true,
+              "icon": {
+                "path": "material/whatshot"
+              },
+              "items": [],
+              "label": "Roast",
+              "style": {
+                "classes": ""
+              },
+              "target": "/"
+            },
+            {
+              "enabled": true,
+              "icon": {
+                "path": "material/settings"
+              },
+              "items": [],
+              "label": "Settings",
+              "style": {
+                "classes": ""
+              },
+              "target": "/settings"
+            },
+            {
+              "enabled": true,
+              "icon": {
+                "path": "material/history"
+              },
+              "items": [],
+              "label": "Log",
+              "style": {
+                "classes": ""
+              },
+              "target": "/log"
+            }
+          ],
+          "enabled": true,
+          "itemStyle": {
+            "classes": "roast-tab-item"
+          },
           "style": {
-            "classes": "roast-tab-btn"
+            "classes": ""
           }
         },
         "position": {
-          "grow": 0,
-          "shrink": 0,
-          "basis": "88px"
+          "grow": 1,
+          "basis": "0px"
         },
         "propConfig": {
-          "props.text": {
+          "props.items[0].style.fontWeight": {
             "binding": {
               "type": "property",
               "config": {
-                "path": "view.custom.themeText"
-              }
+                "path": "page.props.path"
+              },
+              "transforms": [
+                {
+                  "type": "expression",
+                  "expression": "if ({value} = {this.props.items[0].target}, \"bold\", \"normal\")"
+                }
+              ]
             }
-          }
-        },
-        "events": {
-          "dom": {
-            "onClick": {
-              "scope": "G",
-              "type": "script",
+          },
+          "props.items[0].style.classes": {
+            "binding": {
+              "type": "property",
               "config": {
-                "script": "\timport roastery.core, roastery.batches\n\troastery.core.theme_toggle(self)\n"
-              }
+                "path": "page.props.path"
+              },
+              "transforms": [
+                {
+                  "type": "expression",
+                  "expression": "if ({value} = {this.props.items[0].target}, \"roast-tab-active\", \"\")"
+                }
+              ]
             }
-          }
-        }
-      },
-      {
-        "type": "ia.input.button",
-        "meta": {
-          "name": "RoastTab"
-        },
-        "props": {
-          "text": "Roast",
-          "style": {
-            "classes": "roast-tab-btn"
-          }
-        },
-        "position": {
-          "grow": 1,
-          "shrink": 1,
-          "basis": "0px"
-        },
-        "events": {
-          "dom": {
-            "onClick": {
-              "scope": "G",
-              "type": "script",
+          },
+          "props.items[1].style.fontWeight": {
+            "binding": {
+              "type": "property",
               "config": {
-                "script": "\tsystem.perspective.navigate(page='/')\n"
-              }
+                "path": "page.props.path"
+              },
+              "transforms": [
+                {
+                  "type": "expression",
+                  "expression": "if ({value} = {this.props.items[1].target}, \"bold\", \"normal\")"
+                }
+              ]
             }
-          }
-        }
-      },
-      {
-        "type": "ia.input.button",
-        "meta": {
-          "name": "SettingsTab"
-        },
-        "props": {
-          "text": "Settings",
-          "style": {
-            "classes": "roast-tab-btn"
-          }
-        },
-        "position": {
-          "grow": 1,
-          "shrink": 1,
-          "basis": "0px"
-        },
-        "events": {
-          "dom": {
-            "onClick": {
-              "scope": "G",
-              "type": "script",
+          },
+          "props.items[1].style.classes": {
+            "binding": {
+              "type": "property",
               "config": {
-                "script": "\tsystem.perspective.navigate(page='/settings')\n"
-              }
+                "path": "page.props.path"
+              },
+              "transforms": [
+                {
+                  "type": "expression",
+                  "expression": "if ({value} = {this.props.items[1].target}, \"roast-tab-active\", \"\")"
+                }
+              ]
             }
-          }
-        }
-      },
-      {
-        "type": "ia.input.button",
-        "meta": {
-          "name": "LogTab"
-        },
-        "props": {
-          "text": "Log",
-          "style": {
-            "classes": "roast-tab-btn"
-          }
-        },
-        "position": {
-          "grow": 1,
-          "shrink": 1,
-          "basis": "0px"
-        },
-        "events": {
-          "dom": {
-            "onClick": {
-              "scope": "G",
-              "type": "script",
+          },
+          "props.items[2].style.fontWeight": {
+            "binding": {
+              "type": "property",
               "config": {
-                "script": "\tsystem.perspective.navigate(page='/log')\n"
-              }
+                "path": "page.props.path"
+              },
+              "transforms": [
+                {
+                  "type": "expression",
+                  "expression": "if ({value} = {this.props.items[2].target}, \"bold\", \"normal\")"
+                }
+              ]
+            }
+          },
+          "props.items[2].style.classes": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "page.props.path"
+              },
+              "transforms": [
+                {
+                  "type": "expression",
+                  "expression": "if ({value} = {this.props.items[2].target}, \"roast-tab-active\", \"\")"
+                }
+              ]
             }
           }
         }

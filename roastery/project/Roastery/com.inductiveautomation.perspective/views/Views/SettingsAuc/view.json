@@ -11,7 +11,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "AucSection"
+      "name": "SettingsAucRoot"
     },
     "props": {
       "direction": "column",
