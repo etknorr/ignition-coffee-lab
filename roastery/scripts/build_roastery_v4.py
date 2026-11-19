@@ -7961,7 +7961,7 @@ def batches_panel_view():
                 classes='roast-gap-12')
     confirm_lbl = label('ConfirmLabel', '', 'roast-banner-text',
                         prop_config={'props.text': {'binding': expr_binding(
-                            "'Delete batch ' + {view.custom.selBatchNumber} + ' and its curve?'")}})
+                            "'Delete batch ' + {view.custom.selBatchNumber} + ', its curve and its press log?'")}})
     confirm_btn = button('ConfirmDeleteButton', 'Confirm Delete',
                          'roast-btn roast-btn-sm roast-btn-charge',
                          events=lib_event(

@@ -352,7 +352,7 @@ def main():
           and not hits and bogus >= 1
           and report['resources']['library_core']
           and report['resources']['library_batches']
-          and len(report['resources']['named_queries']) == 11
+          and len(report['resources']['named_queries']) == 12
           and report['resources']['roast_card_on_disk']
           and report['resources']['stylesheet_on_disk']
           and report['resources']['radius_offenders'] == []

@@ -485,7 +485,7 @@
                 "binding": {
                   "type": "expr",
                   "config": {
-                    "expression": "'Delete batch ' + {view.custom.selBatchNumber} + ' and its curve?'"
+                    "expression": "'Delete batch ' + {view.custom.selBatchNumber} + ', its curve and its press log?'"
                   }
                 }
               }

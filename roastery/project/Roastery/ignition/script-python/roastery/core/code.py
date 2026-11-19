@@ -10,6 +10,8 @@
 # B is the one CurrentBatch UDT instance; tag paths are built from it
 # in exactly one place.
 
+LOG = system.util.getLogger('roastery.core')
+
 B = '[default]Roastery/CurrentBatch'
 EVENTS_LOG = '[default]Roastery/EventsLog'
 CURVE_SAMPLES = '[default]Roastery/CurveSamples'
@@ -1469,6 +1471,38 @@ PRESS_RECONCILE_GRACE_SEC = 3.0
 PRESS_RECONCILE_HORIZON_SEC = 600.0
 PRESS_SLOT_COUNT = 16
 PRESS_SLOTS = '[default]Roastery/PressSlots'
+# Polish round 4 (HUNT-36): failure isolation. A named query
+# call against a faulted database connection can block for a
+# long timeout before it throws, so a reconcile pass that kept
+# trying slot after slot could stall a press handler for many
+# timeouts in a row, and a fault escaping record_press could
+# abort the caller's state transition entirely (the round 3
+# wedge: a Reset pressed into a faulted connection left
+# LastAction 'Reset' with State still Roasting). Two bounds:
+# a pass stops at its first database exception, and that
+# exception arms a module level backoff deadline; passes that
+# start before the deadline return at once with no database
+# calls at all. Together they bound the cost of a faulted
+# database to roughly one blocking call per backoff window
+# across every caller (record_press, the BeanTempF tick tail,
+# charge, and Save Batch), while the press ring keeps every
+# press's context in tags, so healing is just the next
+# successful pass inserting whatever the group missed.
+PRESS_DB_BACKOFF_SEC = 15.0
+_PRESS_DB_BACKOFF = {'until_ms': 0}
+
+
+def _press_db_backoff_active(now_ms):
+    return now_ms < _PRESS_DB_BACKOFF['until_ms']
+
+
+def _press_db_backoff_arm():
+    try:
+        now_ms = system.date.toMillis(system.date.now())
+    except Exception:
+        return
+    _PRESS_DB_BACKOFF['until_ms'] = (
+        now_ms + long(PRESS_DB_BACKOFF_SEC * 1000))
 
 
 def _press_slot_path(counter):
@@ -1481,7 +1515,7 @@ def _press_slot_write(counter, entry):
         system.tag.writeBlocking(
             [_press_slot_path(counter)],
             [system.util.jsonEncode(entry)])
-    except Exception:
+    except:
         # A missing tag tree (an older install) must not break
         # the press; the group path still applies there.
         pass
@@ -1516,12 +1550,23 @@ def reconcile_press_pending(min_age_sec=None):
     because the group normally writes within a scan or two;
     entries older than the horizon are out of the net.
     Returns the number of rows inserted. Never raises:
-    capture bookkeeping must not break a control."""
+    capture bookkeeping must not break a control.
+
+    Failure isolation (polish round 4, HUNT-36): the pass
+    fails fast. The first named query exception ends the
+    pass (no further database calls in it) and arms the
+    module level backoff; a pass that starts inside the
+    backoff window returns 0 at once with no database calls.
+    A pass that completes with no database exception clears
+    the backoff."""
     if min_age_sec is None:
         min_age_sec = PRESS_RECONCILE_GRACE_SEC
     try:
         now_ms = system.date.toMillis(system.date.now())
+        if _press_db_backoff_active(now_ms):
+            return 0
         inserted = 0
+        db_failed = False
         for e in _press_slot_contexts():
             age = (now_ms - long(e.get('at') or 0)) / 1000.0
             if age < min_age_sec or age > PRESS_RECONCILE_HORIZON_SEC:
@@ -1533,8 +1578,10 @@ def reconcile_press_pending(min_age_sec=None):
                         'press_counter': long(e['c'])})
                 if rows is not None and rows.getRowCount() > 0:
                     continue
-            except Exception:
-                continue
+            except:
+                _press_db_backoff_arm()
+                db_failed = True
+                break
             try:
                 system.db.runNamedQuery(NQ_EVENTS_INSERT, {
                     'batch_number': int(e['b']),
@@ -1546,16 +1593,51 @@ def reconcile_press_pending(min_age_sec=None):
                     'heat_level': int(e['h'] or 0),
                     'press_counter': long(e['c'])})
                 inserted += 1
-            except Exception:
-                pass
+            except:
+                _press_db_backoff_arm()
+                db_failed = True
+                break
+        if not db_failed:
+            _PRESS_DB_BACKOFF['until_ms'] = 0
         return inserted
-    except Exception:
+    except:
         return 0
 
 
 def record_press(action):
-    """Capture one control button press (Eric, 2026-11-12: the
-    button presses are the trigger). Every press bumps the
+    """Capture one control button press. Never raises (polish
+    round 4, HUNT-36): the state functions (charge, drop,
+    cool, finish, reset_batch, the steppers, the stamps) call
+    this in the middle of their transitions, and no capture
+    failure may abort or skip a state write again. A failure
+    is logged and the counter is returned when it is already
+    known (the bump landed), else 0.
+
+    The catch is a BARE except on purpose, here and in the
+    other press path catches below: runNamedQuery throws a
+    Java exception (FaultedDatabaseConnectionException) when
+    the connection is faulted, and a Java throwable is not a
+    Python Exception in Jython, so except Exception does not
+    catch it. That is exactly how the round 3 wedge escaped
+    the old code, proven by the gateway log tracebacks in
+    the round 4 fault drill: the fault tore through every
+    except Exception on the path and aborted the callers."""
+    known = [0]
+    try:
+        return _record_press_impl(action, known)
+    except:
+        try:
+            import sys as _sys
+            LOG.error('record_press failed for action %s: %s'
+                      % (action, _sys.exc_info()[1]))
+        except:
+            pass
+        return known[0]
+
+
+def _record_press_impl(action, known):
+    """The record_press body (Eric, 2026-11-12: the button
+    presses are the trigger). Every press bumps the
     ActionCounter trigger surface and stamps LastAction tags; in
     PressCaptureMode 'Library' the press row is also written to
     batch_events through the Events/InsertPress named query. In
@@ -1564,12 +1646,15 @@ def record_press(action):
     its context into the press ring for the reconcile net, so
     a group execution that lagged past the press cannot lose
     its row (polish round 3, HUNT-22; see the section note).
-    Returns the counter."""
+    Returns the counter. known is a one element holder the
+    wrapper reads on failure: it is set the moment the counter
+    is computed, before any write that could throw."""
     vals = read_members(['ActionCounter', 'BatchNumber', 'StartTime',
                          'BeanTempF', 'RateOfRiseF', 'FanLevel',
                          'HeatLevel', 'PressCaptureMode'])
     elapsed = elapsed_sec(vals['StartTime'])
     counter = int(vals['ActionCounter'] or 0) + 1
+    known[0] = counter
     write_members([('ActionCounter', counter), ('LastAction', action),
                    ('LastActionElapsedSec', elapsed),
                    ('LastActionAt', system.date.now())])
@@ -1584,14 +1669,19 @@ def record_press(action):
                 'fan_level': int(vals['FanLevel'] or 0),
                 'heat_level': int(vals['HeatLevel'] or 0),
                 'press_counter': counter})
-        except Exception:
+        except:
             # Capture must never break the control it rides on.
             pass
     else:
-        # Reconcile older slotted presses first (the BeanTempF
-        # tail, Charge and Save Batch run it too), then slot
-        # this press's context into its own ring slot.
-        reconcile_press_pending()
+        # Slot this press's own context into its ring slot
+        # BEFORE any database touch (polish round 4, HUNT-36):
+        # the slot write is a tag write and cannot block on
+        # the database, so the press's context is safe in the
+        # ring even if the reconcile below stalls or fails on
+        # a faulted connection. Then reconcile older slotted
+        # presses (the BeanTempF tail, Charge and Save Batch
+        # run it too); this press is inside the grace age, so
+        # the pass leaves it for the group as usual.
         _press_slot_write(counter, {
             'c': counter,
             'b': int(vals['BatchNumber'] or 0),
@@ -1602,6 +1692,7 @@ def record_press(action):
             'f': int(vals['FanLevel'] or 0),
             'h': int(vals['HeatLevel'] or 0),
             'at': system.date.toMillis(system.date.now())})
+        reconcile_press_pending()
     try:
         # A press can move fan or heat between temperature
         # changes; refresh the chart dataset so the levels strip

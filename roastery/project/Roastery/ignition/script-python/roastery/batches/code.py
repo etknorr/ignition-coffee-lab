@@ -19,6 +19,18 @@
 #   JSON array parameter unpacked in SQL). View as Background reads
 #   the series back through Series/SelectByBatch, so every batch
 #   carries its own curve like an Artisan roast file.
+# - batch_events: one row per control press keyed by batch_number,
+#   written live during a roast by the PressEvents transaction
+#   group (and the library reconcile) through Events/InsertPress.
+#   It deliberately has NO foreign key to batches: presses are
+#   captured for the working batch number before any batches row
+#   exists (the row lands only at Save Batch), so an FK would
+#   break live press capture. Deleting a batch therefore removes
+#   its press rows explicitly in delete_batch (HUNT-35, polish
+#   round 4): the saved batch document already snapshots the
+#   press events at save time, and no surface reads batch_events
+#   rows for a batch that no longer exists, so rows left behind
+#   would be pure orphans.
 
 import math
 
@@ -32,6 +44,7 @@ NQ_DELETE = 'Roastery/Batches/Delete'
 NQ_SERIES_INSERT = 'Roastery/Series/InsertBatch'
 NQ_SERIES_SELECT = 'Roastery/Series/SelectByBatch'
 NQ_EVENTS_SELECT = 'Roastery/Events/SelectByBatch'
+NQ_EVENTS_DELETE = 'Roastery/Events/DeleteByBatch'
 NQ_MAX_NUMBER = 'Roastery/Batches/SelectMaxNumber'
 
 SELECTED_TAG = '[default]Roastery/SelectedBatchNumber'
@@ -252,7 +265,25 @@ def get_batch(batch_number):
 
 
 def delete_batch(batch_number):
-    """Delete named query; batch_series rows cascade in Postgres."""
+    """Delete a saved batch and everything keyed by its number.
+
+    Series rows cascade in Postgres (batch_series has a real FK
+    ON DELETE CASCADE). Press rows cannot cascade that way:
+    batch_events has no FK to batches, because presses are
+    written during a roast for a batch_number that has no
+    batches row until Save Batch, so an FK would break live
+    press capture. They are deleted explicitly here, first,
+    through Events/DeleteByBatch (HUNT-35, polish round 4).
+    The decision to cascade rather than keep an audit trail:
+    the saved batch document already snapshots the press
+    events at save time, and no surface reads batch_events
+    rows for a batch that no longer exists, so orphaned rows
+    would be pure leftovers; the snapshotted events die with
+    the batch row itself. If the events delete throws, the
+    error propagates and the batch is NOT deleted, rather
+    than deleting the batch and stranding the rows silently.
+    """
+    _run(NQ_EVENTS_DELETE, {'batch_number': int(batch_number)})
     return _run(NQ_DELETE, {'batch_number': int(batch_number)})
 
 
@@ -294,39 +325,67 @@ def _insert_series(batch_number, points):
 def save_current_batch(self):
     """Summary view Save button: persist the finished roast through
     the Insert named query, then its recorded curve through
-    Series/InsertBatch."""
-    vals = core.read_members(['BatchNumber', 'BeanName', 'ChargeTime',
-                              'DropTime', 'DropTempF'])
-    if get_batch(vals['BatchNumber']) is not None:
-        self.view.custom.saveNote = (
-            'Batch %d is already in the log. Start a New Roast for '
-            'a fresh batch number, or edit the saved batch from '
-            'the Log tab.' % vals['BatchNumber'])
+    Series/InsertBatch.
+
+    Failure containment (polish round 4, HUNT-36): the whole
+    database section is wrapped, so a faulted connection does
+    not throw out of the handler. The failure is reported in
+    the save note and as an error toast, and the function
+    returns None. The first call (get_batch) throws before
+    any write when the fault is already present at entry, so
+    nothing is half written in that case and a retry once the
+    connection heals saves completely; when a save did land,
+    the already saved guard below still answers the retry."""
+    number = None
+    try:
+        vals = core.read_members(['BatchNumber', 'BeanName', 'ChargeTime',
+                                  'DropTime', 'DropTempF'])
+        number = vals['BatchNumber']
+        if get_batch(vals['BatchNumber']) is not None:
+            self.view.custom.saveNote = (
+                'Batch %d is already in the log. Start a New Roast for '
+                'a fresh batch number, or edit the saved batch from '
+                'the Log tab.' % vals['BatchNumber'])
+            return vals['BatchNumber']
+        # A saved batch's press rows must be complete: settle any
+        # press the transaction group missed before the document
+        # lands (polish round 3, HUNT-22). A short grace is enough
+        # here; the group writes inside a second in the normal
+        # case, and Save follows the last press by seconds.
+        core.reconcile_press_pending(1.0)
+        doc = build_document()
+        _run(NQ_INSERT, {
+            'batch_number': vals['BatchNumber'],
+            'roast_start': vals['ChargeTime'],
+            'roast_end': vals['DropTime'],
+            'bean_name': vals['BeanName'],
+            'drop_temp_f': vals['DropTempF'],
+            'data': system.util.jsonEncode(doc)})
+        _insert_series(vals['BatchNumber'], core.curve_points())
+        # The staged BBP metrics were written into this batch
+        # document by build_document; consume them so a later
+        # save cannot inherit them (Tier 3 item 20).
+        core.bbp_clear_staged()
+        core.record_press('Save Batch')
+        self.view.custom.saveNote = 'Saved batch %d to the database.' % vals['BatchNumber']
+        core.show_toast(self, 'Batch %d saved' % vals['BatchNumber'],
+                        'success')
         return vals['BatchNumber']
-    # A saved batch's press rows must be complete: settle any
-    # press the transaction group missed before the document
-    # lands (polish round 3, HUNT-22). A short grace is enough
-    # here; the group writes inside a second in the normal
-    # case, and Save follows the last press by seconds.
-    core.reconcile_press_pending(1.0)
-    doc = build_document()
-    _run(NQ_INSERT, {
-        'batch_number': vals['BatchNumber'],
-        'roast_start': vals['ChargeTime'],
-        'roast_end': vals['DropTime'],
-        'bean_name': vals['BeanName'],
-        'drop_temp_f': vals['DropTempF'],
-        'data': system.util.jsonEncode(doc)})
-    _insert_series(vals['BatchNumber'], core.curve_points())
-    # The staged BBP metrics were written into this batch
-    # document by build_document; consume them so a later
-    # save cannot inherit them (Tier 3 item 20).
-    core.bbp_clear_staged()
-    core.record_press('Save Batch')
-    self.view.custom.saveNote = 'Saved batch %d to the database.' % vals['BatchNumber']
-    core.show_toast(self, 'Batch %d saved' % vals['BatchNumber'],
-                    'success')
-    return vals['BatchNumber']
+    except:
+        # Bare except on purpose (polish round 4, HUNT-36):
+        # runNamedQuery throws a Java exception on a faulted
+        # connection, which except Exception does not catch
+        # in Jython (see roastery.core.record_press).
+        msg = ('Save failed: batch %s was not saved. The database '
+               'connection failed, so nothing was written. Try '
+               'again once the connection is back.'
+               % (number if number is not None else '?'))
+        try:
+            self.view.custom.saveNote = msg
+        except:
+            pass
+        core.show_toast(self, msg, 'error')
+        return None
 
 
 
@@ -567,8 +626,9 @@ def arm_delete(self):
     if number <= 0:
         return
     self.view.custom.confirmDelete = True
-    self.view.custom.selNote = ('Delete batch %d and its curve? '
-                                'Press Confirm Delete to proceed.' % number)
+    self.view.custom.selNote = ('Delete batch %d, its curve and its '
+                                'press log? Press Confirm Delete to '
+                                'proceed.' % number)
 
 
 def cancel_delete(self):

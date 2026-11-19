@@ -1,0 +1,30 @@
+{
+  "scope": "G",
+  "version": 2,
+  "restricted": false,
+  "overridable": true,
+  "files": [
+    "query.sql"
+  ],
+  "attributes": {
+    "type": "UpdateQuery",
+    "database": "db",
+    "parameters": [
+      {
+        "type": "Parameter",
+        "identifier": "batch_number",
+        "sqlType": 2
+      }
+    ],
+    "permissions": [],
+    "enabled": true,
+    "fallbackEnabled": false,
+    "fallbackValue": "",
+    "description": "Roastery v3",
+    "useMaxReturnSize": false,
+    "maxReturnSize": 1000,
+    "cacheEnabled": false,
+    "cacheAmount": 1,
+    "autoBatchEnabled": false
+  }
+}

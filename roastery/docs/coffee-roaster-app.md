@@ -4702,3 +4702,341 @@ round end.
 4. The packaged Docker boot test on Eric's machine or
    homelab (still the one parity era item only he can
    run).
+
+## Polish round 4 (2026-11-19)
+
+Round 4 took the two findings round 3 held: HUNT-36
+first (failure isolate the press capture path from the
+state machine, with a faulted database drill as the
+regression), then HUNT-35 (the batch delete cascade
+decision), then a fresh hunting pass (HUNT-37 to
+HUNT-40) across the surfaces rounds 1 to 3 changed
+most, and the full closing battery. During the round,
+Eric approved pushing rounds 1 to 3, and their content
+went to GitHub in four connector commits (b2908f0,
+13deca8, 2c4a23b, 606235a on top of 6f05c2e, 77 paths,
+no deletions, verified by reading the docs back at the
+new head). Round 4's own commits are local. One VM
+replacement interrupted the round between items 1 and
+2; recovery followed the established pattern and the
+trial reset automation covered the trial throughout.
+
+### Item 1: HUNT-36 resolved, press capture failure isolated
+
+Round 3's wedge, restated: a press handler that hits a
+faulted database connection mid flight can leave the
+press stamped but the state transition unwritten (a
+Reset during a faulted window left LastAction 'Reset'
+with State still Roasting, recovered by hand at the tag
+layer). The drill's first run found the mechanism, and
+it is sharper than the round 3 note supposed: on this
+build, system.db.runNamedQuery against a faulted
+connection throws a Java exception
+(FaultedDatabaseConnectionException over a PSQLException:
+Connection refused), and a Java throwable is NOT a
+Python Exception in Jython, so it tears through every
+except Exception on the path. That is how it escaped
+the capture code's existing guards and aborted the
+caller's state write, and why the faulted Save in drill
+run 1 never set its note. Every isolation catch on the
+press and save paths is therefore a BARE except:, with
+the evidence recorded in a comment at record_press.
+(A live probe with Postgres stopped then proved the
+point: reset_batch completed in 0.7 s with State Idle
+and LastAction 'Reset'.)
+
+The isolation, all in roastery.core unless noted:
+
+- record_press is split into a public wrapper and
+  _record_press_impl. The wrapper catches everything,
+  logs through the new module logger
+  (system.util.getLogger('roastery.core')), and returns
+  the counter from a holder the impl fills the moment
+  the counter is computed, else 0. No capture failure
+  can abort charge, drop (via _stamp), cool, finish,
+  reset_batch, stepper, or stamp_custom again.
+- In the Group branch the press's own ring slot is now
+  written BEFORE any database touch (the slot write is
+  a tag write and cannot block on the connection), then
+  reconcile runs; the new press sits inside its grace
+  age, so the pass leaves it for the group as before.
+- reconcile_press_pending fails fast and backs off: the
+  first named query exception in a pass arms a module
+  level backoff (PRESS_DB_BACKOFF_SEC 15.0) and ends
+  the pass with no further database calls; a pass that
+  starts before the deadline returns 0 without touching
+  the database; a pass that completes with no database
+  exception clears it. A faulted connection now costs
+  roughly one blocking call per backoff window across
+  all callers (record_press, the BeanTempF tick tail,
+  charge, save). Grace (3 s) and horizon (600 s)
+  semantics and the never raises contract are unchanged.
+- save_current_batch (roastery.batches): the whole
+  database section sits under the same bare catch. On
+  failure it sets saveNote to a plain message (the
+  batch was not saved, the database connection failed,
+  nothing was written, try again once the connection
+  is back), fires that message as an error toast, and
+  returns None. The successful path, including the
+  already saved guard, is unchanged; the get_batch
+  check still runs first, so a fault present at entry
+  means nothing was written and a retry after the
+  connection heals saves completely.
+- The rest of the stamp path was audited: append_log
+  writes only the EventsLog dataset tag, and the only
+  runNamedQuery sites in core are reconcile's select
+  and insert and the Library mode insert in
+  record_press. Nothing else in _stamp, charge, drop,
+  cool, finish, reset_batch, or stepper touches the
+  database outside record_press, reconcile, and save.
+
+One operational fact the drill established: after
+Postgres restarts, psql answers at once but the
+gateway's own connection stays FAULTED for a variable
+while (a retry about 150 s after a psql healthy restart
+still hit FaultedDatabaseConnectionException). The
+drill therefore waits on a gateway side probe (a
+SelectByCounter named query driven through a probe tag
+script) after each restart, not on psql health.
+
+Regression: verify_roastery_pressfault.py, ALL PRESS
+FAULT CHECKS PASSED. Sequence A (save containment):
+roast to Complete on batch 1049 (counters 3059 to
+3065, each exactly once), cluster stopped, the faulted
+Save showed its failure note in 2.1 s with State still
+Complete; after restart and gateway health, no batch
+or series rows existed for 1049; the retry saved
+completely (5 series rows, Save Batch press at 3066),
+and the batch ended with exactly 8 press rows, one per
+press, counters unique. Sequence B (the wedge itself):
+scratch batch 9917, Charge healthy, cluster stopped,
+then while faulted Dry End, Fan +1, FC Start, FC End,
+Drop, Cool, Finish, Reset (the phase aware dock offers
+no Drop before FC End, so the two crack stamps are the
+faulted prerequisites, in the task's order otherwise):
+every stamp and every state transition landed, State
+Dropped, Cooling, Complete, then Idle with LastAction
+'Reset', and ActionCounter advanced exactly once per
+press (3069 to 3076). Healing: after restart, a Charge
+and two more presses triggered the reconcile net, and
+polling showed every faulted counter with exactly one
+batch_events row, the Reset row included, no duplicates
+after further reconcile triggers. verify_roastery_
+pressburst.py passed twice consecutively on the final
+design, and tier1 passed 42 of 42 in this item's runs.
+
+### HUNT-35 resolved: batch delete cascades to press rows
+
+Decision: deleting a batch deletes its batch_events press
+rows too. The rationale: the saved batch document already
+snapshots the press events at save time, and no surface
+reads batch_events rows for a batch that no longer exists,
+so orphaned rows are pure leftovers, not an audit trail
+worth keeping.
+
+A schema level FK cascade is NOT viable and was not
+added: press rows are written during a roast for a
+batch_number that has no row in batches until Save Batch,
+so an FK from batch_events to batches would break live
+press capture. The cascade therefore lives in the delete
+flow, next to the existing series behavior (batch_series
+has a real FK ON DELETE CASCADE). Implementation:
+roastery.batches.delete_batch runs the new named query
+Roastery/Events/DeleteByBatch first, then
+Roastery/Batches/Delete; if the events delete throws, the
+error propagates and the batch is not deleted, rather
+than stranding the rows silently. The Log page delete
+confirm text now names the press log alongside the curve.
+Regression: verify_roastery_deletecascade.py drives the
+real Log page delete and asserts the fixture batch's
+series and press rows are gone, a control batch is
+untouched, and press rows for a batch number with no
+batches row (the live roast case) survive other deletes
+and can still be inserted (15 checks, all passed). One
+suite hygiene note: verify_roastery_tier1.py deletes
+its own test batch with raw psql, bypassing the app
+delete flow, so its press rows still appear as residue
+after a tier1 run and are cleaned by hand; that is test
+scaffolding behavior, not an app gap, and the cascade
+itself is proven through the real delete above.
+
+### Item 3: the HUNT-37 onward hunting pass
+
+Fresh eyes across the round 4 scopes, driven by
+verify_roastery_r4hunt_a.py through _e.py (screenshots
+r4hunt- in the lab showcase/shots). One roast stamped
+Dry End, Fan Boost, FC Start, Drum Note and FC End two
+seconds apart (elapsed 5, 6, 8, 9, 10 s) and was saved
+as fixture batch 9919 for the detail checks, then
+deleted through the app. The seek pass dropped at
+program second 352 (temp 333.2 F, cooling target 785)
+and pressed Cool and Fan +1 during the seek.
+
+Clean, with evidence: the live chart in both themes at
+desktop and 360px (labels suppress rather than collide:
+the reflines probe returned six lines with exactly the
+CHARGE label visible, the settled top_gap design; tick
+labels sparse and legible; legend clear of the axis);
+the App Settings dock mid roast (content rect identical
+before, during and after, 920 by 748 at x 20 y 176; the
+dock clamps to the 360px viewport; theme walk System to
+Dark to Light to System to Dark recolored the chart
+each time with the roast undisturbed, ActionCounter
+unchanged; after Close the dock sits fully off viewport
+at x equal to the viewport width); the seek pass (nine
+presses, nine batch_events rows, every action exactly
+once, the mid seek Cool and Fan +1 included; seek landed
+at counter 788 in Cooling); the Log in both column sets
+at desktop and 360px (stub markers, compare staging
+with its caption, the phone All columns toggle); the
+Settings sections at 360px (every card scrollWidth equal
+to clientWidth, both visible tables 284 of 284, no stray
+checkbox labels, Alarms editor and Custom Events and
+Targets and Background all inspected); toasts (the
+Settings background failure toast and the Log import
+failure toast both fire within 0.3 s of the upload, the
+HUNT-29 fix verified live; part B's earlier miss was a
+harness timing artifact, and the file upload component
+modal that blocked its clicks is stock small viewport
+component behavior that dismisses on one backdrop tap);
+the HUD RoR reading of two dashes during the post
+charge dip (the settled Artisan gating in
+ror_display_text, not a defect).
+
+- HUNT-37 (minor, held): on BatchDetail a short batch
+  reads mostly empty chart. The detail grid floors at
+  DETAIL_MIN_SPAN_SEC 600 (the round 2 tick span fix),
+  so fixture 9919 (43 s, events at 0, 5, 6, 8, 9, 10,
+  42, 43 s) plots across a 0:00 to 9:54 axis with the
+  curve in the first tenth, and detail_reference_lines
+  uses the live chart's 55 s label gap from CHARGE, so
+  all seven later event lines render unlabeled. Nothing
+  overlaps and the events timeline names every event,
+  but the chart itself communicates little on short
+  batches. Held: both constants are deliberate round 2
+  and 3 settlements (HUNT-10's smear sits on the other
+  side), so the right fix is a product call, scaling
+  the floor and the gap to the staged span (for
+  example floor at the larger of 180 s and the batch
+  extent, gap proportional to span), then re-proving
+  tick legibility at 360px. Evidence:
+  r4hunt-detail-close-desktop-light.png,
+  r4hunt-detail-close-360-light.png.
+- HUNT-38 (minor, held): theme changes do not reach
+  already open sessions. ThemeMode is applied at
+  session startup and by the session's own App Settings
+  buttons; writing Dark from elsewhere left a watched
+  session at container #F4F4F4 (light) indefinitely,
+  and that session's App Settings panel showed Dark
+  selected while rendering light
+  (r4hunt-appsettings-360-dark.png,
+  r4hunt-xsession-after-dark-write.png). With the
+  phone plus desktop two session pattern this leaves
+  the devices in different themes until a reload.
+  Held: the theme plumbing is settled round 1 to 3
+  work with a verified polish2 matrix; the fix (a
+  reactive session binding on ThemeMode, or the panel
+  reflecting the session's actual theme instead of
+  the tag) deserves its own item, not a mid hunt edit.
+- HUNT-39 (cosmetic, held): the custom event buttons
+  wrap their labels to two lines (Custom 3, Custom 4,
+  Drum Note) in the desktop Controls rail and the
+  phone dock. The text stays inside the buttons and
+  nothing overlaps; it reads as a nit next to the
+  single line primary labels. Held: shrinking the
+  shared button text or widening the repeater buttons
+  is a design call. Evidence:
+  r4hunt-close-live-desktop-light.png,
+  r4hunt-close-live-360-light.png.
+- HUNT-40 (minor, fixed): arming a Log delete showed
+  two prompts at once with different wording: the red
+  confirm banner read 'Delete batch N and its curve?'
+  while the note under it read 'Delete batch N, its
+  curve and its press log? Press Confirm Delete to
+  proceed.' The banner beside the Confirm button was
+  the one omitting the press log, partially undoing
+  the HUNT-35 wording. Fix: the banner's expression
+  in Views/BatchesPanel now names the press log too
+  (gateway and repo view.json, and the same string in
+  both build_roastery_v4.py copies so a rebuild keeps
+  it). Proof: r4hunt-delete-armed-desktop.png after
+  the fix shows banner and note in agreement;
+  validate_roastery_artisan.py VALIDATION PASS and
+  verify_roastery_deletecascade.py ALL CHECKS PASSED
+  with the change in place.
+
+The lab was left clean: database 7 batches, 101
+series, 0 events; CurrentBatch Idle, Fan 5, Heat 5,
+BatchNumber 1042, ThemeMode System, DispAxisFormat
+m:ss, PeriscopeAvailable True, PressEvents proven
+writing at the end state, press slots cleared,
+simulator parked (Pause true, counter 0, base rate
+1000, probe at the 392 F plateau).
+
+### Verification
+
+The closing battery ran standalone per suite on the
+final build (logs in the lab battery_logs/r4close-*
+set). No regression in the axis, dark mode, or slide
+over work: dark passed clean, every functional axis
+check passed (all three timezone shots and the mm:ss
+format shot), and polish2's App Settings flows passed
+against the dock. No VM replacement interrupted the
+battery; the pressfault suite stopped and restarted
+Postgres itself, by design.
+
+| Suite | Result |
+| --- | --- |
+| validate_roastery_artisan.py | VALIDATION PASS (29 views served, all deep equal, no Roastery warnings) |
+| validate_chartlab.py (gateway-2027-maker) | VALIDATION PASS |
+| verify_roastery_ror.py | 6 PASS, 0 FAIL, 1 designed SKIP (live window not on a steady ramp segment; the offline proof is the authority), ALL ROR CHECKS PASSED |
+| verify_roastery_pressburst.py | 6 PASS, 0 FAIL, ALL PRESS BURST CHECKS PASSED (11 bumps, 11 rows) |
+| verify_roastery_pressfault.py | Run 1: 60 PASS, 2 FAIL, both in sequence A's row accounting: one extra Reset row at the counter immediately before the driven Charge, traced to the suite's own setup and New Roast flow landing under the fresh batch number. Run 2, identical procedure: 62 PASS, 0 FAIL, ALL PRESS FAULT CHECKS PASSED, rows exactly matching the driven presses. Judged a harness attribution flake on that evidence; every fault, heal, and state check passed in both runs |
+| verify_roastery_deletecascade.py | 15 PASS, 0 FAIL, ALL DELETE CASCADE CHECKS PASSED |
+| verify_roastery_axis.py | 11 PASS, 1 FAIL: the documented BatchDetail shot harness flake, this time the Log row click before the shot timing out under load (the dark suite hit the identical click timeout in the same spot and its detail check passed). All timezone and format shots passed and the suite's closing checks (lab Idle, clean, format and theme restored) all passed |
+| verify_roastery_dark.py | 10 PASS, 0 FAIL, ALL DARK MODE CHECKS PASSED |
+| verify_roastery_tier1.py | 42 PASS, 0 FAIL, ALL TIER 1 CHECKS PASSED (its psql cleanup left 11 press rows, cleaned between suites; see the HUNT-35 suite hygiene note) |
+| verify_roastery_tier2.py | 87 PASS, 0 FAIL, ALL TIER 2 CHECKS PASSED on the first run (the documented starting count race did not occur) |
+| verify_roastery_tier3a.py | 40 PASS, 0 FAIL, ALL TIER 3A CHECKS PASSED |
+| verify_roastery_tier3b.py | 47 PASS, 0 FAIL, ALL TIER 3B CHECKS PASSED (the documented reload recovery fired once, in the final walk's Finish step, and the retry passed) |
+| verify_roastery_tier3c.py | 67 PASS, 0 FAIL, ALL TIER 3C CHECKS PASSED |
+| verify_roastery_v4.py | 59 PASS, 0 FAIL, ALL CHECKS PASSED, matching round 3's closing count (the documented reload recovery fired once in the dark pass) |
+| verify_roastery_polish1.py | 46 PASS, 0 FAIL, ALL POLISH ROUND 1 CHECKS PASSED |
+| verify_roastery_polish2.py | 65 PASS, 0 FAIL, ALL POLISH2 CHECKS PASSED, including the App Settings flows against the slide over dock |
+| verify_roastery_polish3.py | Run 1 crashed after 29 PASS, 0 FAIL at the kill switch editor save (the documented aged session stall: editor Save Batch never enabled), leaving PeriscopeAvailable False; tag restored and run 2: 37 PASS, 0 FAIL, ALL CHECKS PASSED |
+| verify_roastery_round3_views.py | 6 PASS, 0 FAIL, ALL ROUND 3 VIEW CHECKS PASSED |
+| verify_roastery_round3_passes.py | 15 PASS, 0 FAIL, ALL ROUND 3 MANUAL PASS CHECKS PASSED |
+
+The lab was left clean at the end of the battery:
+database 7 batches, 101 series, 0 events; CurrentBatch
+Idle, BatchNumber 1042, Fan 5, Heat 5, ActiveSource
+Simulated, ThemeMode System, DispAxisFormat m:ss,
+PeriscopeAvailable True, PressCaptureMode Group,
+background cleared, all 16 press slots empty,
+simulator parked. PressEvents is RUNNING by functional
+proof across the battery (pressburst's 11 bumps landed
+as 11 group rows; tier3b's through the group check and
+polish3's post restart write check both passed); the
+beta REST API exposes no transaction group status
+endpoint to quote directly.
+
+### Round 5 candidates
+
+1. HUNT-37: scale the BatchDetail span floor and the
+   event label gap to the staged span, so short
+   batches read as charts instead of mostly empty
+   axes, then re-prove tick legibility at 360px.
+2. HUNT-38: theme changes reaching already open
+   sessions (a reactive session binding on ThemeMode,
+   or the App Settings panel reflecting the session's
+   actual theme), for the phone plus desktop two
+   session pattern.
+3. HUNT-39: the custom event buttons' two line labels
+   (a design call: shared button text size versus
+   wider repeater buttons).
+4. The timezone TIME axis retest on the next Ignition
+   beta (the passthrough candidates from round 2); the
+   shipped category axis stays regardless.
+5. The packaged Docker boot test on Eric's machine or
+   homelab (still the one parity era item only he can
+   run).
