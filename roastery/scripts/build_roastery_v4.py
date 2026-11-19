@@ -2164,9 +2164,115 @@ def charge():
 
 
 
+
+# ------------------------------------------------------- cooling seek
+# Polish round 2: on DROP the stepped simulator program has
+# no seek of its own (the Program Counter meta node is read
+# only on this device build; writes are ignored, proven
+# live), so drop() fast forwards the program through the
+# Base Rate meta node to the cooling row aligned with the
+# actual bean temp at drop, before the between batch window
+# opens. The deployed library (roastery/core/code.py in the
+# project) carries this inside its full simulator glue
+# section with the SIM_* constants; this builder copy is
+# self contained with literal tag paths because the builder
+# core snapshot predates that section. Same rule: the
+# declining cooling segment (program seconds 720 to 785)
+# declines monotonically, the aligned row is the first row
+# at or below the drop temp, clamped to the bottom row.
+
+_SIM_COOL_POINTS = [(720, 417.3), (725, 411.1), (730, 402.8),
+                    (735, 395.3), (740, 387.3), (745, 378.5),
+                    (750, 370.0), (755, 363.1), (760, 358.3),
+                    (765, 355.4), (770, 351.9), (775, 349.2),
+                    (780, 344.8), (785, 342.9)]
+
+
+def _sim_cool_target_sec(drop_temp):
+    try:
+        dt = float(drop_temp)
+    except Exception:
+        return 720
+    pts = _SIM_COOL_POINTS
+    if dt >= pts[0][1]:
+        return pts[0][0]
+    for i in range(len(pts) - 1):
+        t0, v0 = pts[i]
+        t1, v1 = pts[i + 1]
+        if v1 <= dt <= v0:
+            for s in range(t0, t1 + 1):
+                v = v0 + (v1 - v0) * float(s - t0) / float(t1 - t0)
+                if v <= dt:
+                    return s
+            return t1
+    return 785
+
+
+def sim_seek_cooling(drop_temp):
+    """Simulated source only, fully guarded; restores the
+    Fan and Heat base rate and reseeds the live RoR buffer."""
+    try:
+        if read_members(['ActiveSource'])['ActiveSource'] \
+                != 'Simulated':
+            return
+    except Exception:
+        return
+    try:
+        counter = '[default]Roastery/SimProgramCounter'
+        pause = '[default]Roastery/SimPause'
+        rate = '[default]Roastery/SimBaseRate'
+        target = _sim_cool_target_sec(drop_temp)
+        cur = system.tag.readBlocking([counter])[0].value
+        if cur is None or int(cur) >= target:
+            return
+        vals = read_members(['FanLevel', 'HeatLevel'])
+        speed = 1.0 + 0.06 * (int(vals['HeatLevel'] or 5) - 5) \
+            - 0.035 * (int(vals['FanLevel'] or 5) - 5)
+        speed = max(0.6, min(1.45, speed))
+        restore_ms = max(650, min(1700, int(round(
+            1000.0 / speed / 10.0) * 10)))
+        from java.lang import Thread
+        # Two stages (bulk at 25 ms, approach at 150 ms for
+        # the last 45 intervals): at the 5 ms device floor the
+        # program runs about 150 intervals per second and a
+        # polling loop overshoots by hundreds (proven live).
+        # A counter wrap aborts the seek.
+        system.tag.writeBlocking([pause, rate], [False, 25])
+        try:
+            waited = 0.0
+            approach_at = target - 45
+            in_approach = False
+            last_pc = int(cur)
+            while waited < 60:
+                Thread.sleep(50)
+                waited += 0.05
+                pc = system.tag.readBlocking([counter])[0].value
+                if pc is None:
+                    continue
+                pc = int(pc)
+                if pc < last_pc:
+                    break
+                last_pc = pc
+                if pc >= target:
+                    break
+                if not in_approach and pc >= approach_at:
+                    in_approach = True
+                    system.tag.writeBlocking([rate], [150])
+        finally:
+            system.tag.writeBlocking([rate], [restore_ms])
+        write_members([('_RoRLiveJson', '')])
+    except Exception:
+        pass
+
+
 def drop():
     _stamp('Drop', 'Drop')
     write_members([('State', 'Dropped'), ('Mode', 'Cool')])
+    # Align the simulator cooling curve with this actual drop
+    # (Simulated source only, no-op otherwise), BEFORE the
+    # between batch window opens, so the window captures the
+    # aligned cooling and never the seek fast forward.
+    sim_seek_cooling(read_members(['BeanTempF'])['BeanTempF'])
     # The between batch window opens at DROP (Tier 3 item 20).
     _bbp_start_window()
     build_overlays()
@@ -2834,6 +2940,21 @@ def theme_toggle(self):
     new = 'light' if cur == 'dark' else 'dark'
     self.session.props.theme = new
     self.view.custom.themeText = new.capitalize()
+
+
+def toggle_all_cols(self):
+    """Phone column sets (polish round 2, HUNT-13): flip the
+    calling view's showAllCols custom prop. The wide tables
+    (Log, Alarms, Phase Analysis) carry a reduced phone set
+    and a full set in a phone only wrapper; its toggle button
+    swaps which one shows. The advanced stylesheet never
+    renders the wrapper at desktop widths, so this only ever
+    fires from a phone width session."""
+    try:
+        cur = self.view.custom.showAllCols
+    except Exception:
+        cur = False
+    self.view.custom.showAllCols = not bool(cur)
 '''
 
 BATCHES_CODE = '''# Roastery batch persistence: full CRUD for previous batches in
@@ -2878,6 +2999,16 @@ DETAIL_DS = '[default]Roastery/DetailDS'
 DETAIL_MARKS = '[default]Roastery/DetailMarksDS'
 DETAIL_JSON = '[default]Roastery/DetailDocJson'
 DETAIL_REFRESH_MESSAGE = 'roastery-detail-refresh'
+# Detail chart minimum x span in seconds (polish round 2
+# item 6): the canvas time axis picks its tick label format
+# from the axis span, and a very short batch (the seeded
+# batch 1042 spans about 20 s) landed in the hour:minute:
+# second regime while the live chart reads minute:second.
+# detail_startup floors the chart max at this span so short
+# batches render in the same regime as the live chart;
+# longer batches keep their natural end. Sized empirically
+# against the rendered ticks on batch 1042.
+DETAIL_MIN_SPAN_SEC = 600
 
 BACKGROUND_LABEL = '[default]Roastery/BackgroundLabel'
 ROASTLOG_TAG = '[default]Roastery/RoastLog'
@@ -3324,7 +3455,7 @@ def refresh_table(self):
     if table is None:
         # getChild returns None (does not raise) when the child is
         # not under this component; resolve from the view root.
-        table = self.view.getChild('root').getChild('BatchTable')
+        table = self.view.getChild('BatchesPanelRoot').getChild('BatchTable')
     table.refreshBinding('props.data')
 
 
@@ -3359,9 +3490,9 @@ def editor_refresh(self):
     self.view.custom.editorTitle = ('New Batch' if create else
                                     'Edit Batch %d' % number)
     self.view.custom.editNote = ''
-    root = self.getChild('root')
+    root = self.getChild('BatchEditRoot')
     if root is None:
-        root = self.view.getChild('root')
+        root = self.view.getChild('BatchEditRoot')
     root.getChild('BatchForm').props.data = edit_form_data_for(self)
 
 
@@ -3479,9 +3610,9 @@ def compare_startup(self):
     """BatchesPanel onStartup: fill the three compare pickers
     and default A and B to the two newest batches."""
     opts = compare_options()
-    root = self.getChild('root')
+    root = self.getChild('BatchesPanelRoot')
     if root is None:
-        root = self.view.getChild('root')
+        root = self.view.getChild('BatchesPanelRoot')
     for slot in COMPARE_SLOTS:
         root.getChild('CompareRow').getChild(
             'Cmp' + slot).props.options = opts
@@ -4166,6 +4297,11 @@ def detail_startup(self):
     self.view.custom.subText = '%s - %s' % (
         (doc.get('roastStart') or '')[:16].replace('T', ' '),
         doc.get('roastDegree') or '')
+    # HUNT-24 (polish round 2 hunt): a seeded stub batch carries
+    # a seedNote in its document (HUNT-16); surface it on the
+    # detail page so the stub analytics are not read as a real
+    # roast. Empty for normal batches, and the label hides.
+    self.view.custom.dSeedNote = doc.get('seedNote') or ''
     self.view.custom.dTotal = _mmss(doc.get('totalSec'))
     self.view.custom.dDtr = ('%.1f%%' % phases['dtrPct']
                              if phases.get('dtrPct') is not None
@@ -4218,6 +4354,17 @@ def detail_startup(self):
     except Exception:
         pts = []
     pts.sort()
+    # Detail chart max (polish round 2 item 6): floor the
+    # axis span at DETAIL_MIN_SPAN_SEC so a very short batch
+    # renders minute:second ticks like the live chart; the
+    # DetailChart xAxis max binds this custom prop. The min
+    # stays at axis base + 1000 in the view.
+    _end_sec = float(doc.get('totalSec') or 0)
+    if pts:
+        _end_sec = max(_end_sec, pts[-1][0])
+    _span_sec = max(_end_sec, float(DETAIL_MIN_SPAN_SEC))
+    self.view.custom.detailMaxMs = (
+        core.AXIS_BASE_MS + long(_span_sec * 1000) + 1000)
     seg_rows, tp_text, extra = _phase_analysis(doc, pts)
     self.view.custom.analysisDs = system.dataset.toDataSet(
         ['phase', 'time', 'share', 'gain', 'avgRor', 'auc'],
@@ -4343,7 +4490,21 @@ def seed_from_roastlog():
     seededFromRoastLog and originalBatchNumber. Curve points come
     from the stored curveJson ([seconds, temp] pairs); rate of rise
     is derived by finite difference; fan and heat were not recorded
-    in v2 and stay null. Returns the number of batches inserted."""
+    in v2 and stay null. Returns the number of batches inserted.
+
+    HUNT-16 (polish round 2): stub rows gain a seedNote. A source
+    row is a stub when totalSec is under 60 and drySec is 0: it
+    never recorded even the first phase, so it is a short test
+    artifact from early development, not a full roast record.
+    Rows 4 to 7 of the legacy tag are exactly that (9 s each,
+    drySec 0, the same drop temp repeated); rows 1 to 3 are short
+    test roasts too (18 to 19 s) but carry complete phase splits
+    and distinct curves, so the stub note would be false for them
+    and they do not gain one. No fuller source for the stub rows
+    survives anywhere: the RoastLog backup file is identical in
+    content to the tag, and the original records were lost with
+    the pre-rebuild database. Seeded values stay truthful to the
+    source; nothing plausible is fabricated."""
     from java.util import Date
     ds = system.tag.readBlocking([ROASTLOG_TAG])[0].value
     if ds is None or ds.rowCount == 0:
@@ -4391,6 +4552,14 @@ def seed_from_roastlog():
                                   'tempF': None},
                        'drop': {'t': total, 'ts': _iso(end),
                                 'tempF': row['dropTempF']}}}
+        if total < 60 and (row['drySec'] or 0) == 0:
+            doc['seedNote'] = (
+                'Seeded from a RoastLog stub row (totalSec %g s, '
+                'drySec 0): a short test artifact from early '
+                'development, not a full roast record. No fuller '
+                'source survives (the RoastLog backup file holds '
+                'the same rows); the original record was lost '
+                'with the pre-rebuild database.' % total)
         _run(NQ_INSERT, {
             'batch_number': number, 'roast_start': start,
             'roast_end': end, 'bean_name': row['bean'],
@@ -6405,6 +6574,42 @@ STYLESHEET_CSS = """/* Roastery advanced stylesheet.
     padding: 8px 1px !important;
     white-space: nowrap; overflow: hidden; }
 }
+
+/* ---- polish round 2: phone column sets (HUNT-13) ------------
+   The three wide tables (Log, Alarms, Phase Analysis) ship in
+   two instances: the full set carries roast-cols-full and a
+   phone wrapper carries roast-cols-phone with a reduced set
+   plus a toggle that swaps in the full set. The stylesheet
+   picks the instance by viewport width, the same breakpoint
+   pattern as the HUD dock above: below 900px the phone
+   wrapper shows, at 900px and up the full table shows and
+   the wrapper is gone, so desktop layouts are unchanged. */
+@media (max-width: 899.98px) {
+  .psc-roast-cols-full { display: none !important; }
+}
+@media (min-width: 900px) {
+  .psc-roast-cols-phone { display: none !important; }
+}
+
+/* ---- polish round 2: phone headers (HUNT-14, HUNT-15) -------
+   LogPage: the title column takes the full first row at phone
+   widths, so the subtitle stops squeezing into a roughly
+   100px column and the header actions wrap onto their own
+   row under the title. BatchDetail: the Back button keeps
+   one line (fixed 118px basis in the view, nowrap here) and
+   the six action buttons share two even rows of three
+   instead of wrapping ad hoc into three rows. */
+@media (max-width: 560px) {
+  .psc-roast-log-headcol { flex: 1 1 100% !important; }
+  .psc-roast-back-btn { white-space: nowrap; }
+  .psc-roast-detail-actions > * { flex: 1 1 28% !important;
+    white-space: nowrap; }
+  /* With the Back button at its full one line width the
+     detail subtitle wraps to two lines at 360px; the head
+     row's fixed 76px basis would clip the second line under
+     the action row, so the row sizes to its content here. */
+  .psc-roast-detail-head { flex-basis: auto !important; }
+}
 """
 
 def write_styles():
@@ -6452,6 +6657,13 @@ def f_widget(wid, wtype, label_text, tpl=None):
     w = copy.deepcopy(tpl or WIDGET_TPL)
     w['id'] = wid
     w['type'] = wtype
+    if wtype == 'checkbox':
+        # HUNT-18: the template's checkbox option carries the
+        # component default text ('text'), which a checkbox
+        # field renders next to the box. Clear it, the same
+        # fix the standalone checkboxes got in HUNT-11.
+        for _o in w.get('checkbox', {}).get('options', []):
+            _o['text'] = ''
     w['label'] = {'text': label_text, 'style': {'classes': ''}}
     w['info'] = {'text': '', 'type': 'caption',
                  'tooltip': {'icon': {'path': '', 'color': ''},
@@ -7589,7 +7801,7 @@ def cfg_section(name, title, children):
 
 CONFIG_STARTUP_SCRIPT = (
     "\timport roastery.core\n"
-    "\tself.getChild('root').getChild('MetaForm').props.data = roastery.core.config_form_data()\n")
+    "\tself.getChild('SettingsMetadataRoot').getChild('MetaForm').props.data = roastery.core.config_form_data()\n")
 CONFIG_SUBMIT_SCRIPT = (
     "\timport roastery.core\n"
     "\troastery.core.config_submit(self, event)\n")
@@ -7606,6 +7818,49 @@ def source_dropdown():
                 T('ActiveSource'), bidirectional=True)}}}
 
 # ================================================================ Batches (page /batches)
+
+def phone_cols_wrap(wrap_name, btn_name, table, phone_cols,
+                    base_classes):
+    """Polish round 2 (HUNT-13): the phone column set wrapper
+    for a wide table. Holds a toggle row and two copies of the
+    table: a reduced phone set and the full set, exactly one
+    of them hidden through the roast-hidden class chosen by
+    the view's showAllCols custom prop (the ConfirmRow class
+    selection pattern). The advanced stylesheet renders the
+    wrapper only below 900px viewport width; the original
+    table carries roast-cols-full and renders at 900px and
+    up, so desktop is unchanged."""
+    phone = copy.deepcopy(table)
+    phone['meta']['name'] = table['meta']['name'] + 'Phone'
+    phone['props']['columns'] = phone_cols
+    phone['props']['style']['classes'] = base_classes
+    phone.setdefault('propConfig', {})['props.style.classes'] = {
+        'binding': expr_binding(
+            "if({view.custom.showAllCols}, '%s roast-hidden', "
+            "'%s')" % (base_classes, base_classes))}
+    full = copy.deepcopy(table)
+    full['meta']['name'] = table['meta']['name'] + 'FullPhone'
+    full['props']['style']['classes'] = base_classes
+    full.setdefault('propConfig', {})['props.style.classes'] = {
+        'binding': expr_binding(
+            "if({view.custom.showAllCols}, '%s', "
+            "'%s roast-hidden')" % (base_classes, base_classes))}
+    toggle = button(btn_name, 'All columns',
+                    'roast-btn roast-btn-sm roast-btn-ghost',
+                    prop_config={'props.text': {'binding':
+                        expr_binding(
+                            "if({view.custom.showAllCols}, "
+                            "'Fewer columns', 'All columns')")}},
+                    events=script_event(
+                        "\timport roastery.core\n"
+                        "\troastery.core.toggle_all_cols(self)\n"))
+    trow = flex('ColsToggleRow', 'row', [toggle],
+                justify='flex-end', align='center',
+                classes='roast-gap-12')
+    return flex(wrap_name, 'column', [trow, phone, full],
+                classes='roast-gap-8 roast-cols-phone',
+                position={'grow': 0, 'shrink': 0, 'basis': 'auto'})
+
 
 def batches_panel_view():
     """The reusable batches panel for the Log page: a tidy table
@@ -7643,7 +7898,7 @@ def batches_panel_view():
                        'rows': {'height': 40},
                        'header': {'height': 36, 'style': {
                            'classes': 'roast-table-header'}},
-                       'style': {'classes': 'roast-table'}},
+                       'style': {'classes': 'roast-table roast-cols-full'}},
              'propConfig': {'props.data': {'binding': {
                  'type': 'query',
                  'config': {'queryPath': 'Roastery/Batches/SelectAll',
@@ -7658,6 +7913,18 @@ def batches_panel_view():
                      "\timport roastery.batches\n"
                      "\troastery.batches.select_row(self, event)\n"}}}},
              'position': {'grow': 0, 'shrink': 0, 'basis': '430px'}}
+    table_wrap = phone_cols_wrap(
+        'BatchTablePhoneWrap', 'ColsToggleButton', table, [
+            {'field': 'batch_number',
+             'header': {'title': 'Batch'}, 'width': 54},
+            {'field': 'roast_start',
+             'header': {'title': 'Date'}, 'width': 100,
+             'render': 'date', 'dateFormat': 'MM-DD h:mm a'},
+            {'field': 'bean_name',
+             'header': {'title': 'Bean'}, 'width': 68},
+            {'field': 'drop_temp_f',
+             'header': {'title': 'Drop (F)'}, 'width': 62}],
+        'roast-table')
     sel_enabled = "({view.custom.selBatchNumber} > 0)"
     details_btn = button('DetailsButton', 'Details',
                          'roast-btn roast-btn-sm roast-btn-primary',
@@ -7764,7 +8031,7 @@ def batches_panel_view():
                           position={'grow': 0, 'shrink': 0,
                                     'basis': '300px'})
     root = flex('root', 'column',
-                [table, confirm_row, foot, import_row, compare_row,
+                [table, table_wrap, confirm_row, foot, import_row, compare_row,
                  cmp_cap, cmp_chart_wrap],
                 classes='roast-card roast-gap-12',
                 scripts={'messageHandlers': [{
@@ -7773,7 +8040,8 @@ def batches_panel_view():
                                "\troastery.batches.refresh_table(self)\n"),
                     'sessionScope': True, 'pageScope': True,
                     'viewScope': False}]})
-    return {'custom': {'selBatchNumber': 0, 'selLabel': '',
+    return {'custom': {'showAllCols': False,
+                       'selBatchNumber': 0, 'selLabel': '',
                        'selNote': 'Select a batch for its details, the editor, a ghost overlay, or delete.',
                        'confirmDelete': False,
                        'importNote': 'Choose an Artisan .alog file to add that roast to the log.',
@@ -8495,7 +8763,7 @@ def _trace_card(basis='280px'):
     cap = label('TraceCardCap', 'Fan / Heat Levels', 'roast-caption',
                 position={'grow': 0, 'shrink': 0, 'basis': '16px'})
     return flex('TraceCard', 'column', [
-        cap, flex('TraceWrapM', 'row',
+        cap, flex('TraceWrapMobile', 'row',
                   [trace_chart(mobile=True)],
                   position={'grow': 1, 'shrink': 1, 'basis': '0px'})],
         classes='roast-card roast-gap-8',
@@ -8657,16 +8925,16 @@ def roast_page_view():
         _trace_card(),
         _strip_embed(),
         _phases_embed(),
-        embed('ControlsEmbedM', 'Views/Controls', {},
+        embed('ControlsEmbedMobile', 'Views/Controls', {},
               {'grow': 0, 'shrink': 0, 'basis': 'auto'}),
-        embed('SummaryEmbedM', 'Views/Summary', {},
+        embed('SummaryEmbedMobile', 'Views/Summary', {},
               {'grow': 0, 'shrink': 0, 'basis': 'auto'}),
-        embed('MetaCardEmbedM', 'Views/MetaCard', {},
+        embed('MetaCardEmbedMobile', 'Views/MetaCard', {},
               {'grow': 0, 'shrink': 0, 'basis': 'auto'})],
         classes='roast-content roast-gap-12 roast-scrollcol',
         position={'grow': 1, 'shrink': 1, 'basis': '0px'})
     small = flex('SmallRoot', 'column', [
-        alarm_banner('AlarmBannerM'), prompt_strip('PromptStripM'),
+        alarm_banner('AlarmBannerMobile'), prompt_strip('PromptStripMobile'),
         scroll_col,
         embed('ControlDockEmbed', 'Views/ControlDock', {},
               {'grow': 0, 'shrink': 0, 'basis': 'auto'})],
@@ -8732,7 +9000,7 @@ def settings_roaster_view():
                          f"if({ref(T('ActiveSource'))} = 'WebSocket', {ref(T('Sources/WebSocket/WsUrl'))}, "
                          f"if({ref(T('ActiveSource'))} = 'Mqtt', {ref(T('Sources/Mqtt/Address'))}, "
                          f"{ref(T('Sources/Simulated/Address'))}))")}})
-    root = settings_section('RoasterSection', 'Roaster',
+    root = settings_section('SettingsRoasterRoot', 'Roaster',
         'Where the bean temperature comes from. The app always '
         'reads the canonical probe tag; switching the active source '
         'switches the transport underneath it, live.', [
@@ -8860,7 +9128,7 @@ def settings_targets_view():
         'four fields above seed the default plan and the Reset '
         'button returns to them.',
         'roast-section-desc')
-    root = settings_section('TargetSection', 'Targets',
+    root = settings_section('SettingsTargetsRoot', 'Targets',
         'The target profile the deviation tile and target curve '
         'follow, and the phase bar targets. Phase durations drive '
         'the phase bar directly; the DTR target is the development '
@@ -8909,7 +9177,7 @@ def settings_ror_view():
     live = label('RorLive', '', 'roast-value',
                  prop_config={'props.text': {'binding': expr_binding(
                      f"'RoR now: ' + numberFormat({ref(T('RateOfRiseF'))}, '0.0') + ' F/min'")}})
-    root = settings_section('RorSection', 'Rate of Rise',
+    root = settings_section('SettingsRorRoot', 'Rate of Rise',
         'Artisan parameters, applied live by the one library '
         'implementation (roastery.core.compute_ror_series) and '
         're-applied to saved batches when they are loaded as a '
@@ -8962,7 +9230,7 @@ def settings_auc_view():
         {'value': 'TP', 'label': 'Turning point'},
         {'value': 'Dry End', 'label': 'Dry end'},
         {'value': 'FC Start', 'label': 'FC start'}])
-    root = settings_section('AucSection', 'AUC',
+    root = settings_section('SettingsAucRoot', 'AUC',
         'Area under the curve, Artisan style: the integral of '
         'bean temp above the base temp from the begin event, in '
         'F min (Artisan works in C min; its 640 C min default '
@@ -9010,7 +9278,7 @@ def settings_projection_view():
     mode_dd = tag_dropdown('ProjModeDropdown', 'ProjectionMode', [
         {'value': 'Linear', 'label': 'Linear (current RoR)'},
         {'value': 'Quadratic', 'label': 'Quadratic (RoR trend)'}])
-    root = settings_section('ProjectionSection', 'Projection',
+    root = settings_section('SettingsProjectionRoot', 'Projection',
         'Where the bean curve is heading, Artisan style: a '
         'dashed projection line on the live chart extending '
         'two minutes forward from the current bean temp and '
@@ -9116,7 +9384,7 @@ def settings_alarms_view():
         {'field': 'source', 'header': {'title': 'Source'},
          'width': 54},
         {'field': 'cond', 'header': {'title': 'Cond'}, 'width': 46},
-        {'field': 'threshold', 'header': {'title': 'Value'},
+        {'field': 'value', 'header': {'title': 'Value'},
          'width': 58},
         {'field': 'message', 'header': {'title': 'Message'},
          'width': 180},
@@ -9129,7 +9397,7 @@ def settings_alarms_view():
                        'rows': {'height': 32},
                        'header': {'height': 32, 'style': {
                            'classes': 'roast-table-header'}},
-                       'style': {'classes': 'roast-table-sm'}},
+                       'style': {'classes': 'roast-table-sm roast-cols-full'}},
              'propConfig': {'props.data': {'binding': prop_binding(
                  'view.custom.alarmsDs')}},
              # Fixed basis, not auto: a virtualized table at
@@ -9238,7 +9506,18 @@ def settings_alarms_view():
               prop_config={'props.text': {'binding': prop_binding(
                   'view.custom.alarmNote')}})],
         align='center', wrap='wrap', classes='roast-gap-12')
-    root = settings_section('AlarmSection', 'Alarms',
+    alarm_wrap = phone_cols_wrap(
+        'AlarmTablePhoneWrap', 'AlColsToggleButton', table, [
+            {'field': 'name', 'header': {'title': 'Name'},
+             'width': 90},
+            {'field': 'enabled', 'header': {'title': 'On'},
+             'width': 34},
+            {'field': 'source', 'header': {'title': 'Source'},
+             'width': 60},
+            {'field': 'value', 'header': {'title': 'Value'},
+             'width': 56}],
+        'roast-table-sm')
+    root = settings_section('SettingsAlarmsRoot', 'Alarms',
         'Alarm definitions, Artisan style: an alarm arms after '
         'its guard event plus the offset, then watches the bean '
         'temp, the rate of rise, or the elapsed time. Banner '
@@ -9246,8 +9525,9 @@ def settings_alarms_view():
         'holds; Message alarms latch until the next charge. '
         'Definitions live in one tag and are evaluated by the '
         'library on every temp change.', [
-        table, load_row, ed_row1, ed_row2, btn_row])
-    return {'custom': {'alarmsDs': None, 'alarmCount': 0,
+        table, alarm_wrap, load_row, ed_row1, ed_row2, btn_row])
+    return {'custom': {'showAllCols': False,
+                       'alarmsDs': None, 'alarmCount': 0,
                        'alarmIdx': 0, 'alarmNote': ''},
             'params': {}, 'propConfig': {},
             'props': {'defaultSize': {'width': 900, 'height': 560}},
@@ -9289,7 +9569,7 @@ def settings_customs_view():
                       text_in(f'CustomNameIn{i}', f'CustomEvent{i}Name')),
             cfg_field(f'CustomKindField{i}', f'Custom {i} kind',
                       text_in(f'CustomKindIn{i}', f'CustomEvent{i}Kind'))]))
-    root = settings_section('CustomSection', 'Custom Events',
+    root = settings_section('SettingsCustomsRoot', 'Custom Events',
         'Names and kinds for the four custom event buttons. Kind '
         'is a free label (Airflow, Note, Info, ...).', rows)
     return {'custom': {}, 'params': {}, 'propConfig': {},
@@ -9419,7 +9699,7 @@ def log_page_view():
                 'one for its detail, the editor, or a ghost overlay.',
                 'roast-subtitle')
     head_col = flex('HeadCol', 'column', [title, sub],
-                    classes='roast-gap-8',
+                    classes='roast-gap-8 roast-log-headcol',
                     position={'grow': 1, 'shrink': 1, 'basis': '0px'})
     new_roast_btn = button('NewRoastButton', 'New Roast',
                            'roast-btn roast-btn-sm roast-btn-green',
@@ -9438,7 +9718,7 @@ def log_page_view():
     head = flex('HeadRow', 'row', [head_col, new_roast_btn,
                                    new_batch_btn],
                 justify='flex-end', align='center', wrap='wrap',
-                classes='roast-gap-12',
+                classes='roast-gap-12 roast-log-head',
                 position={'grow': 0, 'shrink': 0, 'basis': 'auto'})
     panel = embed('BatchesPanelEmbed', 'Views/BatchesPanel', {},
                   {'grow': 0, 'shrink': 0, 'basis': 'auto'})
@@ -9485,6 +9765,8 @@ def detail_chart():
         'propConfig': {
             'props.data': {'binding': tag_binding(
                 '[default]Roastery/DetailDS')},
+            'props.xAxis.max': {'binding': prop_binding(
+                'view.custom.detailMaxMs')},
             'props.series[0].referenceLines.items':
                 _refline_binding(
                     '[default]Roastery/DetailMarksDS',
@@ -9606,7 +9888,9 @@ def batch_detail_view():
     roastery.batches.stage_detail; this view's custom props are
     filled by detail_startup."""
     back_btn = button('BackButton', 'Back to Log',
-                      'roast-btn roast-btn-sm roast-btn-ghost',
+                      'roast-btn roast-btn-sm roast-btn-ghost roast-back-btn',
+                      position={'grow': 0, 'shrink': 0,
+                                'basis': '118px'},
                       events=script_event(
                           "\tsystem.perspective.navigate(page='/log')\n"))
     title = label('Title', 'Batch', 'roast-title-sm',
@@ -9644,15 +9928,27 @@ def batch_detail_view():
                            'roastery.batches.export_summary_download(self)'))
     head = flex('HeadRow', 'row', [back_btn, title_col],
                 justify='space-between', align='center',
-                classes='roast-gap-12',
+                classes='roast-gap-12 roast-detail-head',
                 position={'grow': 0, 'shrink': 0, 'basis': '76px'})
     actions = flex('ActionRow', 'row',
                    [ghost_btn, edit_btn, export_btn, csv_btn,
                     json_btn, print_btn],
                    justify='flex-end', align='center', wrap='wrap',
-                   classes='roast-gap-12',
+                   classes='roast-gap-12 roast-detail-actions',
                    position={'grow': 0, 'shrink': 0,
                              'basis': 'auto'})
+    # HUNT-24 (polish round 2 hunt): the seed note label sits
+    # between the action row and the chart card, bound to
+    # view.custom.dSeedNote and hidden by class when empty.
+    seed_note = label('SeedNoteLabel', '', 'roast-note',
+                      prop_config={
+                          'props.text': {'binding': prop_binding(
+                              'view.custom.dSeedNote')},
+                          'props.style.classes': {'binding':
+                              expr_binding(
+                                  "if(len({view.custom.dSeedNote}) = 0, "
+                                  "'roast-note roast-hidden', "
+                                  "'roast-note')")}})
     # Statistics summary line (Tier 3 item 19) on the detail
     # chart card too: the library computes it in detail_startup
     # from the staged document phases (dStatsLine).
@@ -9675,6 +9971,27 @@ def batch_detail_view():
             {'field': 'temp', 'header': {'title': 'Temp'}}])],
         classes='roast-card roast-gap-10',
         position={'grow': 1, 'shrink': 1, 'basis': '320px'})
+    analysis_table = _ds_table('AnalysisTable', 'analysisDs', [
+        {'field': 'phase', 'header': {'title': 'Phase'}},
+        {'field': 'time', 'header': {'title': 'Time'}},
+        {'field': 'share', 'header': {'title': 'Share'}},
+        {'field': 'gain', 'header': {'title': 'Gain'}},
+        {'field': 'avgRor', 'header': {'title': 'Avg RoR'}},
+        {'field': 'auc', 'header': {'title': 'AUC'}}])
+    analysis_table['props']['style']['classes'] = (
+        'roast-table-sm roast-cols-full')
+    analysis_wrap = phone_cols_wrap(
+        'AnalysisTablePhoneWrap', 'AnColsToggleButton',
+        analysis_table, [
+            {'field': 'phase', 'header': {'title': 'Phase'},
+             'width': 78},
+            {'field': 'time', 'header': {'title': 'Time'},
+             'width': 58},
+            {'field': 'share', 'header': {'title': 'Share'},
+             'width': 50},
+            {'field': 'avgRor', 'header': {'title': 'Avg RoR'},
+             'width': 62}],
+        'roast-table-sm')
     summary_card = flex('SummaryCard', 'column', [
         label('SummaryHead', 'Summary', 'roast-section-title'),
         _kv_line('Total', 'Total time', 'dTotal'),
@@ -9688,13 +10005,8 @@ def batch_detail_view():
                   'view.custom.dPhases')}}),
         label('AnalysisHead', 'Phase Analysis',
               'roast-section-title'),
-        _ds_table('AnalysisTable', 'analysisDs', [
-            {'field': 'phase', 'header': {'title': 'Phase'}},
-            {'field': 'time', 'header': {'title': 'Time'}},
-            {'field': 'share', 'header': {'title': 'Share'}},
-            {'field': 'gain', 'header': {'title': 'Gain'}},
-            {'field': 'avgRor', 'header': {'title': 'Avg RoR'}},
-            {'field': 'auc', 'header': {'title': 'AUC'}}]),
+        analysis_table,
+        analysis_wrap,
         _kv_line('Tp', 'Turning point', 'dTp'),
         _kv_line('FcsRor', 'RoR at FC start', 'dFcsRor'),
         _kv_line('TotalRor', 'Total RoR (TP to drop)', 'dTotalRor'),
@@ -9749,8 +10061,8 @@ def batch_detail_view():
             "'roast-card roast-gap-10 roast-hidden')")}})
     calc_card = _calc_card()
     content = flex('Content', 'column',
-                   [head, actions, chart_card, mid_row, meta_card,
-                    calc_card, press_card],
+                   [head, actions, seed_note, chart_card, mid_row,
+                    meta_card, calc_card, press_card],
                    classes='roast-content roast-gap-12')
     root = flex('root', 'column', [content], classes='roast-app',
                 scripts={'messageHandlers': [{
@@ -9759,7 +10071,9 @@ def batch_detail_view():
                                "\troastery.batches.detail_startup(self)\n"),
                     'sessionScope': True, 'pageScope': True,
                     'viewScope': False}]})
-    return {'custom': {'batchNumber': 0, 'titleText': '',
+    return {'custom': {'showAllCols': False,
+                       'detailMaxMs': 946710601000,
+                       'batchNumber': 0, 'titleText': '',
                        'subText': '', 'dTotal': '--', 'dDtr': '--',
                        'dDropTemp': '--', 'dLoss': '--', 'dAuc': '--',
                        'dSource': '--', 'dPhases': '',
@@ -9774,6 +10088,7 @@ def batch_detail_view():
                        'dGreenDensity': '--',
                        'dRoastedDensity': '--',
                        'dBbp': '',
+                       'dSeedNote': '',
                        'dStatsLine': ''},
             'params': {}, 'propConfig': {},
             'props': {'defaultSize': {'width': 1440, 'height': 1500}},
@@ -9787,6 +10102,12 @@ def batch_detail_view():
 # ================================================================ write out
 
 def write_view(path_parts, doc):
+    # Naming convention (polish phase 4): every view's root
+    # container is named <ViewName>Root, whatever name the
+    # view builder below gave it.
+    if isinstance(doc, dict) and isinstance(doc.get('root'), dict):
+        doc['root'].setdefault('meta', {})['name'] = (
+            path_parts[-1] + 'Root')
     d = os.path.join(PROJ, 'com.inductiveautomation.perspective',
                      'views', *path_parts)
     os.makedirs(d, exist_ok=True)

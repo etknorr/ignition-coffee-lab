@@ -44,14 +44,93 @@ B = '[default]Roastery/CurrentBatch'
 LAB = os.path.dirname(os.path.abspath(__file__))
 BACKUP = os.path.join(LAB, 'roastlog-backup.json')
 
-CSV = """TimeInterval,BrowsePath,ValueSource,DataType
-0,BeanTemp,"ramp(200,300,240,true)",Double
-240,BeanTemp,"ramp(300,352,150,true)",Double
-390,BeanTemp,"ramp(352,385,120,true)",Double
-510,BeanTemp,"ramp(385,397,90,true)",Double
-600,BeanTemp,"ramp(397,412,90,true)",Double
-690,BeanTemp,"ramp(397,412,90,true)",Double
-"""
+# ------------------------------------------------------------------ sim
+# RoasterSim program: a stepped, one row per second model of a real
+# FreshRoast SR800 roast (built 2026-11-17, see the Simulator
+# section in docs/coffee-roaster-app.md for the full model notes
+# and the simulator capability evidence behind this shape).
+#
+# Why stepped static values instead of ramp() segments: the
+# Programmable Device Simulator has no expression or cross
+# reference value sources (proven on a scratch device), and its
+# ramp() functions are wall clock anchored, so changing the
+# device Base Rate meta node does NOT scale a ramp program (the
+# program counter and the segment boundaries scale, the ramp
+# progress does not, and the segments jump). Static rows step
+# once per program interval, so the Base Rate node IS a clean
+# speed control for a stepped program: 500 ms plays the curve at
+# twice wall speed, 2000 ms at half. roastery.core uses that to
+# let Fan and Heat levels visibly speed and slow the roast, and
+# uses the Reset and Pause meta nodes to align the program clock
+# with Charge and to hold the preheat plateau while Idle.
+#
+# The curve (bean probe, F), generated deterministically below:
+# - charge at the 392 F preheat plateau (program value at t=0,
+#   and the value the program returns to and holds at the end of
+#   the cycle, so the loop wrap step is exactly zero);
+# - a cosine eased dip to the turning point, 184 F at about
+#   71 s (the dip slope is the real one: about minus 180 F/min
+#   average, there is no step anywhere in the cycle);
+# - drying: RoR about 38 F/min just after the turning point
+#   declining to about 28, dry end zone 300 to 310 F crossed at
+#   about 4:37 to 5:00;
+# - maillard: RoR declining through the teens to about 11,
+#   first crack 385 F at about 8:54 (534 s);
+# - development: RoR inside 5 to 12 F/min throughout (polish
+#   round 2 item 7 retune: measured 6.8 to 11.9 offline with
+#   roastery.core.compute_ror_series at the standing RoR
+#   parameters, FC Start to Drop; it was 9.1 to 15.5 before),
+#   drop point anchor 419 F at 12:00 (720 s), program value
+#   415.9 F at the 11:47 (707 s) press point;
+# - cooling after the drop point: the probe falls to about
+#   343 F, then the empty roaster reheats to the 392 F plateau
+#   and holds it to the end of the 1020 s cycle.
+# A 9 s moving average rounds the anchor corners, and a seeded
+# jitter of plus/minus 0.6 F keeps the line from looking sterile
+# (jitter is zero at the charge and wrap samples).
+import math as _math
+import random as _random
+
+_SIM_RISE = [(72, 184), (110, 208), (150, 232), (190, 255),
+             (230, 276), (265, 294), (295, 308), (335, 326),
+             (375, 344.5), (415, 353.5), (455, 369), (495, 380),
+             (530, 384.5), (558, 389.5), (600, 397.5),
+             (642, 404.5), (682, 411), (720, 419)]
+_SIM_COOL = [(735, 395), (755, 362), (785, 342), (830, 352),
+             (880, 372), (930, 388), (960, 392)]
+_SIM_END = 1020
+
+
+def _sim_base(t):
+    if t <= 72:
+        return 184.0 + 208.0 * (1.0 + _math.cos(
+            _math.pi * t / 72.0)) / 2.0
+    pts = _SIM_RISE + _SIM_COOL
+    for i in range(len(pts) - 1):
+        t0, v0 = pts[i]
+        t1, v1 = pts[i + 1]
+        if t0 <= t <= t1:
+            return v0 + (v1 - v0) * float(t - t0) / float(t1 - t0)
+    return 392.0
+
+
+def _build_sim_csv():
+    raw = [_sim_base(t) for t in range(_SIM_END + 1)]
+    sm = []
+    for i in range(len(raw)):
+        seg = raw[max(0, i - 4):min(len(raw), i + 5)]
+        sm.append(sum(seg) / len(seg))
+    rng = _random.Random(20261117)
+    rows = ['TimeInterval,BrowsePath,ValueSource,DataType']
+    for t in range(_SIM_END + 1):
+        j = 0.0 if t < 3 or t > _SIM_END - 3 else rng.uniform(
+            -0.6, 0.6)
+        v = 392.0 if t in (0, _SIM_END) else round(sm[t] + j, 1)
+        rows.append('%d,BeanTemp,%.1f,Double' % (t, v))
+    return '\n'.join(rows) + '\n'
+
+
+CSV = _build_sim_csv()
 
 # Thin tag event script: all derivation logic lives in the library.
 ROR_SCRIPT = (
@@ -356,6 +435,13 @@ MEMBERS += [
     mem('DispMarkerSize', 'Int4', 4,
         doc='Tier 3 item 15: event marker size (the reference '
             'line endpoint size on the bean series).'),
+    mem('DispAxisFormat', 'String', 'm:ss',
+        doc='Polish round 3 (HUNT-23): time axis label '
+            'format on every roast chart, m:ss (Artisan '
+            'style) or mm:ss. The charts run on a category '
+            'axis whose names roastery.core.axis_label '
+            'formats from this member, so the labels are '
+            'true elapsed in any browser timezone.'),
     mem('PhaseFromBg', 'Boolean', False,
         doc='Tier 3 item 16: when on, the phase bar and the '
             'chart phase bands follow the staged ghost phase '
@@ -415,6 +501,19 @@ MEMBERS += [
     mem('AlarmText', 'String', '',
         doc='Current alarm banner text, written by '
             'roastery.core.evaluate_alarms.'),
+    mem('AlarmMessageText', 'String', '',
+        doc='Polish phase 3: the most recently latched Message '
+            'alarm text, written by roastery.core.evaluate_alarms '
+            'only when a Message alarm newly latches. The Roast '
+            'page binds a custom prop to it and toasts the new '
+            'value once per latch through Periscope.'),
+    mem('AlarmMessageSeq', 'Int4', 0,
+        doc='Polish phase 4 (HUNT-19): latch sequence counter, '
+            'incremented by roastery.core.evaluate_alarms on '
+            'every new Message latch batch. The Roast page '
+            'watches this counter (not the message text) to '
+            'fire its toast, so two latches carrying identical '
+            'message text still toast once each.'),
     mem('AlarmActive', 'Boolean', False),
     mem('_AlarmFiredJson', 'String', '',
         doc='Scratch: indexes of Message alarms already latched '
@@ -481,6 +580,22 @@ MEMBERS += [
             'or Group (SQLBridge transaction group). Default is '
             'Group since 2026-11-17: the PressEvents transaction '
             'group is authored and RUNNING on the lab gateway.'),
+    mem('SimSeekTargetSec', 'Int4', -1,
+        doc='Polish round 3 (HUNT-22): the program second the '
+            'cooling seek is fast forwarding to, or -1 when no '
+            'seek is armed. Written by roastery.core.'
+            'sim_seek_cooling (the starter) and consumed by '
+            'sim_seek_advance on each BeanTempF change, so the '
+            'seek never blocks a press handler.'),
+    mem('SimSeeking', 'Boolean', False,
+        doc='Polish round 3 (HUNT-22): True while '
+            'roastery.core.sim_seek_cooling fast forwards the '
+            'simulator program after a Drop. While set, the '
+            'BeanTempF change pipeline stays muted (the ticks '
+            'are fast forward artifacts, and their render flood '
+            'is the window in which dock clicks were lost). '
+            'Read with a staleness expiry, so an interrupted '
+            'seek can never mute the pipeline for good.'),
     mem('SeriesCaptureMode', 'String', 'Library',
         doc='Who writes batch_series rows: Library (CurveSamples '
             'at save) or Group (transaction group, live).'),
@@ -495,7 +610,41 @@ for i, (nm, kind) in enumerate([('Fan Boost', 'Airflow'),
         mem(f'CustomEvent{i}Time', 'DateTime', None, omit_value=True),
         mem(f'CustomEvent{i}TempF', 'Float8', 0.0),
         mem(f'CustomEvent{i}ElapsedSec', 'Int4', -1),
+        # Polish round 1 item 7: a disabled custom leaves the
+        # phase aware dock list, and roastery.core.stamp_custom
+        # refuses to stamp it.
+        mem(f'CustomEvent{i}Enabled', 'Boolean', True,
+            doc='Polish round 1 item 7: whether this custom '
+                'event can be stamped (dock list and the '
+                'library stamp guard both honor it).'),
     ]
+
+# ---- Polish round 1 display texts (2026-11-17) ----
+# Library published texts the HUD and the Roast page bind to
+# (roastery.core ror_display_text, phase_label, stats_line_text).
+MEMBERS += [
+    mem('RateOfRiseDisplayText', 'String', '--',
+        doc='Polish round 1 item 4: HUD RoR reading under the '
+            'Artisan display convention, written by '
+            'roastery.core.update_ror_display. The RateOfRiseF '
+            'tag always keeps the true computed value.'),
+    mem('PhaseLabel', 'String', 'Pre-charge',
+        doc='Polish round 1 item 6: current roast phase, '
+            'written by roastery.core.update_phase_label from '
+            'State plus the stamped events in roast order.'),
+    mem('DockActionsJson', 'String', '[]',
+        doc='Polish phase 2 item 1: the phase aware dock set '
+            'as a JSON list of descriptors, written by '
+            'roastery.core.update_dock_actions; the dock '
+            'views bind it instead of calling scripts.'),
+    mem('StatsLineText', 'String',
+        'Dry --:-- -- \u00b7 Mai --:-- -- \u00b7 Dev --:-- -- '
+        '\u00b7 DTR --',
+        doc='Polish round 1 item 5: the Roast page stats line, '
+            'written by roastery.core.update_stats_line; '
+            'durations and percentages always describe the '
+            'same phases.'),
+]
 
 UDT = {'name': 'RoastBatch', 'tagType': 'UdtType', 'tags': MEMBERS}
 
@@ -505,9 +654,66 @@ def ds_tag(name):
 
 INSTANCE_FOLDER = {'name': 'Roastery', 'tagType': 'Folder', 'tags': [
     {'name': 'CurrentBatch', 'tagType': 'UdtInstance', 'typeId': 'RoastBatch'},
+    # ---- simulator meta controls (lab only, like RoasterSim) ----
+    # OPC tags onto the RoasterSim device's [Controls] meta nodes.
+    # roastery.core writes these (Simulated source only) to align
+    # the program clock with Charge (Reset), hold the preheat
+    # plateau while Idle (Pause) and scale the program speed with
+    # the Fan and Heat levels (BaseRate). See the sim notes at
+    # the CSV generator above.
+    {'name': 'SimReset', 'tagType': 'AtomicTag', 'valueSource': 'opc',
+     'dataType': 'Boolean', 'opcServer': 'Ignition OPC UA Server',
+     'opcItemPath': f'[{DEVICE}][Controls]/reset',
+     'documentation': 'RoasterSim meta node: writing True restarts '
+                      'the simulator program at interval 0 (the '
+                      'node clears itself back to False).'},
+    {'name': 'SimPause', 'tagType': 'AtomicTag', 'valueSource': 'opc',
+     'dataType': 'Boolean', 'opcServer': 'Ignition OPC UA Server',
+     'opcItemPath': f'[{DEVICE}][Controls]/pause',
+     'documentation': 'RoasterSim meta node: True freezes the '
+                      'simulator program at its current interval.'},
+    {'name': 'SimBaseRate', 'tagType': 'AtomicTag', 'valueSource': 'opc',
+     'dataType': 'Int4', 'opcServer': 'Ignition OPC UA Server',
+     'opcItemPath': f'[{DEVICE}][Controls]/baseRateNode',
+     'documentation': 'RoasterSim meta node: milliseconds per '
+                      'program interval. 1000 is real time for '
+                      'the stepped BeanTemp program; lower plays '
+                      'the curve faster, higher slower.'},
+    {'name': 'SimProgramCounter', 'tagType': 'AtomicTag',
+     'valueSource': 'opc', 'dataType': 'Int4',
+     'opcServer': 'Ignition OPC UA Server',
+     'opcItemPath': f'[{DEVICE}][Controls]/programCounter',
+     'documentation': 'RoasterSim meta node: the program interval '
+                      'currently executing (seconds into the '
+                      'stepped curve at the 1000 ms base rate).'},
+    # ---- Polish phase 2 item 7: app settings ----
+    {'name': 'AppSettings', 'tagType': 'Folder', 'tags': [
+        mem('ThemeMode', 'String', 'System',
+            doc='Roastery theme choice: System (follows the '
+                'device via the roastsystem theme), Light or '
+                'Dark. Written from Views/AppSettings through '
+                'roastery.core.set_theme_mode.'),
+        mem('PeriscopeAvailable', 'Boolean', False,
+            doc='Polish phase 3: True only when the Embr '
+                'Periscope module is installed and running on '
+                'the gateway. roastery.core.show_toast no-ops '
+                'while this is False, so a gateway without the '
+                'module behaves exactly as before. Set True by '
+                'hand after the module is verified on the '
+                'gateway Modules page; never set by the app.'),
+    ]},
     ds_tag('EventsLog'), ds_tag('RoastLog'),
     ds_tag('TargetProfileDS'), ds_tag('BackgroundDS'),
     ds_tag('CurveSamples'),
+    # ---- Polish round 3 (HUNT-22): press capture ring ----
+    # Sixteen memory slots; every press writes its context
+    # into slot (ActionCounter mod 16) with a single tag
+    # write, so concurrent press handlers cannot overwrite
+    # each other. roastery.core.reconcile_press_pending
+    # verifies each slotted press against batch_events and
+    # inserts any the PressEvents group missed.
+    {'name': 'PressSlots', 'tagType': 'Folder', 'tags': [
+        mem('Slot%02d' % i, 'String', '') for i in range(16)]},
     # ---- Tier 3 item 20: between batch protocol staging ----
     # The BBP window samples (t_offset_sec is float seconds
     # since the previous DROP) live in their own dataset tag
@@ -688,7 +894,8 @@ def main():
     except Exception as e:
         print('roastlog stash skipped:', e)
 
-    # ---- 1. simulator program (unchanged from v2)
+    # ---- 1. simulator program (the stepped SR800 curve above;
+    # uploading it restarts the program clock, proven live)
     st, out = api('GET', f'/resources/find/com.inductiveautomation.opcua/device/{DEVICE}')
     if st != 200:
         print('device find failed', st, json.dumps(out)[:300]); sys.exit(1)

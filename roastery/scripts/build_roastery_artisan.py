@@ -1656,6 +1656,12 @@ def main_view():
 # ---------------------------------------------------------------- write out
 
 def write_view(path_parts, doc):
+    # Naming convention (polish phase 4): every view's root
+    # container is named <ViewName>Root, whatever name the
+    # view builder below gave it.
+    if isinstance(doc, dict) and isinstance(doc.get('root'), dict):
+        doc['root'].setdefault('meta', {})['name'] = (
+            path_parts[-1] + 'Root')
     d = os.path.join(PROJ, 'com.inductiveautomation.perspective',
                      'views', *path_parts)
     os.makedirs(d, exist_ok=True)

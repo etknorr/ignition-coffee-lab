@@ -55,6 +55,14 @@ def normalize(x, in_events=False):
                 # payload like binding configs; they are verified
                 # functionally in verify_roastery_v3.py instead.
                 continue
+            if k == 'onChange':
+                # Property change scripts on view custom props are
+                # stripped from the served payload the same way
+                # (proven live in polish phase 4: the served
+                # RoastPage propConfig carries the binding only,
+                # no onChange block). They are verified
+                # functionally by the polish3 toast checks.
+                continue
             if k == 'children' and v == []:
                 continue
             if k == 'binding' and isinstance(v, dict):
@@ -155,12 +163,12 @@ def main():
         ('Controls', 'ModePill', 'props.style.backgroundColor'),
         # Alarm banner: red only while an alarm is active.
         ('RoastPage', 'AlarmBanner', 'props.style.backgroundColor'),
-        ('RoastPage', 'AlarmBannerM', 'props.style.backgroundColor'),
+        ('RoastPage', 'AlarmBannerMobile', 'props.style.backgroundColor'),
         # Prompt strip (Tier 2 items 11 and 14): amber while a
         # background playback prompt is active, blue while an
         # event suggestion is active, transparent otherwise.
         ('RoastPage', 'PromptStrip', 'props.style.backgroundColor'),
-        ('RoastPage', 'PromptStripM', 'props.style.backgroundColor'),
+        ('RoastPage', 'PromptStripMobile', 'props.style.backgroundColor'),
         # Tile accent bar: the accent is a per instance param.
         ('Tile', 'AccentBar', 'props.style.backgroundColor'),
         # Event cell name color: done state is a param (a map
@@ -171,6 +179,44 @@ def main():
         ('Tile', 'ValueLabel', 'props.style.classes'),
         ('BatchesPanel', 'ConfirmRow', 'props.style.classes'),
         ('BatchDetail', 'PressCard', 'props.style.classes'),
+        # Polish phase 4: the same class selection pattern on
+        # surfaces added after the list above was written. The
+        # prompt strip Dismiss buttons hide through a class
+        # expression when no prompt is active (HUNT-03), the
+        # App Settings theme buttons mark the active mode, and
+        # the dock button picks its class from its action kind.
+        # All six were flagged once the validator could run to
+        # completion again in phase 4; the bindings themselves
+        # predate the phase (phase 2 and 3 builds).
+        ('RoastPage', 'PromptStripDismiss', 'props.style.classes'),
+        ('RoastPage', 'PromptStripMobileDismiss',
+         'props.style.classes'),
+        ('AppSettings', 'ThemeSystemButton', 'props.style.classes'),
+        ('AppSettings', 'ThemeLightButton', 'props.style.classes'),
+        ('AppSettings', 'ThemeDarkButton', 'props.style.classes'),
+        ('DockButton', 'DockBtn', 'props.style.classes'),
+        # Polish round 2 (HUNT-13): the phone column set swap.
+        # Each wide table's phone wrapper holds a reduced set
+        # and a full set; exactly one carries roast-hidden,
+        # chosen by the view's showAllCols toggle. The same
+        # class selection pattern as ConfirmRow above.
+        ('BatchesPanel', 'BatchTablePhone', 'props.style.classes'),
+        ('BatchesPanel', 'BatchTableFullPhone',
+         'props.style.classes'),
+        ('SettingsAlarms', 'AlarmTablePhone',
+         'props.style.classes'),
+        ('SettingsAlarms', 'AlarmTableFullPhone',
+         'props.style.classes'),
+        ('BatchDetail', 'AnalysisTablePhone',
+         'props.style.classes'),
+        ('BatchDetail', 'AnalysisTableFullPhone',
+         'props.style.classes'),
+        # Polish round 2 closing fix: the HUNT-24 SeedNoteLabel
+        # on BatchDetail selects the hidden class from the
+        # note's emptiness (an empty seedNote selects
+        # roast-hidden, the HUNT-03 pattern). The same class
+        # selection pattern as the entries above.
+        ('BatchDetail', 'SeedNoteLabel', 'props.style.classes'),
     }
     inline_offenders = []
     binding_offenders = []
@@ -270,12 +316,25 @@ def main():
 
     src = os.path.join(GW, 'logs', 'system_logs.idb')
     tmp = '/tmp/roastery_artisan_logs.idb'
-    shutil.copy(src, tmp)
-    con = sqlite3.connect(tmp)
-    rows = con.execute(
-        "SELECT logger_name, level_string, formatted_message FROM logging_event "
-        "WHERE timestmp > ? AND level_string IN ('WARN','ERROR')", (SINCE,)).fetchall()
-    con.close()
+    # Same live copy race as validate_chartlab: the idb is
+    # copied while the gateway appends, so a copy can tear
+    # (sqlite reports a malformed image). Retry the copy a
+    # few times (polish round 3 battery hardening).
+    rows = None
+    for _try in range(6):
+        try:
+            shutil.copy(src, tmp)
+            con = sqlite3.connect(tmp)
+            rows = con.execute(
+                "SELECT logger_name, level_string, formatted_message FROM logging_event "
+                "WHERE timestmp > ? AND level_string IN ('WARN','ERROR')", (SINCE,)).fetchall()
+            con.close()
+            break
+        except Exception:
+            rows = None
+            time.sleep(5)
+    if rows is None:
+        raise RuntimeError('log database copy kept tearing')
     hits, bogus = [], 0
     for logger, level, msg in rows:
         m = msg or ''
@@ -293,7 +352,7 @@ def main():
           and not hits and bogus >= 1
           and report['resources']['library_core']
           and report['resources']['library_batches']
-          and len(report['resources']['named_queries']) == 10
+          and len(report['resources']['named_queries']) == 11
           and report['resources']['roast_card_on_disk']
           and report['resources']['stylesheet_on_disk']
           and report['resources']['radius_offenders'] == []

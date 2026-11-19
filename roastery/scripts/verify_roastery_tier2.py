@@ -53,6 +53,10 @@ from playwright.sync_api import sync_playwright
 BASE = 'http://localhost:8088/data/perspective/client/Roastery'
 SHOTS = '/home/hatch/workspace/ignition-lab/showcase/shots'
 B = '[default]Roastery/CurrentBatch'
+# Polish round 1 item 2: chart datasets anchor x values to
+# roastery.core.AXIS_BASE_MS (a Denver local midnight), not the
+# Unix epoch. Dataset reads below normalize by subtracting it.
+AXIS_BASE_MS = 946710000000
 FIXTURE = '/home/hatch/workspace/ignition-lab/artisan-fixtures/sample-roast.alog'
 LOSS_ALOG = '/tmp/tier2-loss.alog'
 PLAYBACK_ALOG = '/tmp/tier2-playback.alog'
@@ -115,6 +119,38 @@ def psql(sql):
     return r.stdout.strip()
 
 
+
+def drain_pending():
+    """Polish round 3: press capture slots each press's
+    context in a 16 slot ring (HUNT-22); the library
+    reconcile inserts any press the group missed. Wait
+    until every slotted press has its batch_events row, or
+    a reconciled press would resurrect a row this suite
+    just deleted."""
+    def missing():
+        paths = ['[default]Roastery/PressSlots/Slot%02d' % i
+                 for i in range(16)]
+        pairs = []
+        for raw in read_tags(paths):
+            if not raw:
+                continue
+            try:
+                e = json.loads(raw)
+            except Exception:
+                continue
+            pairs.append((int(e['b']), int(e['c'])))
+        if not pairs:
+            return False
+        cond = ' OR '.join(
+            '(batch_number = %d AND press_counter = %d)' % p
+            for p in pairs)
+        found = int(psql(
+            'SELECT COUNT(*) FROM batch_events WHERE ' + cond))
+        return found < len(pairs)
+    wait_until(lambda: not missing(), timeout=30)
+    write_tags([('[default]Roastery/PressSlots/Slot%02d' % i, '')
+                for i in range(16)])
+
 def dismiss(page):
     if page.get_by_text('Personal Use Only').count() > 0:
         try:
@@ -171,6 +207,19 @@ def ds_rows(value):
         cols = [c['name'] for c in value.get('columns') or []]
         return cols, value.get('rows') or []
     return [], []
+
+
+def dock_drop(dock):
+    """Phase aware dock (polish phase 2): Drop is offered only
+    after FC End, so stamp the prerequisite events through the
+    dock first, then Drop. Each click waits for the dock to
+    re-render its next phase set."""
+    for name in ('Dry End', 'FC Start', 'FC End'):
+        btn = dock.get_by_role('button', name=name)
+        if btn.count() and btn.first.is_visible():
+            btn.first.click()
+            time.sleep(1.5)
+    dock.get_by_role('button', name='Drop').click()
 
 
 def log_marker():
@@ -239,7 +288,7 @@ def curve_maps():
     live = {}
     if cols:
         for r in rows:
-            live[int(r[0])] = dict(
+            live[int(r[0]) - AXIS_BASE_MS] = dict(
                 (c, r[i]) for i, c in enumerate(cols))
     c2, r2 = ds_rows(tag('[default]Roastery/CurveSamples'))
     raw = {}
@@ -299,15 +348,45 @@ def approx(a, b, tol):
 
 
 def select_batch_row(page, number):
-    rows = page.locator('.ia_table__row')
-    for i in range(rows.count()):
-        tokens = rows.nth(i).inner_text().replace(',', '').split()
-        if str(number) in tokens:
-            rows.nth(i).click()
-            page.wait_for_timeout(1200)
-            return int(tag('[default]Roastery/SelectedBatchNumber')
-                       or 0) == number
-    return False
+    # Polish round 3 hardening (same pattern round 2 gave the
+    # polish suites): the original read the selection tag back
+    # after a fixed 1.2 s, but an aged beta session can take
+    # far longer to apply the click, and two battery runs in a
+    # row died on exactly that. Poll for the tag instead, and
+    # reload once and retry before giving up. The assertion is
+    # unchanged: the SelectedBatchNumber tag must end at the
+    # requested batch.
+    for attempt in range(2):
+        # An aged session can also leave the table EMPTY (the
+        # query result never applies to the view instance):
+        # wait for rows before concluding anything.
+        wait_until(lambda: page.locator('.ia_table__row').count()
+                   > 0, timeout=20)
+        rows = page.locator('.ia_table__row')
+        clicked = False
+        for i in range(rows.count()):
+            tokens = rows.nth(i).inner_text().replace(
+                ',', '').split()
+            if str(number) in tokens:
+                rows.nth(i).click()
+                clicked = True
+                break
+        if clicked and wait_until(
+                lambda: int(tag('[default]Roastery/'
+                                'SelectedBatchNumber') or 0)
+                == number, timeout=25):
+            return True
+        texts = [rows.nth(i).inner_text().replace('\n', ' | ')
+                 [:90] for i in range(rows.count())]
+        print('SUITE NOTE: select of %s failed (clicked %s);'
+              ' table shows %d rows: %s'
+              % (number, clicked, rows.count(), texts))
+        if attempt == 0:
+            print('SUITE NOTE: reloading once and retrying')
+            page.reload(wait_until='networkidle')
+            page.wait_for_timeout(4000)
+    return int(tag('[default]Roastery/SelectedBatchNumber')
+               or 0) == number
 
 
 def main():
@@ -561,7 +640,7 @@ def main():
             if not bean_rows:
                 return None
             last = bean_rows[-1]
-            bg = interp(pairs, last[0] / 1000.0)
+            bg = interp(pairs, (last[0] - AXIS_BASE_MS) / 1000.0)
             if bg is None:
                 return None
             return float(last[bi]) - bg
@@ -616,7 +695,7 @@ def main():
         mob.wait_for_timeout(5000)
         dismiss(mob)
         dock = mob.locator('.psc-roast-controldock')
-        dock.get_by_role('button', name='Drop').click()
+        dock_drop(dock)
         check('drop lands', wait_tag(B + '/State', 'Dropped'))
         desk.goto(BASE + '/', wait_until='networkidle', timeout=60000)
         desk.wait_for_timeout(5000)
@@ -636,14 +715,27 @@ def main():
                   '"proj"' not in raw_doc
                   and 'projection' not in raw_doc.lower())
         psql('DELETE FROM batches WHERE batch_number = %d' % roast_no)
+        # phase aware dock (polish phase 2): the Reset utility
+        # is offered only at Complete, so walk the dropped
+        # roast through Cool and Finish first (the old fixed
+        # ActionRow had Reset at every state)
+        desk.get_by_role('button', name='Cool').first.click()
+        wait_tag(B + '/State', 'Cooling')
+        desk.get_by_role('button', name='Finish').first.click()
+        wait_tag(B + '/State', 'Complete')
         desk.get_by_role('button', name='Reset').first.click()
         check('reset returns the workspace to Idle',
               wait_tag(B + '/State', 'Idle'))
         for n in imported:
             psql('DELETE FROM batches WHERE batch_number = %d' % n)
+        drain_pending()
         psql('DELETE FROM batch_events WHERE batch_number IN (%s)'
              % ', '.join(str(n) for n in imported + [roast_no, 1042]))
         write_tags([(B + '/BatchNumber', 1042)])
+        desk.goto(BASE + '/settings', wait_until='networkidle',
+                  timeout=60000)
+        desk.wait_for_timeout(4000)
+        dismiss(desk)
         desk.get_by_role('button', name='Clear ghost').first.click()
         cleared = wait_until(
             lambda: tag('[default]Roastery/BackgroundLabel') == '',
@@ -762,6 +854,17 @@ def main():
         dock = mob.locator('.psc-roast-controldock')
         dock.get_by_role('button', name='Charge').click()
         check('second roast charges', wait_tag(B + '/State', 'Roasting'))
+        # Sim curve adjustment (2026-11-17, same note as the FC
+        # target below): suggestions are turning point guarded,
+        # and the rising curve is the one that crosses a dry end
+        # target, so set the target a few degrees above the
+        # rising temp once the turning point exists. The pre
+        # charge write above still clears any stale target.
+        wait_until(
+            lambda: int(tag(B + '/TurningPointElapsedSec')) >= 0,
+            timeout=180)
+        bt0r = float(tag(B + '/BeanTempF') or 200)
+        write_tags([(B + '/TargetDryEndTempF', min(bt0r + 8.0, 320.0))])
 
         # ----- item 14: Dry End suggestion --------------------
         sug = wait_until(
@@ -789,6 +892,18 @@ def main():
         pb_seen = []
 
         # ----- item 14: FC Start suggestion -------------------
+        # Sim curve adjustment (2026-11-17): the stepped SR800
+        # program dips after charge (392 F down to the turning
+        # point near 185 F at about 73 s), so an FC target set
+        # from the falling pre-charge temp would not be crossed
+        # on the rise for many minutes and this wait would time
+        # out on the clock, not on the suggestion logic. Wait
+        # for the turning point first, then set the target a few
+        # degrees above the rising temp: the same crossing setup
+        # this check always intended, on the rising curve.
+        wait_until(
+            lambda: int(tag(B + '/TurningPointElapsedSec')) >= 0,
+            timeout=180)
         bt1 = float(tag(B + '/BeanTempF') or 300)
         write_tags([(B + '/TargetFCTempF', min(bt1 + 12.0, 405.0))])
         sug = wait_until(
@@ -890,14 +1005,22 @@ def main():
               and sum(rising) / len(rising) < -0.05,
               (len(rising),
                sum(rising) / len(rising) if rising else 0))
+        # Polish round 1 item 4: the drawn RoR column follows
+        # the Artisan display convention, so before the turning
+        # point it is blank in BOTH maps; identity is asserted
+        # over every common sample, blank counting as equal,
+        # which still proves display smoothing never touches
+        # the RoR math.
+        def _ror_eq(a, b):
+            if a is None or b is None:
+                return a is None and b is None
+            return abs(a - b) < 0.05
         ror_same = [ms for ms in both
-                    if live_on[ms].get('ror') is not None
-                    and live_off[ms].get('ror') is not None]
+                    if _ror_eq(live_on[ms].get('ror'),
+                               live_off[ms].get('ror'))]
         check('RoR column is identical with smoothing on and off',
-              len(ror_same) >= 5 and all(
-                  abs(live_on[ms]['ror'] - live_off[ms]['ror']) < 0.05
-                  for ms in ror_same),
-              len(ror_same))
+              len(both) >= 5 and len(ror_same) == len(both),
+              (len(both), len(ror_same)))
         desk.screenshot(path=SHOTS + '/roastery-tier2-smoothing-chart.png')
         write_tags([(B + '/DisplaySmoothing', 0)])
 
@@ -963,6 +1086,14 @@ def main():
                       abs(stored[s] - raw_now[s]) < 0.01 for s in shared),
                   len(shared))
         psql('DELETE FROM batches WHERE batch_number = %d' % roast2_no)
+        # phase aware dock (polish phase 2): the Reset utility
+        # is offered only at Complete, so walk the dropped
+        # roast through Cool and Finish first (the old fixed
+        # ActionRow had Reset at every state)
+        desk.get_by_role('button', name='Cool').first.click()
+        wait_tag(B + '/State', 'Cooling')
+        desk.get_by_role('button', name='Finish').first.click()
+        wait_tag(B + '/State', 'Complete')
         desk.get_by_role('button', name='Reset').first.click()
         check('reset returns the workspace to Idle after roast 2',
               wait_tag(B + '/State', 'Idle'))
@@ -971,6 +1102,7 @@ def main():
         # 1042 is in the list because New Roast records its
         # workspace Reset press under the batch number that was
         # current at the click (the standing 1042).
+        drain_pending()
         psql('DELETE FROM batch_events WHERE batch_number IN (%s)'
              % ', '.join(str(n) for n in t2_imported + [roast2_no, 1042]))
         write_tags([(B + '/BatchNumber', 1042),
@@ -978,6 +1110,10 @@ def main():
                     (B + '/TargetFCTempF', 385.0),
                     (B + '/DisplaySmoothing', 0),
                     (B + '/AnalyzerSec', -1)])
+        desk.goto(BASE + '/settings', wait_until='networkidle',
+                  timeout=60000)
+        desk.wait_for_timeout(4000)
+        dismiss(desk)
         desk.get_by_role('button', name='Clear ghost').first.click()
         cleared2 = wait_until(
             lambda: tag('[default]Roastery/BackgroundLabel') == '',

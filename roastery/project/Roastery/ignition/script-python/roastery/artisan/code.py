@@ -651,6 +651,7 @@ def import_profile(p, filename):
 def import_upload(self, event):
     """Log page FileUpload onFileReceived handler (thin)."""
     note = ''
+    toast = None
     try:
         f = event.file
         if f is None:
@@ -663,20 +664,27 @@ def import_upload(self, event):
         if number is not None:
             system.perspective.sendMessage(
                 batches.REFRESH_MESSAGE, {}, scope='page')
+            toast = ('Imported %s as batch %d'
+                     % (f.name or 'file', number), 'success')
+        else:
+            toast = (note, 'warning')
     except Exception as e:
         LOG.error('Artisan import failed: %s' % e)
         note = 'Import failed: %s' % e
+        toast = (note, 'error')
     try:
         self.view.custom.importNote = note
     except Exception:
         pass
+    if toast is not None:
+        core.show_toast(self, toast[0], toast[1])
     return note
 
 
 def stage_background_upload(self, event):
-    """Roast page FileUpload onFileReceived handler (thin):
-    stage the uploaded profile's bean curve as the Roast page
-    background overlay. Nothing is saved to the log."""
+    """Settings Background Profile FileUpload onFileReceived
+    handler (thin): stage the uploaded profile's bean curve
+    as the background overlay. Nothing is saved to the log."""
     note = ''
     try:
         f = event.file
@@ -715,9 +723,16 @@ def stage_background_upload(self, event):
         note = 'Background staged from %s: %d samples. ' \
             'Nothing was saved to the log.' % (
                 f.name or 'file', len(pairs))
+        core.show_toast(self, 'Background staged from %s'
+                        % (f.name or 'file'), 'success')
     except Exception as e:
         LOG.error('Artisan background staging failed: %s' % e)
         note = 'Background failed: %s' % e
+        # Polish round 3 (HUNT-29): the failure path only wrote
+        # the note line while the batch import handler toasts
+        # its failures; toast here too, through the choke
+        # point, so a bad file is equally visible either way.
+        core.show_toast(self, note, 'error')
     try:
         self.view.custom.bgNote = note
     except Exception:
@@ -1276,3 +1291,5 @@ def export_download(self):
         return
     filename, text = build_alog_text(int(number))
     system.perspective.download(filename, text)
+    core.show_toast(self, 'Batch %d .alog downloaded' % int(number),
+                    'success')

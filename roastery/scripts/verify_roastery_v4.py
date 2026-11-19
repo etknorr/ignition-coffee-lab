@@ -36,6 +36,11 @@ from playwright.sync_api import sync_playwright
 BASE = 'http://localhost:8088/data/perspective/client/Roastery'
 SHOTS = '/home/hatch/workspace/ignition-lab/showcase/shots'
 B = '[default]Roastery/CurrentBatch'
+# Polish round 1 item 2: chart datasets anchor their x values
+# to roastery.core.AXIS_BASE_MS (a Denver local midnight), not
+# the Unix epoch, so Denver browsers label the ticks as
+# elapsed mm:ss. Dataset assertions subtract the base.
+AXIS_BASE_MS = 946710000000
 FAILURES = []
 
 
@@ -65,6 +70,16 @@ def wait_tag(path, want, timeout=20):
     return False
 
 
+def wait_until(fn, timeout=30, step=0.5):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        v = fn()
+        if v:
+            return v
+        time.sleep(step)
+    return None
+
+
 def psql(sql):
     env = dict(os.environ)
     env['PGPASSWORD'] = open(
@@ -75,6 +90,53 @@ def psql(sql):
          '-t', '-A', '-c', sql], env=env, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     return r.stdout.strip()
+
+
+
+def drain_pending():
+    """Polish round 3: press capture slots each press's
+    context in a 16 slot ring (HUNT-22); the library
+    reconcile inserts any press the group missed. Wait
+    until every slotted press has its batch_events row, or
+    a reconciled press would resurrect a row this suite
+    just deleted."""
+    def missing():
+        paths = ['[default]Roastery/PressSlots/Slot%02d' % i
+                 for i in range(16)]
+        pairs = []
+        for raw in read_tags(paths):
+            if not raw:
+                continue
+            try:
+                e = json.loads(raw)
+            except Exception:
+                continue
+            pairs.append((int(e['b']), int(e['c'])))
+        if not pairs:
+            return False
+        cond = ' OR '.join(
+            '(batch_number = %d AND press_counter = %d)' % p
+            for p in pairs)
+        found = int(psql(
+            'SELECT COUNT(*) FROM batch_events WHERE ' + cond))
+        return found < len(pairs)
+    wait_until(lambda: not missing(), timeout=30)
+    _paths = ['[default]Roastery/PressSlots/Slot%02d' % i
+              for i in range(16)]
+    api('POST', '/tags/write', body=json.dumps(
+        {'tagPaths': _paths, 'values': [''] * 16}))
+
+def page_drop(page):
+    """Phase aware dock (polish phase 2): Drop is offered only
+    after FC End, so stamp the prerequisite events through the
+    dock first, then Drop. Each click waits for the dock to
+    re-render its next phase set."""
+    for name in ('Dry End', 'FC Start', 'FC End'):
+        btn = page.get_by_role('button', name=name)
+        if btn.count() and btn.first.is_visible():
+            btn.first.click()
+            time.sleep(1.5)
+    page.get_by_role('button', name='Drop').first.click()
 
 
 def dismiss(page):
@@ -187,12 +249,27 @@ def main():
         dock.get_by_role('button', name='Dry End').click()
         mob.wait_for_timeout(800)
         dock.get_by_role('button', name='+').nth(0).click()   # Fan +1
+        # The PressEvents transaction group scans at 250 ms;
+        # two presses inside one scan coalesce into a single
+        # batch_events row (the group sees only the latest
+        # LastAction). Pace the clicks like a human would.
+        mob.wait_for_timeout(800)
         dock.get_by_role('button', name='+').nth(1).click()   # Heat +1
         mob.wait_for_timeout(500)
         fan, heat = read_tags([B + '/FanLevel', B + '/HeatLevel'])
         check('steppers moved fan and heat',
               (fan, heat) == (fan0 + 1, heat0 + 1), (fan, heat))
         mob.wait_for_timeout(4500)
+        # Polish round 1 item 4: live turning point tracking
+        # runs only until First Crack Start is stamped (the
+        # Artisan charge to first crack window), so the TP
+        # confirmation must be awaited BEFORE the FC stamp.
+        # The stepped sim dips to about 185 F at 37 s elapsed
+        # and confirms the TP on the rise at about 45 s.
+        check('turning point confirms before first crack',
+              wait_until(
+                  lambda: int(tag(B + '/TurningPointElapsedSec')
+                              or -1) >= 0, timeout=150))
         dock.get_by_role('button', name='FC Start').click()
         mob.wait_for_timeout(45000)
         marks = ds_rows(tag('[default]Roastery/EventMarksDS'))
@@ -213,20 +290,35 @@ def main():
 
         # ---- v4.1: elapsed axis + live curve dataset -------------
         # The chart draws LiveCurveDS, built by the library from
-        # the recorded samples: elapsed (epoch based) x values,
+        # the recorded samples: elapsed (axis based) x values,
         # bean temps as stored, RoR from compute_ror_series.
-        check('marker x values are elapsed (epoch based)',
-              0 <= marks[0][0] < 3600000, marks[0][0])
+        check('marker x values are elapsed (axis based)',
+              0 <= marks[0][0] - AXIS_BASE_MS < 3600000,
+              marks[0][0])
         live = ds_rows(tag('[default]Roastery/LiveCurveDS'))
         check('live curve dataset has the roast samples',
               len(live) >= 20, len(live))
-        check('live curve x values are elapsed (epoch based)',
-              0 <= live[0][0] and live[-1][0] < 3600000,
+        check('live curve x values are elapsed (axis based)',
+              0 <= live[0][0] - AXIS_BASE_MS
+              and live[-1][0] - AXIS_BASE_MS < 3600000,
               (live[0][0], live[-1][0]))
-        check('live curve carries bean temps and calculated RoR',
-              any(r[1] is not None for r in live)
-              and sum(1 for r in live if r[2] is not None) >= 5
-              and any(r[3] is not None and r[4] is not None
+        # Polish round 1 item 4: the DRAWN RoR column follows
+        # the Artisan display convention (blank before the
+        # turning point confirms and outside the RoR clip
+        # limits); the stored samples keep the true values.
+        # This read lands mid dip, so the assertion is the
+        # convention itself; RoR presence after TP is asserted
+        # on the detail page below.
+        _clip = read_tags([B + '/RoRClipLowF', B + '/RoRClipHighF'])
+        # Polish round 3: LIVE_COLS gained t_label and t_sec
+        # after t_stamp for the category axis, so bean is
+        # index 3, ror 4, fan 5, heat 6.
+        check('live curve carries bean temps and display gated '
+              'RoR',
+              any(r[3] is not None for r in live)
+              and all(r[4] is None or _clip[0] <= r[4] <= _clip[1]
+                      for r in live)
+              and any(r[5] is not None and r[6] is not None
                       for r in live),
               live[-1])
         # v4.4: the charts are canvas components now; their
@@ -256,12 +348,13 @@ def main():
             'RoastPage/view.json'))
         _chart = _find(_rp.get('root', {}),
                        'ia.canvas-charts.line', 'RoastChart')
-        check('main chart is a canvas line chart on an elapsed'
-              ' time axis labelled Elapsed (mm:ss)',
+        check('main chart is a canvas line chart on a '
+              'category elapsed axis (round 3)',
               _chart is not None
-              and _chart['props']['xAxis']['type'] == 'time'
+              and _chart['props']['xAxis']['type'] == 'category'
+              and _chart['props']['xAxis']['field'] == 't_label'
               and _chart['props']['xAxis']['title']['text']
-              == 'Elapsed (mm:ss)')
+              == '')
         # Visible bleed only: an element counts when it starts
         # inside the viewport and extends past the right edge
         # (the defect Eric screenshotted). The Maker project
@@ -359,6 +452,12 @@ def main():
         check('no overlays mid roast',
               overlays(desk) == 0 and overlays(mob) == 0)
 
+        # The turning point was confirmed before the FC Start
+        # stamp above, and the roast has minutes of rising
+        # curve by now, so the saved curve and its ghost RoR
+        # carry the rise (a dip only drop would leave the
+        # ghost RoR legitimately empty under the display
+        # convention).
         dock.get_by_role('button', name='Drop').click()
         check('drop lands', wait_tag(B + '/State', 'Dropped'))
         mob.wait_for_timeout(1500)
@@ -465,6 +564,14 @@ def main():
                             _mmss(_dry), _mmss(_mai), _mmss(_dev),
                             _dev * 100.0 / _tot))
         check('no overlays on detail', overlays(desk) == 0)
+        # Polish round 1 item 4, second half: after the turning
+        # point the live curve RoR column carries the true
+        # computed values (the dip read above asserted the
+        # blank side of the convention).
+        _live2 = ds_rows(tag('[default]Roastery/LiveCurveDS'))
+        check('live curve RoR appears after the turning point',
+              sum(1 for r in _live2 if r[4] is not None) >= 5,
+              sum(1 for r in _live2 if r[2] is not None))
         desk.screenshot(path=os.path.join(
             SHOTS, 'roastery-v4-detail-desktop.png'))
 
@@ -475,16 +582,114 @@ def main():
         check('slide over opens', dockv.count() == 1)
         check('editor title names the batch',
               ('Edit Batch %d' % batch_no) in dockv.inner_text())
+        # Polish round 2 item 2: wait on the real readiness
+        # condition, the fully mounted form (59 inputs in the
+        # dock DOM; a stalled long lived session shows the
+        # title with only a partial mount, 11 inputs in the
+        # phase 4 dump), instead of proceeding on the title
+        # alone. Generous timeout: the stall observed in the
+        # chained battery outlasted the old 30 s waits.
+        # Polish round 2 part A: reload recovery. A fresh page
+        # instance always renders the editor (item 2 finding),
+        # so if the readiness poll times out on this aged
+        # session, reload the page once, reopen the editor,
+        # and poll again; only a second stall records the
+        # named failure below.
+        _mounted = wait_until(
+            lambda: dockv.locator('input').count() >= 59,
+            timeout=120)
+        if not _mounted:
+            print('SUITE NOTE: reload recovery fired in v4 '
+                  'editor readiness (mount poll timed out); '
+                  'reloading the page and reopening the editor '
+                  'once')
+            desk.reload(wait_until='networkidle', timeout=60000)
+            desk.wait_for_timeout(5000)
+            dismiss(desk)
+            desk.get_by_role('button', name='Edit',
+                             exact=True).click()
+            desk.wait_for_timeout(3500)
+            dockv = desk.locator('.docked-view-right')
+            _mounted = wait_until(
+                lambda: dockv.locator('input').count() >= 59,
+                timeout=120)
+        check('editor form fully rendered (59 dock inputs)',
+              bool(_mounted),
+              dockv.locator('input').count())
 
         def set_event_time(label_text, value):
+            # Type like a user. Playwright fill() sets the DOM
+            # value without the key events the form's change
+            # tracking listens for, and on a pristine form the
+            # edit then never registers, so Save Batch
+            # (autoDisable) stays disabled; that was the
+            # intermittent editor stall behind the polish
+            # round 1 item 0 regression report. The read back
+            # also guards against a late prefill refresh
+            # stomping the typed value.
             inp = dockv.locator(
                 "xpath=//*[contains(text(),'%s')]/following::input[1]"
                 % label_text)
-            inp.first.fill(value)
+            for _try in range(2):
+                inp.first.click()
+                inp.first.press('Control+a')
+                inp.first.press_sequentially(value, delay=60)
+                inp.first.press('Tab')
+                desk.wait_for_timeout(1200)
+                if inp.first.input_value() == value:
+                    return
 
         def submit_editor():
-            dockv.get_by_role('button', name='Save Batch').click()
+            # The form prefill lands asynchronously; under load
+            # a fill made before it lands is overwritten by the
+            # prefill and the form reads pristine, so Save
+            # Batch (autoDisable) stays disabled. Wait for the
+            # button to actually enable before clicking.
+            # Polish round 2 item 2: never click a button that
+            # stayed disabled (the blind click burned a 30 s
+            # Playwright timeout and crashed the suite as
+            # INCOMPLETE in the phase 4 battery); record the
+            # failure as a check instead so the suite completes
+            # and names the stall.
+            btn = dockv.get_by_role('button', name='Save Batch')
+            enabled = wait_until(lambda: not btn.is_disabled(),
+                                 timeout=60)
+            if not enabled:
+                # Polish round 2 part A: reload recovery, the
+                # submit_editor site. Reload the page once and
+                # reopen the editor on the fresh instance (the
+                # item 2 recovery); the typed edit is lost with
+                # the stalled instance, so the named failure is
+                # recorded either way, with the remount result
+                # as its detail.
+                print('SUITE NOTE: reload recovery fired in v4 '
+                      'submit_editor (Save never enabled); '
+                      'reloading the page and reopening the '
+                      'editor once')
+                desk.reload(wait_until='networkidle',
+                            timeout=60000)
+                desk.wait_for_timeout(5000)
+                dismiss(desk)
+                desk.get_by_role('button', name='Edit',
+                                 exact=True).click()
+                desk.wait_for_timeout(3500)
+                remounted = wait_until(
+                    lambda: dockv.locator('input').count() >= 59,
+                    timeout=120)
+                check('editor Save Batch enabled after edit', False,
+                      'still disabled after 60 s; reload recovery '
+                      'remounted the form: %s' % bool(remounted))
+                return
+            btn.click()
             desk.wait_for_timeout(3000)
+
+        # Wait until the prefill has landed (FC Start shows
+        # the stamped time) before editing anything.
+        _fc_inp = dockv.locator(
+            "xpath=//*[contains(text(),'FC Start time')]"
+            "/following::input[1]")
+        wait_until(lambda: _fc_inp.first.input_value()
+                   == _mmss(fc_t), timeout=30)
 
         set_event_time('FC Start time', '00:03')
         submit_editor()
@@ -549,7 +754,7 @@ def main():
         check('recharge for the duplicate save check',
               wait_tag(B + '/State', 'Roasting'))
         desk.wait_for_timeout(3000)
-        desk.get_by_role('button', name='Drop').first.click()
+        page_drop(desk)
         check('re-drop', wait_tag(B + '/State', 'Dropped'))
         desk.get_by_role('button', name='Cool').first.click()
         check('re-cool', wait_tag(B + '/State', 'Cooling'))
@@ -604,8 +809,33 @@ def main():
         desk.goto(BASE + '/', wait_until='networkidle', timeout=60000)
         desk.wait_for_timeout(5000)
         dismiss(desk)
-        desk.get_by_role('button', name='Light').click()
+        # Polish phase 2 item 7: theme lives in App Settings
+        # (gear), as an explicit mode choice.
+        # Polish round 3: App Settings is a slide over dock
+        # now (HUNT-32), and this session is aged by the time
+        # the dark pass runs; if the Dark button is not
+        # actionable shortly after the gear click, reload
+        # once and reopen (the suites' reload recovery).
+        desk.locator('.psc-roast-gear-btn:visible').first.click()
+        desk.wait_for_timeout(2500)
+        try:
+            desk.get_by_role('button', name='Dark',
+                             exact=True).click(timeout=15000)
+        except Exception:
+            print('SUITE NOTE: reload recovery fired in v4 '
+                  'dark pass (App Settings dock did not '
+                  'present Dark); reloading and reopening')
+            desk.reload(wait_until='networkidle', timeout=60000)
+            desk.wait_for_timeout(5000)
+            dismiss(desk)
+            desk.locator(
+                '.psc-roast-gear-btn:visible').first.click()
+            desk.wait_for_timeout(2500)
+            desk.get_by_role('button', name='Dark',
+                             exact=True).click()
         desk.wait_for_timeout(3000)
+        desk.get_by_role('button', name='Close', exact=True).click()
+        desk.wait_for_timeout(1000)
         desk.screenshot(path=os.path.join(
             SHOTS, 'roastery-v4-roast-dark-desktop.png'))
         mob.reload(wait_until='networkidle')
@@ -615,13 +845,18 @@ def main():
             SHOTS, 'roastery-v4-roast-dark-mobile.png'))
         check('no overlays in dark theme',
               overlays(desk) == 0 and overlays(mob) == 0)
-        desk.get_by_role('button', name='Dark').click()
+        desk.locator('.psc-roast-gear-btn:visible').first.click()
+        desk.wait_for_timeout(2500)
+        desk.get_by_role('button', name='Light', exact=True).click()
         desk.wait_for_timeout(2000)
+        desk.get_by_role('button', name='Close', exact=True).click()
+        desk.wait_for_timeout(1000)
 
         browser.close()
 
     # ---- cleanup + log window ------------------------------------
     if batch_no:
+        drain_pending()
         psql("DELETE FROM batch_events WHERE batch_number = %d"
              % batch_no)
         psql("DELETE FROM batch_series WHERE batch_number = %d"

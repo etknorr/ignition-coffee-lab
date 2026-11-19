@@ -33,6 +33,7 @@ CurrentBatch clean Idle, display and target tags restored.
 """
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -46,6 +47,10 @@ from playwright.sync_api import sync_playwright
 BASE = 'http://localhost:8088/data/perspective/client/Roastery'
 SHOTS = '/home/hatch/workspace/ignition-lab/showcase/shots'
 B = '[default]Roastery/CurrentBatch'
+# Polish round 1 item 2: chart datasets anchor x values to
+# roastery.core.AXIS_BASE_MS (a Denver local midnight), not the
+# Unix epoch. Dataset reads below normalize by subtracting it.
+AXIS_BASE_MS = 946710000000
 FIXTURE = '/home/hatch/workspace/ignition-lab/artisan-fixtures/sample-roast.alog'
 LOGS = '/home/hatch/workspace/ignition-lab/gateway-2027-maker/logs/system_logs.idb'
 ROASTPAGE_JSON = ('/home/hatch/workspace/ignition-lab/gateway-2027-maker/'
@@ -109,6 +114,38 @@ def psql(sql):
     return r.stdout.strip()
 
 
+
+def drain_pending():
+    """Polish round 3: press capture slots each press's
+    context in a 16 slot ring (HUNT-22); the library
+    reconcile inserts any press the group missed. Wait
+    until every slotted press has its batch_events row, or
+    a reconciled press would resurrect a row this suite
+    just deleted."""
+    def missing():
+        paths = ['[default]Roastery/PressSlots/Slot%02d' % i
+                 for i in range(16)]
+        pairs = []
+        for raw in read_tags(paths):
+            if not raw:
+                continue
+            try:
+                e = json.loads(raw)
+            except Exception:
+                continue
+            pairs.append((int(e['b']), int(e['c'])))
+        if not pairs:
+            return False
+        cond = ' OR '.join(
+            '(batch_number = %d AND press_counter = %d)' % p
+            for p in pairs)
+        found = int(psql(
+            'SELECT COUNT(*) FROM batch_events WHERE ' + cond))
+        return found < len(pairs)
+    wait_until(lambda: not missing(), timeout=30)
+    write_tags([('[default]Roastery/PressSlots/Slot%02d' % i, '')
+                for i in range(16)])
+
 def dismiss(page):
     if page.get_by_text('Personal Use Only').count() > 0:
         try:
@@ -161,12 +198,15 @@ def ds_rows(value):
 
 
 def band_range(col):
-    """(min_ms, max_ms) of one LiveCurveDS band column, or None."""
+    """(min_ms, max_ms) of one LiveCurveDS band column, in
+    elapsed milliseconds (axis base subtracted), or None.
+    Polish round 1 item 1: a band column now holds exactly its
+    two boundary rows, so min and max ARE the band edges."""
     cols, rows = ds_rows(tag('[default]Roastery/LiveCurveDS'))
     if col not in cols:
         return None
     i = cols.index(col)
-    ts = [r[0] for r in rows if r[i] is not None]
+    ts = [r[0] - AXIS_BASE_MS for r in rows if r[i] is not None]
     if not ts:
         return None
     return (min(ts), max(ts))
@@ -330,18 +370,18 @@ def main():
               len(lines) >= 1 and lines[0]['text'].startswith('Dry --:--'),
               lines)
         if lines:
-            # Expected shares come from the saved target tags
-            # themselves, not a hardcoded split: other suites
-            # legitimately leave different saved targets behind.
-            tg = read_tags([B + '/PhaseDryTargetSec',
-                            B + '/PhaseMaillardTargetSec',
-                            B + '/PhaseDevTargetSec'])
-            tot = float(sum(tg))
-            want = '%d%%' % round(tg[0] * 100.0 / tot)
-            check('idle stats line shows target shares and no DTR yet',
-                  want in lines[0]['text']
+            # Polish round 1 item 5 superseded the old idle
+            # line (durations --:-- next to target plan
+            # shares, which Eric's screenshots showed reading
+            # as broken): at idle every phase is a future
+            # phase, so durations and shares are both --.
+            check('idle stats line shows the polish contract '
+                  'and no DTR yet',
+                  'Dry --:-- --' in lines[0]['text']
+                  and 'Mai --:-- --' in lines[0]['text']
+                  and 'Dev --:-- --' in lines[0]['text']
                   and 'DTR --' in lines[0]['text'],
-                  (lines[0]['text'], want, tg))
+                  lines[0]['text'])
 
         # ---------- settings: the Display section --------------
         desk.goto(BASE + '/settings', wait_until='networkidle',
@@ -363,10 +403,14 @@ def main():
                     (B + '/DTRTargetPct', 25.0)])
 
         # ---------- item 16: stage the ghost from a file -------
-        desk.goto(BASE + '/', wait_until='networkidle', timeout=60000)
-        desk.wait_for_timeout(6000)
-        dismiss(desk)
+        # polish phase 2 item 5: the upload lives in the
+        # Settings Background Profile section now (the desk
+        # page is already on /settings from the block above);
+        # stage there, then return to the Roast page.
         upload(desk, FIXTURE)
+        desk.goto(BASE + '/', wait_until='networkidle', timeout=60000)
+        desk.wait_for_timeout(4000)
+        dismiss(desk)
         ok = wait_until(lambda: str(tag(
             '[default]Roastery/BackgroundLabel') or '').startswith('File: '),
             timeout=30)
@@ -425,15 +469,28 @@ def main():
             check('no cooling band before drop',
                   band_range('bandCool') is None)
 
-        # Stats line mid roast (desktop and 360px).
+        # Stats line mid roast (desktop and 360px). Polish
+        # round 1 item 5: Development is the CURRENT phase
+        # here (FC Start stamped, Drop not), so it shows its
+        # live duration and live share, not --:--; the three
+        # shares describe the same elapsed total and sum to
+        # about 100.
         want_dry = mmss(dry_s)
         want_mai = mmss(fc_s - dry_s)
         lines = stats_lines(desk)
+        _sm = None
+        if lines:
+            _sm = re.search(
+                r'Dry (\d+):(\d+) (\d+)% \u00b7 Mai (\d+):(\d+) '
+                r'(\d+)% \u00b7 Dev (\d+):(\d+) (\d+)% \u00b7 '
+                r'DTR --$', lines[0]['text'])
         check('stats line shows the stamped phase times mid roast',
               bool(lines) and want_dry in lines[0]['text']
               and want_mai in lines[0]['text']
-              and 'Dev --:--' in lines[0]['text']
-              and 'DTR --' in lines[0]['text'],
+              and _sm is not None
+              and int(_sm.group(7)) * 60 + int(_sm.group(8)) >= 3
+              and abs(int(_sm.group(3)) + int(_sm.group(6))
+                      + int(_sm.group(9)) - 100) <= 3,
               lines[0]['text'] if lines else None)
         mlines = stats_lines(mob)
         check('stats line fits 360px as one line mid roast',
@@ -565,16 +622,64 @@ def main():
         desk.goto(BASE + '/', wait_until='networkidle', timeout=60000)
         desk.wait_for_timeout(5000)
         dismiss(desk)
+        desk.goto(BASE + '/settings', wait_until='networkidle',
+                  timeout=60000)
+        desk.wait_for_timeout(4000)
+        dismiss(desk)
         check('ghost cleared through its button',
               click_visible(desk, 'Clear ghost')
               and wait_until(
                   lambda: (tag('[default]Roastery/BackgroundLabel')
                            or '') == '', timeout=20))
+        desk.goto(BASE + '/', wait_until='networkidle', timeout=60000)
+        desk.wait_for_timeout(4000)
+        dismiss(desk)
         check('staged ghost phases cleared with the ghost',
               read_tags([B + '/BgPhaseDrySec', B + '/BgPhaseFcSec',
                          B + '/BgPhaseDropSec']) == [-1, -1, -1])
-        check('reset through its button', click_visible(desk, 'Reset')
-              and wait_tag(B + '/State', 'Idle'))
+        # phase aware dock (polish phase 2): the Reset utility
+        # is offered only at Complete, under its full label;
+        # walk the cooling roast through Finish first, with
+        # retries while the dock re-renders its phase set
+        # a click dispatched while the dock re-renders its
+        # phase set can be swallowed, so retry each click
+        # until the STATE advances, not until it dispatches
+        def click_until(name, state, timeout=150):
+            t0 = time.time()
+            while time.time() - t0 < timeout:
+                if tag(B + '/State') == state:
+                    return True
+                click_visible(desk, name)
+                time.sleep(1.2)
+            return tag(B + '/State') == state
+        # Polish round 2 part A: reload recovery. If a final
+        # walk step exhausts its click_until budget (the aged
+        # session stall from item 2), reload the Roast page
+        # once and retry that step once before failing; a
+        # fresh page instance always works. At most one
+        # reload per step.
+        _recovered = set()
+
+        def click_until_recover(name, state):
+            if click_until(name, state):
+                return True
+            if name in _recovered:
+                return False
+            _recovered.add(name)
+            print('SUITE NOTE: reload recovery fired in tier3b '
+                  'final walk (%s step exhausted its budget); '
+                  'reloading the Roast page and retrying the '
+                  'step once' % name)
+            desk.goto(BASE + '/', wait_until='networkidle',
+                      timeout=60000)
+            desk.wait_for_timeout(5000)
+            dismiss(desk)
+            return click_until(name, state)
+
+        if tag(B + '/State') == 'Cooling':
+            click_until_recover('Finish', 'Complete')
+        check('reset through its button',
+              click_until_recover('Reset / New Roast', 'Idle'))
         browser.close()
 
     # ---------- restore ------------------------------------------
@@ -587,6 +692,7 @@ def main():
                 (B + '/PhaseMaillardTargetSec', 210),
                 (B + '/PhaseDevTargetSec', 150),
                 (B + '/DTRTargetPct', 20.0)])
+    drain_pending()
     psql('DELETE FROM batch_events WHERE id > %d' % max_event_id)
     state = read_tags([B + '/State', B + '/FanLevel', B + '/HeatLevel',
                        B + '/BatchNumber', B + '/ActiveSource',

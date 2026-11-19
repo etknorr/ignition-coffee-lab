@@ -149,6 +149,21 @@ def upload(page, path):
     page.wait_for_timeout(3000)
 
 
+def dock_drop(dock):
+    """Phase aware dock (polish phase 2): Drop is offered only
+    after FC End, so stamp the prerequisite events through the
+    dock first, then Drop. Each click waits for the dock to
+    re-render its next phase set."""
+    for name in ('Dry End', 'FC Start', 'FC End'):
+        btn = dock.get_by_role('button', name=name)
+        if btn.count() and btn.first.is_visible():
+            btn.first.click()
+            time.sleep(1.5)
+    dock.get_by_role('button', name='Drop').click()
+
+
+
+
 def log_marker():
     shutil.copy('gateway-2027-maker/logs/system_logs.idb',
                 '/tmp/logs_t1_start.idb')
@@ -227,6 +242,12 @@ def main():
               overlays(desk) == 0 and overlays(mob) == 0)
 
         # ---------- item 1: background from .alog ----------------
+        # Polish phase 2 item 5: the upload lives in Settings,
+        # Background Profile (off the Roast page).
+        desk.goto(BASE + '/settings', wait_until='networkidle',
+                  timeout=60000)
+        desk.wait_for_timeout(5000)
+        dismiss(desk)
         before = int(psql('SELECT COUNT(*) FROM batches'))
         upload(desk, PROPS_ALOG)
         ok = wait_until(lambda: str(tag(
@@ -246,6 +267,9 @@ def main():
               and 'Nothing was saved' in body)
         desk.screenshot(path=SHOTS + '/roastery-tier1-bg-staged.png')
         desk.get_by_role('button', name='Clear ghost').first.click()
+        desk.goto(BASE + '/', wait_until='networkidle', timeout=60000)
+        desk.wait_for_timeout(4000)
+        dismiss(desk)
         cleared = wait_until(
             lambda: tag('[default]Roastery/BackgroundLabel') == '',
             timeout=20)
@@ -465,7 +489,7 @@ def main():
         mob.screenshot(path=SHOTS + '/roastery-tier1-live-360.png')
 
         # finish and save: the document must carry TP and AUC
-        dock.get_by_role('button', name='Drop').click()
+        dock_drop(dock)
         check('drop lands', wait_tag(B + '/State', 'Dropped'))
         write_tags([(B + '/AlarmDefsJson', seeded_alarms)])
         desk.get_by_role('button', name='Save Batch').first.click()
@@ -487,6 +511,14 @@ def main():
                   float(auc_doc.get('valueFMin') or 0) > 0
                   and auc_doc.get('begin') == 'TP', auc_doc)
         psql('DELETE FROM batches WHERE batch_number = %d' % roast_no)
+        # phase aware dock (polish phase 2): the Reset utility
+        # is offered only at Complete, so walk the dropped
+        # roast through Cool and Finish first (the old fixed
+        # ActionRow had Reset at every state)
+        desk.get_by_role('button', name='Cool').first.click()
+        wait_tag(B + '/State', 'Cooling')
+        desk.get_by_role('button', name='Finish').first.click()
+        wait_tag(B + '/State', 'Complete')
         desk.get_by_role('button', name='Reset').first.click()
         check('reset returns the workspace to Idle',
               wait_tag(B + '/State', 'Idle'))

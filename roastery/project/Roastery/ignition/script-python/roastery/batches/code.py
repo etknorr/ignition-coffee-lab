@@ -40,6 +40,16 @@ DETAIL_DS = '[default]Roastery/DetailDS'
 DETAIL_MARKS = '[default]Roastery/DetailMarksDS'
 DETAIL_JSON = '[default]Roastery/DetailDocJson'
 DETAIL_REFRESH_MESSAGE = 'roastery-detail-refresh'
+# Detail chart minimum x span in seconds (polish round 2
+# item 6): the canvas time axis picks its tick label format
+# from the axis span, and a very short batch (the seeded
+# batch 1042 spans about 20 s) landed in the hour:minute:
+# second regime while the live chart reads minute:second.
+# detail_startup floors the chart max at this span so short
+# batches render in the same regime as the live chart;
+# longer batches keep their natural end. Sized empirically
+# against the rendered ticks on batch 1042.
+DETAIL_MIN_SPAN_SEC = 600
 
 BACKGROUND_LABEL = '[default]Roastery/BackgroundLabel'
 ROASTLOG_TAG = '[default]Roastery/RoastLog'
@@ -293,6 +303,12 @@ def save_current_batch(self):
             'a fresh batch number, or edit the saved batch from '
             'the Log tab.' % vals['BatchNumber'])
         return vals['BatchNumber']
+    # A saved batch's press rows must be complete: settle any
+    # press the transaction group missed before the document
+    # lands (polish round 3, HUNT-22). A short grace is enough
+    # here; the group writes inside a second in the normal
+    # case, and Save follows the last press by seconds.
+    core.reconcile_press_pending(1.0)
     doc = build_document()
     _run(NQ_INSERT, {
         'batch_number': vals['BatchNumber'],
@@ -308,6 +324,8 @@ def save_current_batch(self):
     core.bbp_clear_staged()
     core.record_press('Save Batch')
     self.view.custom.saveNote = 'Saved batch %d to the database.' % vals['BatchNumber']
+    core.show_toast(self, 'Batch %d saved' % vals['BatchNumber'],
+                    'success')
     return vals['BatchNumber']
 
 
@@ -373,9 +391,23 @@ def edit_form_data_for(self):
         return {}
     doc = batch['document']
     meta = dict(doc.get('metadata') or {})
+    # Polish round 1 item 0: a member the stored document does
+    # not carry falls back to the standing tag value, NOT to a
+    # hard 0. Seeded and legacy documents carry sparse metadata
+    # (batch 1042 has no HarvestYear and no TargetDropTempF),
+    # and a hard 0 violates those form fields' enabled
+    # constraints (HarvestYear min 1900, TargetDropTempF min
+    # 200), which left the form permanently invalid, so its
+    # Save Batch button (autoDisable) never enabled no matter
+    # what was typed into the event fields. The tag values are
+    # the same standing values create mode starts from, and
+    # they are always inside the field constraints.
+    fallback = core.config_form_data()
     data = {}
     for m in core.FORM_MEMBERS:
         v = meta.get(m)
+        if v is None:
+            v = fallback.get(m)
         if v is None:
             v = (False if m in core.FORM_BOOLS else
                  0 if m in core.FORM_INTS else
@@ -421,6 +453,7 @@ def _update_submit(self, event):
         'drop_temp_f': doc.get('dropTempF'),
         'data': system.util.jsonEncode(doc)})
     self.view.custom.editNote = 'Saved batch %d.' % batch_number
+    core.show_toast(self, 'Batch %d saved' % batch_number, 'success')
     stage_detail(batch_number)
     system.perspective.sendMessage(REFRESH_MESSAGE, {}, scope='session')
     system.perspective.sendMessage(DETAIL_REFRESH_MESSAGE, {},
@@ -449,6 +482,7 @@ def _create_submit(self, event):
         'bean_name': doc.get('beanName') or '', 'drop_temp_f': 0.0,
         'data': system.util.jsonEncode(doc)})
     self.view.custom.editNote = 'Created batch %d.' % number
+    core.show_toast(self, 'Batch %d created' % number, 'success')
     system.perspective.sendMessage(REFRESH_MESSAGE, {}, scope='session')
 
 
@@ -486,7 +520,7 @@ def refresh_table(self):
     if table is None:
         # getChild returns None (does not raise) when the child is
         # not under this component; resolve from the view root.
-        table = self.view.getChild('root').getChild('BatchTable')
+        table = self.view.getChild('BatchesPanelRoot').getChild('BatchTable')
     table.refreshBinding('props.data')
 
 
@@ -521,9 +555,9 @@ def editor_refresh(self):
     self.view.custom.editorTitle = ('New Batch' if create else
                                     'Edit Batch %d' % number)
     self.view.custom.editNote = ''
-    root = self.getChild('root')
+    root = self.getChild('BatchEditRoot')
     if root is None:
-        root = self.view.getChild('root')
+        root = self.view.getChild('BatchEditRoot')
     root.getChild('BatchForm').props.data = edit_form_data_for(self)
 
 
@@ -619,8 +653,8 @@ def set_background(self):
 # path stage_detail uses, so compared curves can never disagree
 # with the detail view.
 
-COMPARE_COLS = ['t_stamp', 'btA', 'rorA', 'btB', 'rorB',
-                'btC', 'rorC']
+COMPARE_COLS = ['t_stamp', 't_label', 't_sec', 'btA', 'rorA',
+                'btB', 'rorB', 'btC', 'rorC']
 COMPARE_SLOTS = ('A', 'B', 'C')
 
 
@@ -641,9 +675,9 @@ def compare_startup(self):
     """BatchesPanel onStartup: fill the three compare pickers
     and default A and B to the two newest batches."""
     opts = compare_options()
-    root = self.getChild('root')
+    root = self.getChild('BatchesPanelRoot')
     if root is None:
-        root = self.view.getChild('root')
+        root = self.view.getChild('BatchesPanelRoot')
     for slot in COMPARE_SLOTS:
         root.getChild('CompareRow').getChild(
             'Cmp' + slot).props.options = opts
@@ -669,13 +703,14 @@ def _compare_points(batch_number):
 
 def build_compare(self):
     """Compare button: build the wide compare dataset on the
-    elapsed axis (timestamp union, nulls elsewhere, the live
-    chart's merge shape) and the caption naming each slot."""
-    from java.util import Date
+    elapsed category axis (per second grid, nulls elsewhere,
+    the live chart's merge shape; polish round 3, HUNT-23)
+    and the caption naming each slot."""
     c = self.view.custom
     chosen = [('A', int(c.cmpA or 0)), ('B', int(c.cmpB or 0)),
               ('C', int(c.cmpC or 0))]
-    merged = {}
+    placed = {}
+    max_sec = [0]
     captions = []
     for slot, number in chosen:
         if number <= 0:
@@ -687,22 +722,21 @@ def build_compare(self):
                                        offline=True)
         ror_by_t = dict((t, r) for t, r in rors)
         for t, bt in points:
-            ms = long(t * 1000)
-            row = merged.get(ms)
-            if row is None:
-                row = {}
-                merged[ms] = row
-            row['bt' + slot] = bt
-            row['ror' + slot] = ror_by_t.get(t)
+            s = int(round(float(t)))
+            placed.setdefault('bt' + slot, {})[s] = bt
+            placed.setdefault('ror' + slot, {})[s] = \
+                ror_by_t.get(t)
+            if s > max_sec[0]:
+                max_sec[0] = s
         batch = get_batch(number)
         bean = (batch['beanName'] if batch else '') or ''
         captions.append('%s = Batch %d %s' % (slot, number, bean))
-    rows = []
-    for ms in sorted(merged):
-        m = merged[ms]
-        rows.append([Date(ms), m.get('btA'), m.get('rorA'),
-                     m.get('btB'), m.get('rorB'),
-                     m.get('btC'), m.get('rorC')])
+    if placed:
+        rows = core.second_grid(
+            placed, ['btA', 'rorA', 'btB', 'rorB', 'btC',
+                     'rorC'], max_sec[0])
+    else:
+        rows = []
     c.compareDs = system.dataset.toDataSet(COMPARE_COLS, rows)
     c.compareCaption = (' - '.join(captions) if captions
                         else 'Pick at least one batch to compare.')
@@ -838,14 +872,29 @@ def stage_detail(batch_number):
                            float(bt)))
     rors = core.compute_ror_series(points, core.ror_params(),
                                    offline=True)
-    # X values are elapsed dates (epoch + t_offset seconds), the
-    # v4.1 axis: the detail chart reads exactly like the live
-    # chart, and no longer depends on the batch having a stored
-    # roast_start wall clock (the generated fixture batches have
-    # none, and their detail curves used to stage empty).
-    rows = []
+    # X values are elapsed seconds on the category axis
+    # (polish round 3, HUNT-23): the detail chart reads
+    # exactly like the live chart, true elapsed labels in
+    # any browser timezone, and no longer depends on the
+    # batch having a stored roast_start wall clock (the
+    # generated fixture batches have none, and their detail
+    # curves used to stage empty). The grid is floored at
+    # DETAIL_MIN_SPAN_SEC (the round 2 tick span fix, which
+    # used to bind the axis max from detail_startup; the
+    # padded grid now carries the span itself). A stored
+    # point at a fractional second lands on its nearest
+    # second.
+    placed = {'bt': {}, 'ror': {}}
     for (t, bt), (_t2, ror) in zip(points, rors):
-        rows.append([Date(long(t * 1000)), bt, ror])
+        s = int(round(float(t)))
+        placed['bt'][s] = bt
+        placed['ror'][s] = ror
+    end_sec = int(float(doc.get('totalSec') or 0))
+    if points:
+        end_sec = max(end_sec, int(round(points[-1][0])))
+    rows = core.second_grid(
+        placed, ['bt', 'ror'],
+        max(end_sec, DETAIL_MIN_SPAN_SEC))
     evs = []
     events = doc.get('events') or {}
     for key, lbl in (('charge', 'CHARGE'), ('dryEnd', 'DRY END'),
@@ -861,7 +910,8 @@ def stage_detail(batch_number):
                         (c.get('name') or 'CUSTOM').upper()))
     system.tag.writeBlocking(
         [DETAIL_DS, DETAIL_MARKS],
-        [system.dataset.toDataSet(['t_stamp', 'bt', 'ror'], rows),
+        [system.dataset.toDataSet(
+            ['t_stamp', 't_label', 't_sec', 'bt', 'ror'], rows),
          core.marks_dataset(evs)])
     # The detail analyzer (Tier 2 item 13) restages with the
     # batch: selection back to Latest, readout recomputed.
@@ -900,7 +950,7 @@ def _detail_points():
         bt = ds.getValueAt(r, 'bt')
         if ts is None or bt is None:
             continue
-        t = ts.getTime() / 1000.0
+        t = (ts.getTime() - core.AXIS_BASE_MS) / 1000.0
         points.append((t, float(bt)))
         rors.append((t, ds.getValueAt(r, 'ror')))
     return points, rors
@@ -965,8 +1015,7 @@ def detail_reference_lines():
         if c.get('t') is not None:
             evs.append((float(c['t']),
                         (c.get('name') or 'CUSTOM').upper()))
-    return core._ref_items(evs, top_gap=150.0, mid_gap=60.0,
-                           mid_top_gap=60.0)
+    return core._ref_items(evs, top_gap=55.0)
 
 
 def open_detail(self):
@@ -1309,6 +1358,7 @@ def _phase_analysis(doc, points):
 
 
 def detail_startup(self):
+    core.apply_theme(self)
     """BatchDetail view onStartup: fill the view custom props from
     the staged document (DetailDocJson) and the captured presses
     (Events/SelectByBatch, named query)."""
@@ -1327,6 +1377,11 @@ def detail_startup(self):
     self.view.custom.subText = '%s - %s' % (
         (doc.get('roastStart') or '')[:16].replace('T', ' '),
         doc.get('roastDegree') or '')
+    # HUNT-24 (polish round 2 hunt): a seeded stub batch carries
+    # a seedNote in its document (HUNT-16); surface it on the
+    # detail page so the stub analytics are not read as a real
+    # roast. Empty for normal batches, and the label hides.
+    self.view.custom.dSeedNote = doc.get('seedNote') or ''
     self.view.custom.dTotal = _mmss(doc.get('totalSec'))
     self.view.custom.dDtr = ('%.1f%%' % phases['dtrPct']
                              if phases.get('dtrPct') is not None
@@ -1354,7 +1409,11 @@ def detail_startup(self):
             return '--'
         return '%d%%' % int(round(float(sec) * 100.0 / _tot))
     def _ms(sec):
-        sec = int(max(0, float(sec or 0)))
+        # Polish round 1 item 5: a phase the document does not
+        # have reads --:--, matching its -- share, never 0:00.
+        if sec is None:
+            return '--:--'
+        sec = int(max(0, float(sec)))
         return '%d:%02d' % (sec // 60, sec % 60)
     _sep = ' ' + chr(183) + ' '
     self.view.custom.dStatsLine = _sep.join([
@@ -1379,6 +1438,12 @@ def detail_startup(self):
     except Exception:
         pts = []
     pts.sort()
+    # Detail chart span (polish round 2 item 6, moved in
+    # round 3): the span floor at DETAIL_MIN_SPAN_SEC used
+    # to bind the axis max through a detailMaxMs custom
+    # prop; on the category axis the padded per second grid
+    # stage_detail builds carries the span itself, and the
+    # view's axis max is simply auto.
     seg_rows, tp_text, extra = _phase_analysis(doc, pts)
     self.view.custom.analysisDs = system.dataset.toDataSet(
         ['phase', 'time', 'share', 'gain', 'avgRor', 'auc'],
@@ -1504,7 +1569,21 @@ def seed_from_roastlog():
     seededFromRoastLog and originalBatchNumber. Curve points come
     from the stored curveJson ([seconds, temp] pairs); rate of rise
     is derived by finite difference; fan and heat were not recorded
-    in v2 and stay null. Returns the number of batches inserted."""
+    in v2 and stay null. Returns the number of batches inserted.
+
+    HUNT-16 (polish round 2): stub rows gain a seedNote. A source
+    row is a stub when totalSec is under 60 and drySec is 0: it
+    never recorded even the first phase, so it is a short test
+    artifact from early development, not a full roast record.
+    Rows 4 to 7 of the legacy tag are exactly that (9 s each,
+    drySec 0, the same drop temp repeated); rows 1 to 3 are short
+    test roasts too (18 to 19 s) but carry complete phase splits
+    and distinct curves, so the stub note would be false for them
+    and they do not gain one. No fuller source for the stub rows
+    survives anywhere: the RoastLog backup file is identical in
+    content to the tag, and the original records were lost with
+    the pre-rebuild database. Seeded values stay truthful to the
+    source; nothing plausible is fabricated."""
     from java.util import Date
     ds = system.tag.readBlocking([ROASTLOG_TAG])[0].value
     if ds is None or ds.rowCount == 0:
@@ -1552,6 +1631,14 @@ def seed_from_roastlog():
                                   'tempF': None},
                        'drop': {'t': total, 'ts': _iso(end),
                                 'tempF': row['dropTempF']}}}
+        if total < 60 and (row['drySec'] or 0) == 0:
+            doc['seedNote'] = (
+                'Seeded from a RoastLog stub row (totalSec %g s, '
+                'drySec 0): a short test artifact from early '
+                'development, not a full roast record. No fuller '
+                'source survives (the RoastLog backup file holds '
+                'the same rows); the original record was lost '
+                'with the pre-rebuild database.' % total)
         _run(NQ_INSERT, {
             'batch_number': number, 'roast_start': start,
             'roast_end': end, 'bean_name': row['bean'],
@@ -1817,6 +1904,8 @@ def export_csv_download(self):
         return
     filename, text = build_csv_text(int(number))
     system.perspective.download(filename, text)
+    core.show_toast(self, 'Batch %d CSV downloaded' % int(number),
+                    'success')
 
 
 def export_json_download(self):
@@ -1826,6 +1915,8 @@ def export_json_download(self):
         return
     filename, text = build_json_text(int(number))
     system.perspective.download(filename, text)
+    core.show_toast(self, 'Batch %d JSON downloaded' % int(number),
+                    'success')
 
 
 def export_summary_download(self):
@@ -1836,6 +1927,8 @@ def export_summary_download(self):
         return
     filename, text = build_summary_html(int(number))
     system.perspective.download(filename, text)
+    core.show_toast(self, 'Batch %d summary downloaded' % int(number),
+                    'success')
 
 
 def calculator_seed(doc):

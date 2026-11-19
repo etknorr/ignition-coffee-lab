@@ -44,6 +44,10 @@ from playwright.sync_api import sync_playwright
 BASE = 'http://localhost:8088/data/perspective/client/Roastery'
 SHOTS = '/home/hatch/workspace/ignition-lab/showcase/shots'
 B = '[default]Roastery/CurrentBatch'
+# Polish round 1 item 2: chart datasets anchor x values to
+# roastery.core.AXIS_BASE_MS (a Denver local midnight), not the
+# Unix epoch. Dataset reads below normalize by subtracting it.
+AXIS_BASE_MS = 946710000000
 WS = B + '/Sources/WebSocket/BeanTempF'
 BBP = '[default]Roastery/Bbp'
 TE = '[default]Roastery/TargetEditor'
@@ -105,6 +109,38 @@ def psql(sql):
     assert r.returncode == 0, r.stderr
     return r.stdout.strip()
 
+
+
+def drain_pending():
+    """Polish round 3: press capture slots each press's
+    context in a 16 slot ring (HUNT-22); the library
+    reconcile inserts any press the group missed. Wait
+    until every slotted press has its batch_events row, or
+    a reconciled press would resurrect a row this suite
+    just deleted."""
+    def missing():
+        paths = ['[default]Roastery/PressSlots/Slot%02d' % i
+                 for i in range(16)]
+        pairs = []
+        for raw in read_tags(paths):
+            if not raw:
+                continue
+            try:
+                e = json.loads(raw)
+            except Exception:
+                continue
+            pairs.append((int(e['b']), int(e['c'])))
+        if not pairs:
+            return False
+        cond = ' OR '.join(
+            '(batch_number = %d AND press_counter = %d)' % p
+            for p in pairs)
+        found = int(psql(
+            'SELECT COUNT(*) FROM batch_events WHERE ' + cond))
+        return found < len(pairs)
+    wait_until(lambda: not missing(), timeout=30)
+    write_tags([('[default]Roastery/PressSlots/Slot%02d' % i, '')
+                for i in range(16)])
 
 def dismiss(page):
     if page.get_by_text('Personal Use Only').count() > 0:
@@ -221,6 +257,23 @@ def bbp_expected(samples, span=6.0):
 
 def approx(a, b, tol):
     return a is not None and b is not None and abs(float(a) - float(b)) <= tol
+
+
+def dock_prereq(dock):
+    """Phase aware dock (polish phase 2): Drop is offered only
+    after FC End, so stamp the prerequisite events through the
+    dock first. Each click waits for the dock to re-render its
+    next phase set."""
+    for name in ('Dry End', 'FC Start', 'FC End'):
+        btn = dock.get_by_role('button', name=name)
+        if btn.count() and btn.first.is_visible():
+            btn.first.click()
+            time.sleep(1.5)
+
+
+def dock_drop(dock):
+    dock_prereq(dock)
+    dock.get_by_role('button', name='Drop').click()
 
 
 def log_marker():
@@ -453,7 +506,8 @@ def main():
         rows = wait_until(plan_rows, timeout=30)
         check('plan overlay dataset exists during the roast', bool(rows))
         if rows:
-            by_ms = dict((int(r[0]), r[1]) for r in rows)
+            by_ms = dict((int(r[0]) - AXIS_BASE_MS, r[1])
+                         for r in rows)
             check('plan line follows the 6 point plan (600 at 410, '
                   'ends 720 at 425)',
                   approx(by_ms.get(600000), 410.0, 0.6)
@@ -473,7 +527,7 @@ def main():
             last = bean_rows[-1]
             want = float(last[bi]) - plan_at(
                 [(float(t), float(v)) for t, v in plan6],
-                last[0] / 1000.0)
+                (last[0] - AXIS_BASE_MS) / 1000.0)
             got = float(str(dev_txt).replace(' F', ''))
             check('deviation matches BT minus the 6 point plan at '
                   'the same elapsed time', approx(got, want, 6.0),
@@ -482,6 +536,10 @@ def main():
 
         # ---------- item 20: DROP opens the window --------------
         mob.wait_for_timeout(1500)
+        # prerequisites first: the DROP to CHARGE duration
+        # below is measured from the Drop press itself, so the
+        # timestamp is taken after the prerequisite stamps
+        dock_prereq(dock)
         t_drop_click = time.time()
         dock.get_by_role('button', name='Drop').click()
         check('roast 1 drop lands', wait_tag(B + '/State', 'Dropped'))
@@ -571,7 +629,7 @@ def main():
 
         # Finish roast 2 and save it: the bbp subdocument lands.
         mob.wait_for_timeout(3500)
-        dock.get_by_role('button', name='Drop').click()
+        dock_drop(dock)
         check('roast 2 drop lands', wait_tag(B + '/State', 'Dropped'))
         desk.goto(BASE + '/', wait_until='networkidle', timeout=60000)
         desk.wait_for_timeout(5000)
@@ -685,8 +743,28 @@ def main():
         desk.goto(BASE + '/', wait_until='networkidle', timeout=60000)
         desk.wait_for_timeout(5000)
         dismiss(desk)
-        check('reset through its button', click_visible(desk, 'Reset')
-              and wait_tag(B + '/State', 'Idle'))
+        # phase aware dock (polish phase 2): at Dropped the
+        # dock offers Cool and Finish; the Reset utility is
+        # offered at Complete under its full label. Walk the
+        # roast closed first (the window stays open through
+        # Cooling and Complete, so the discard assertion
+        # below still tests Reset itself).
+        click_visible(desk, 'Cool')
+        wait_tag(B + '/State', 'Cooling')
+        # a click dispatched while the dock re-renders its
+        # phase set can be swallowed, so retry each click
+        # until the STATE advances, not until it dispatches
+        def click_until(name, state, timeout=40):
+            t0 = time.time()
+            while time.time() - t0 < timeout:
+                if tag(B + '/State') == state:
+                    return True
+                click_visible(desk, name)
+                time.sleep(1.2)
+            return tag(B + '/State') == state
+        click_until('Finish', 'Complete')
+        check('reset through its button',
+              click_until('Reset / New Roast', 'Idle'))
         check('reset discarded the window opened by roast 2 drop',
               read_tags([BBP + '/WindowActive', BBP + '/HasMetrics',
                          BBP + '/SampleCount']) == [False, False, 0],
@@ -697,6 +775,7 @@ def main():
     # ---------- restore ------------------------------------------
     psql('DELETE FROM batches WHERE batch_number IN (%d, %d)'
          % (roast1, roast2))
+    drain_pending()
     psql('DELETE FROM batch_events WHERE id > %d' % max_event_id)
     write_tags([(B + '/BatchNumber', 1042),
                 (B + '/ActiveSource', 'Simulated'),
