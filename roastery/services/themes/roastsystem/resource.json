@@ -1,0 +1,14 @@
+{
+  "scope": "G",
+  "description": "Roastery system theme: built in light with built in dark layered under prefers-color-scheme dark.",
+  "version": 1,
+  "restricted": false,
+  "overridable": true,
+  "files": [
+    "config.json",
+    "index.css"
+  ],
+  "attributes": {
+    "lastModificationSignature": ""
+  }
+}

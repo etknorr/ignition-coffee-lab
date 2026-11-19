@@ -48,8 +48,21 @@ CREATE TABLE IF NOT EXISTS batch_events (
     rate_of_rise_f DOUBLE PRECISION,
     fan_level     INTEGER,
     heat_level    INTEGER,
-    pressed_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    pressed_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    press_counter BIGINT
 );
 
 CREATE INDEX IF NOT EXISTS batch_events_batch_idx
     ON batch_events (batch_number, pressed_at);
+
+-- Polish round 3 (HUNT-22): press_counter carries the
+-- ActionCounter value of the press that wrote the row. The
+-- unique index is the dedupe key for the library reconcile
+-- fallback: a (batch_number, press_counter) pair can exist
+-- exactly once, whoever wrote it. Rows written before this
+-- column existed keep NULL, and NULLs never conflict.
+ALTER TABLE batch_events
+    ADD COLUMN IF NOT EXISTS press_counter BIGINT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS batch_events_press_counter_uidx
+    ON batch_events (batch_number, press_counter);
