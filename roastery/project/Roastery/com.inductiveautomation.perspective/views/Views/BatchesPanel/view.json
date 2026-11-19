@@ -9,7 +9,8 @@
     "cmpB": 0,
     "cmpC": 0,
     "compareDs": null,
-    "compareCaption": "Pick up to three batches and press Compare."
+    "compareCaption": "Pick up to three batches and press Compare.",
+    "showAllCols": false
   },
   "params": {},
   "propConfig": {},
@@ -33,7 +34,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "root"
+      "name": "BatchesPanelRoot"
     },
     "props": {
       "direction": "column",
@@ -123,7 +124,7 @@
             }
           },
           "style": {
-            "classes": "roast-table"
+            "classes": "roast-table roast-cols-full"
           }
         },
         "propConfig": {
@@ -159,6 +160,299 @@
           "grow": 0,
           "shrink": 0,
           "basis": "430px"
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "BatchTablePhoneWrap"
+        },
+        "props": {
+          "direction": "column",
+          "style": {
+            "classes": "roast-gap-8 roast-cols-phone"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "ColsToggleRow"
+            },
+            "props": {
+              "direction": "row",
+              "justify": "flex-end",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-gap-12"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "ColsToggleButton"
+                },
+                "props": {
+                  "text": "All columns",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "if({view.custom.showAllCols}, 'Fewer columns', 'All columns')"
+                      }
+                    }
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core\n\troastery.core.toggle_all_cols(self)\n"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "ia.display.table",
+            "meta": {
+              "name": "BatchTablePhone"
+            },
+            "props": {
+              "data": [],
+              "columns": [
+                {
+                  "field": "batch_number",
+                  "header": {
+                    "title": "Batch"
+                  },
+                  "width": 54
+                },
+                {
+                  "field": "roast_start",
+                  "header": {
+                    "title": "Date"
+                  },
+                  "width": 100,
+                  "render": "date",
+                  "dateFormat": "MM-DD h:mm a"
+                },
+                {
+                  "field": "bean_name",
+                  "header": {
+                    "title": "Bean"
+                  },
+                  "width": 68
+                },
+                {
+                  "field": "drop_temp_f",
+                  "header": {
+                    "title": "Drop (F)"
+                  },
+                  "width": 62
+                }
+              ],
+              "pager": {
+                "enabled": false
+              },
+              "rows": {
+                "height": 40
+              },
+              "header": {
+                "height": 36,
+                "style": {
+                  "classes": "roast-table-header"
+                }
+              },
+              "style": {
+                "classes": "roast-table"
+              }
+            },
+            "propConfig": {
+              "props.data": {
+                "binding": {
+                  "type": "query",
+                  "config": {
+                    "queryPath": "Roastery/Batches/SelectAll",
+                    "returnFormat": "dataset",
+                    "parameters": {},
+                    "polling": {
+                      "enabled": false,
+                      "rate": 5
+                    },
+                    "designerUseLimit": true,
+                    "bypassCache": false
+                  }
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({view.custom.showAllCols}, 'roast-table roast-hidden', 'roast-table')"
+                  }
+                }
+              }
+            },
+            "events": {
+              "component": {
+                "onRowClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.batches\n\troastery.batches.select_row(self, event)\n"
+                  }
+                }
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "430px"
+            }
+          },
+          {
+            "type": "ia.display.table",
+            "meta": {
+              "name": "BatchTableFullPhone"
+            },
+            "props": {
+              "data": [],
+              "columns": [
+                {
+                  "field": "batch_number",
+                  "header": {
+                    "title": "Batch"
+                  },
+                  "width": 60
+                },
+                {
+                  "field": "roast_start",
+                  "header": {
+                    "title": "Date"
+                  },
+                  "width": 132,
+                  "render": "date",
+                  "dateFormat": "MM-DD h:mm a"
+                },
+                {
+                  "field": "bean_name",
+                  "header": {
+                    "title": "Bean"
+                  },
+                  "width": 120
+                },
+                {
+                  "field": "drop_temp_f",
+                  "header": {
+                    "title": "Drop (F)"
+                  },
+                  "width": 66
+                },
+                {
+                  "field": "total_sec",
+                  "header": {
+                    "title": "Total (s)"
+                  },
+                  "width": 62
+                },
+                {
+                  "field": "dtr_pct",
+                  "header": {
+                    "title": "DTR %"
+                  },
+                  "width": 56
+                },
+                {
+                  "field": "roast_degree",
+                  "header": {
+                    "title": "Degree"
+                  },
+                  "width": 84
+                },
+                {
+                  "field": "id",
+                  "header": {
+                    "title": "ID"
+                  },
+                  "width": 50,
+                  "visible": false
+                }
+              ],
+              "pager": {
+                "enabled": false
+              },
+              "rows": {
+                "height": 40
+              },
+              "header": {
+                "height": 36,
+                "style": {
+                  "classes": "roast-table-header"
+                }
+              },
+              "style": {
+                "classes": "roast-table"
+              }
+            },
+            "propConfig": {
+              "props.data": {
+                "binding": {
+                  "type": "query",
+                  "config": {
+                    "queryPath": "Roastery/Batches/SelectAll",
+                    "returnFormat": "dataset",
+                    "parameters": {},
+                    "polling": {
+                      "enabled": false,
+                      "rate": 5
+                    },
+                    "designerUseLimit": true,
+                    "bypassCache": false
+                  }
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({view.custom.showAllCols}, 'roast-table', 'roast-table roast-hidden')"
+                  }
+                }
+              }
+            },
+            "events": {
+              "component": {
+                "onRowClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.batches\n\troastery.batches.select_row(self, event)\n"
+                  }
+                }
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "430px"
+            }
+          }
+        ],
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "auto"
         }
       },
       {
@@ -256,18 +550,12 @@
         }
       },
       {
-        "type": "ia.container.flex",
         "meta": {
-          "name": "FootRow"
+          "name": "SelNoteRow"
         },
+        "type": "ia.container.flex",
         "props": {
-          "direction": "row",
-          "justify": "flex-end",
-          "alignItems": "center",
-          "wrap": "wrap",
-          "style": {
-            "classes": "roast-gap-12"
-          }
+          "direction": "row"
         },
         "children": [
           {
@@ -296,7 +584,24 @@
                 }
               }
             }
-          },
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "FootRow"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "flex-end",
+          "alignItems": "center",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
           {
             "type": "ia.input.button",
             "meta": {
@@ -490,7 +795,18 @@
               "shrink": 1,
               "basis": "190px"
             }
-          },
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "ImportNoteRow"
+        },
+        "type": "ia.container.flex",
+        "props": {
+          "direction": "row"
+        },
+        "children": [
           {
             "type": "ia.display.label",
             "meta": {
@@ -1177,8 +1493,8 @@
                   "visible": true,
                   "width": 1
                 },
-                "boundaryGap": true,
-                "field": "t_stamp",
+                "boundaryGap": false,
+                "field": "t_label",
                 "gridLines": {
                   "color": "",
                   "visible": false,
@@ -1194,14 +1510,8 @@
                   "visible": true
                 },
                 "max": "auto",
-                "min": 1000,
+                "min": "auto",
                 "position": "bottom",
-                "ticks": {
-                  "displayInside": false,
-                  "majorSplit": 11,
-                  "minorSplit": 0,
-                  "visible": true
-                },
                 "title": {
                   "color": "",
                   "elementStyle": {},
@@ -1212,7 +1522,7 @@
                   "text": "",
                   "visible": false
                 },
-                "type": "time",
+                "type": "category",
                 "visible": true
               },
               "yAxis": [
@@ -1345,6 +1655,160 @@
                   "config": {
                     "path": "view.custom.compareDs"
                   }
+                }
+              },
+              "props.xAxis.labels.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.xAxis.advanced.axisPointer.label.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].labels.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].title.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].advanced.axisPointer.label.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].labels.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].title.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].advanced.axisPointer.label.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.xAxis.advanced.axisPointer.label.backgroundColor": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].advanced.axisPointer.label.backgroundColor": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].advanced.axisPointer.label.backgroundColor": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                    }
+                  ]
                 }
               }
             },

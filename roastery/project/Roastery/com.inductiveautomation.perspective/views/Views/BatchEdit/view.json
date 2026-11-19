@@ -25,7 +25,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "root"
+      "name": "BatchEditRoot"
     },
     "props": {
       "direction": "column",
@@ -24315,7 +24315,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -24923,7 +24923,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -25531,7 +25531,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -26148,7 +26148,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -26756,7 +26756,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -27364,7 +27364,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -27981,7 +27981,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -28589,7 +28589,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -29197,7 +29197,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }
@@ -29814,7 +29814,7 @@
                             "type": "boolean",
                             "options": [
                               {
-                                "text": "text",
+                                "text": "",
                                 "value": "",
                                 "triState": false
                               }

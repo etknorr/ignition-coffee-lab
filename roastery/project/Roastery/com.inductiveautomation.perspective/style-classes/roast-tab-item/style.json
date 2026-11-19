@@ -1,0 +1,12 @@
+{
+  "base": {
+    "style": {
+      "fontSize": "14px",
+      "fontWeight": "700",
+      "color": "var(--label)",
+      "padding": "8px 14px",
+      "borderRadius": "var(--roast-radius-small)",
+      "cursor": "pointer"
+    }
+  }
+}

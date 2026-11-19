@@ -1,0 +1,93 @@
+{
+  "custom": {},
+  "params": {
+    "key": "",
+    "label": "",
+    "kind": "primary",
+    "lead": false,
+    "customIndex": 0
+  },
+  "propConfig": {
+    "params.key": {
+      "paramDirection": "input"
+    },
+    "params.label": {
+      "paramDirection": "input"
+    },
+    "params.kind": {
+      "paramDirection": "input"
+    },
+    "params.lead": {
+      "paramDirection": "input"
+    },
+    "params.customIndex": {
+      "paramDirection": "input"
+    }
+  },
+  "props": {
+    "defaultSize": {
+      "width": 120,
+      "height": 48
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "DockButtonRoot"
+    },
+    "props": {
+      "direction": "row",
+      "style": {
+        "classes": "roast-full"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.input.button",
+        "meta": {
+          "name": "DockBtn"
+        },
+        "props": {
+          "text": "",
+          "style": {
+            "classes": "roast-btn roast-btn-primary"
+          }
+        },
+        "position": {
+          "grow": 1,
+          "shrink": 1,
+          "basis": "0px"
+        },
+        "propConfig": {
+          "props.text": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "view.params.label"
+              }
+            }
+          },
+          "props.style.classes": {
+            "binding": {
+              "type": "expr",
+              "config": {
+                "expression": "if({view.params.lead}, 'roast-btn roast-btn-primary roast-btn-lg', if({view.params.kind} = 'custom', 'roast-btn roast-btn-event', if({view.params.kind} = 'utility', 'roast-btn roast-btn-reset', 'roast-btn roast-btn-event')))"
+              }
+            }
+          }
+        },
+        "events": {
+          "dom": {
+            "onClick": {
+              "scope": "G",
+              "type": "script",
+              "config": {
+                "script": "\timport roastery.core, roastery.batches\n\troastery.core.dock_press(self)\n"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

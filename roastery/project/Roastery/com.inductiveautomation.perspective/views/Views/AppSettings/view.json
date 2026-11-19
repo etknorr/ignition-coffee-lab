@@ -1,0 +1,212 @@
+{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 440,
+      "height": 430
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "AppSettingsRoot"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-card roast-gap-12"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "AppSettingsTitle"
+        },
+        "props": {
+          "text": "App Settings",
+          "style": {
+            "classes": "roast-title-sm"
+          }
+        }
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "ThemeHead"
+        },
+        "props": {
+          "text": "Theme",
+          "style": {
+            "classes": "roast-section-title"
+          }
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "ThemeModeRow"
+        },
+        "props": {
+          "direction": "row",
+          "style": {
+            "classes": "roast-gap-8"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "ThemeSystemButton"
+            },
+            "props": {
+              "text": "System",
+              "style": {
+                "classes": "roast-btn roast-btn-ghost"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            },
+            "propConfig": {
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/AppSettings/ThemeMode} = 'System', 'roast-btn roast-btn-primary', 'roast-btn roast-btn-ghost')"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.set_theme_mode(self, 'System')\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "ThemeLightButton"
+            },
+            "props": {
+              "text": "Light",
+              "style": {
+                "classes": "roast-btn roast-btn-ghost"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            },
+            "propConfig": {
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/AppSettings/ThemeMode} = 'Light', 'roast-btn roast-btn-primary', 'roast-btn roast-btn-ghost')"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.set_theme_mode(self, 'Light')\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "ThemeDarkButton"
+            },
+            "props": {
+              "text": "Dark",
+              "style": {
+                "classes": "roast-btn roast-btn-ghost"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            },
+            "propConfig": {
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/AppSettings/ThemeMode} = 'Dark', 'roast-btn roast-btn-primary', 'roast-btn roast-btn-ghost')"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.set_theme_mode(self, 'Dark')\n"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "ThemeNote"
+        },
+        "props": {
+          "text": "System follows the device: the app uses the light or dark look your phone or computer is using, and changes with it. Light and Dark pin that look. The choice is remembered for the next session.",
+          "style": {
+            "classes": "roast-section-desc"
+          }
+        }
+      },
+      {
+        "type": "ia.input.button",
+        "meta": {
+          "name": "CloseButton"
+        },
+        "props": {
+          "text": "Close",
+          "style": {
+            "classes": "roast-btn roast-btn-ghost"
+          }
+        },
+        "events": {
+          "dom": {
+            "onClick": {
+              "scope": "G",
+              "type": "script",
+              "config": {
+                "script": "\timport roastery.core\n\troastery.core.close_app_settings(self)\n"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

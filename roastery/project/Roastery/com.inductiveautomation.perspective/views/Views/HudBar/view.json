@@ -24,10 +24,13 @@
     },
     "custom.phaseText": {
       "binding": {
-        "type": "expr",
+        "type": "tag",
         "config": {
-          "expression": "if({[default]Roastery/CurrentBatch/State} = 'Idle', 'Pre-charge', if({[default]Roastery/CurrentBatch/State} = 'Dropped', 'Dropped', if({[default]Roastery/CurrentBatch/State} = 'Cooling', 'Cooling', if({[default]Roastery/CurrentBatch/State} = 'Complete', 'Complete', if({[default]Roastery/CurrentBatch/SecondCrackStartElapsedSec} >= 0, 'Second Crack', if({[default]Roastery/CurrentBatch/FirstCrackStartElapsedSec} >= 0, 'Development', if({[default]Roastery/CurrentBatch/DryEndElapsedSec} >= 0, 'Maillard', 'Drying')))))))"
-        }
+          "tagPath": "[default]Roastery/CurrentBatch/PhaseLabel",
+          "mode": "direct",
+          "bidirectional": false
+        },
+        "bidirectional": false
       }
     }
   },
@@ -40,7 +43,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "root"
+      "name": "HudBarRoot"
     },
     "props": {
       "direction": "row",
@@ -181,7 +184,7 @@
         "position": {
           "grow": 0,
           "shrink": 0,
-          "basis": "46px"
+          "basis": "38px"
         }
       },
       {
@@ -224,18 +227,11 @@
                 "binding": {
                   "type": "tag",
                   "config": {
-                    "tagPath": "[default]Roastery/CurrentBatch/RateOfRiseF",
+                    "tagPath": "[default]Roastery/CurrentBatch/RateOfRiseDisplayText",
                     "mode": "direct",
                     "bidirectional": false
                   },
-                  "bidirectional": false,
-                  "transforms": [
-                    {
-                      "type": "format",
-                      "formatType": "numeric",
-                      "formatValue": "0"
-                    }
-                  ]
+                  "bidirectional": false
                 }
               }
             }
@@ -244,7 +240,7 @@
         "position": {
           "grow": 0,
           "shrink": 0,
-          "basis": "42px"
+          "basis": "36px"
         }
       },
       {
@@ -307,7 +303,7 @@
         "position": {
           "grow": 0,
           "shrink": 0,
-          "basis": "58px"
+          "basis": "52px"
         }
       },
       {
@@ -362,7 +358,109 @@
           "shrink": 0,
           "basis": "auto"
         }
+      },
+      {
+        "type": "ia.input.button",
+        "meta": {
+          "name": "GearButton"
+        },
+        "props": {
+          "text": "",
+          "image": {
+            "icon": {
+              "path": "material/settings"
+            },
+            "width": 22,
+            "height": 22
+          },
+          "style": {
+            "classes": "roast-btn roast-btn-ghost roast-gear-btn"
+          }
+        },
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "31px"
+        },
+        "events": {
+          "dom": {
+            "onClick": {
+              "scope": "G",
+              "type": "script",
+              "config": {
+                "script": "\timport roastery.core\n\troastery.core.toggle_app_settings(self)\n"
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "ia.input.button",
+        "meta": {
+          "name": "BrightDarkBtn"
+        },
+        "props": {
+          "text": "",
+          "style": {
+            "classes": "roast-brightness-probe"
+          }
+        },
+        "events": {
+          "dom": {
+            "onClick": {
+              "scope": "G",
+              "type": "script",
+              "config": {
+                "script": "\timport roastery.core\n\troastery.core.set_chart_dark(self, True)\n"
+              }
+            }
+          }
+        },
+        "position": {
+          "basis": "1px",
+          "shrink": 0,
+          "grow": 0
+        }
+      },
+      {
+        "type": "ia.input.button",
+        "meta": {
+          "name": "BrightLightBtn"
+        },
+        "props": {
+          "text": "",
+          "style": {
+            "classes": "roast-brightness-probe"
+          }
+        },
+        "events": {
+          "dom": {
+            "onClick": {
+              "scope": "G",
+              "type": "script",
+              "config": {
+                "script": "\timport roastery.core\n\troastery.core.set_chart_dark(self, False)\n"
+              }
+            }
+          }
+        },
+        "position": {
+          "basis": "1px",
+          "shrink": 0,
+          "grow": 0
+        }
       }
     ]
+  },
+  "events": {
+    "system": {
+      "onStartup": {
+        "scope": "G",
+        "type": "script",
+        "config": {
+          "script": "\timport roastery.core\n\troastery.core.init_chart_dark(self)\n\troastery.core.report_brightness(self)\n"
+        }
+      }
+    }
   }
 }

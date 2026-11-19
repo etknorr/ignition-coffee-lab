@@ -1,10 +1,38 @@
 {
   "pages": {
     "/": {
-      "viewPath": "Views/RoastPage"
+      "viewPath": "Views/RoastPage",
+      "docks": {
+        "right": [
+          {
+            "id": "appSettings",
+            "viewPath": "Views/AppSettings",
+            "size": 420,
+            "show": "onDemand",
+            "content": "cover",
+            "anchor": "fixed",
+            "handle": "hide",
+            "resizable": false
+          }
+        ]
+      }
     },
     "/settings": {
-      "viewPath": "Views/SettingsPage"
+      "viewPath": "Views/SettingsPage",
+      "docks": {
+        "right": [
+          {
+            "id": "appSettings",
+            "viewPath": "Views/AppSettings",
+            "size": 420,
+            "show": "onDemand",
+            "content": "cover",
+            "anchor": "fixed",
+            "handle": "hide",
+            "resizable": false
+          }
+        ]
+      }
     },
     "/log": {
       "viewPath": "Views/LogPage",
@@ -14,6 +42,16 @@
             "id": "batchEditor",
             "viewPath": "Views/BatchEdit",
             "size": 480,
+            "show": "onDemand",
+            "content": "cover",
+            "anchor": "fixed",
+            "handle": "hide",
+            "resizable": false
+          },
+          {
+            "id": "appSettings",
+            "viewPath": "Views/AppSettings",
+            "size": 420,
             "show": "onDemand",
             "content": "cover",
             "anchor": "fixed",
@@ -36,12 +74,23 @@
             "anchor": "fixed",
             "handle": "hide",
             "resizable": false
+          },
+          {
+            "id": "appSettings",
+            "viewPath": "Views/AppSettings",
+            "size": 420,
+            "show": "onDemand",
+            "content": "cover",
+            "anchor": "fixed",
+            "handle": "hide",
+            "resizable": false
           }
         ]
       }
     }
   },
   "sharedDocks": {
+    "cornerPriority": "top-bottom",
     "bottom": [
       {
         "id": "tabbar",

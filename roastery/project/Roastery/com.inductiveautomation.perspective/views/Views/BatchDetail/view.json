@@ -29,7 +29,9 @@
     "dGreenDensity": "--",
     "dRoastedDensity": "--",
     "dBbp": "",
-    "dStatsLine": ""
+    "dStatsLine": "",
+    "showAllCols": false,
+    "dSeedNote": ""
   },
   "params": {},
   "propConfig": {},
@@ -53,7 +55,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "root"
+      "name": "BatchDetailRoot"
     },
     "props": {
       "direction": "column",
@@ -84,7 +86,7 @@
               "justify": "space-between",
               "alignItems": "center",
               "style": {
-                "classes": "roast-gap-12"
+                "classes": "roast-gap-12 roast-detail-head"
               }
             },
             "children": [
@@ -96,7 +98,7 @@
                 "props": {
                   "text": "Back to Log",
                   "style": {
-                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost roast-back-btn"
                   }
                 },
                 "events": {
@@ -109,6 +111,11 @@
                       }
                     }
                   }
+                },
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "118px"
                 }
               },
               {
@@ -119,7 +126,7 @@
                 "props": {
                   "direction": "column",
                   "style": {
-                    "classes": "roast-gap-8"
+                    "classes": "roast-gap-8 roast-detail-titlecol"
                   }
                 },
                 "children": [
@@ -168,6 +175,41 @@
                     }
                   }
                 ]
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "GearButton"
+                },
+                "props": {
+                  "text": "",
+                  "image": {
+                    "icon": {
+                      "path": "material/settings"
+                    },
+                    "width": 22,
+                    "height": 22
+                  },
+                  "style": {
+                    "classes": "roast-btn roast-btn-ghost roast-gear-btn"
+                  }
+                },
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "40px"
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core\n\troastery.core.toggle_app_settings(self)\n"
+                      }
+                    }
+                  }
+                }
               }
             ],
             "position": {
@@ -187,7 +229,7 @@
               "alignItems": "center",
               "wrap": "wrap",
               "style": {
-                "classes": "roast-gap-12"
+                "classes": "roast-gap-12 roast-detail-actions"
               }
             },
             "children": [
@@ -334,6 +376,36 @@
               "grow": 0,
               "shrink": 0,
               "basis": "auto"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "SeedNoteLabel"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-note"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.dSeedNote"
+                  }
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if(len({view.custom.dSeedNote}) = 0, 'roast-note roast-hidden', 'roast-note')"
+                  }
+                }
+              }
             }
           },
           {
@@ -587,8 +659,8 @@
                       "visible": true,
                       "width": 1
                     },
-                    "boundaryGap": true,
-                    "field": "t_stamp",
+                    "boundaryGap": false,
+                    "field": "t_label",
                     "gridLines": {
                       "color": "",
                       "visible": false,
@@ -604,14 +676,8 @@
                       "visible": true
                     },
                     "max": "auto",
-                    "min": 1000,
+                    "min": "auto",
                     "position": "bottom",
-                    "ticks": {
-                      "displayInside": false,
-                      "majorSplit": 11,
-                      "minorSplit": 0,
-                      "visible": true
-                    },
                     "title": {
                       "color": "",
                       "elementStyle": {},
@@ -619,10 +685,10 @@
                       "gap": 15,
                       "position": "middle",
                       "rotation": 0,
-                      "text": "Elapsed (mm:ss)",
+                      "text": "",
                       "visible": true
                     },
-                    "type": "time",
+                    "type": "category",
                     "visible": true
                   },
                   "yAxis": [
@@ -659,7 +725,7 @@
                         "width": null,
                         "gap": 2
                       },
-                      "max": 460,
+                      "max": 520,
                       "min": 150,
                       "ticks": {
                         "displayInside": false,
@@ -712,7 +778,7 @@
                         "width": null,
                         "gap": 2
                       },
-                      "max": 40,
+                      "max": 47,
                       "min": 0,
                       "ticks": {
                         "displayInside": false,
@@ -776,6 +842,160 @@
                         }
                       ]
                     }
+                  },
+                  "props.xAxis.labels.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.xAxis.advanced.axisPointer.label.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[0].labels.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[0].title.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[0].advanced.axisPointer.label.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[1].labels.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[1].title.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[1].advanced.axisPointer.label.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.xAxis.advanced.axisPointer.label.backgroundColor": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[0].advanced.axisPointer.label.backgroundColor": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[1].advanced.axisPointer.label.backgroundColor": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                        }
+                      ]
+                    }
                   }
                 },
                 "position": {
@@ -826,14 +1046,18 @@
                   {
                     "type": "ia.container.flex",
                     "meta": {
-                      "name": "DetailAnalyzerControls"
+                      "name": "DetailAnalyzerCapRow"
                     },
                     "props": {
                       "direction": "row",
-                      "alignItems": "center",
                       "style": {
                         "classes": "roast-gap-8"
                       }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "16px"
                     },
                     "children": [
                       {
@@ -850,9 +1074,24 @@
                         "position": {
                           "grow": 0,
                           "shrink": 0,
-                          "basis": "64px"
+                          "basis": "auto"
                         }
-                      },
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "DetailAnalyzerControls"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "alignItems": "center",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
                       {
                         "type": "ia.input.button",
                         "meta": {
@@ -861,7 +1100,7 @@
                         "props": {
                           "text": "-10s",
                           "style": {
-                            "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                            "classes": "roast-btn-sm roast-btn-ghost roast-btn-compact"
                           }
                         },
                         "events": {
@@ -874,6 +1113,11 @@
                               }
                             }
                           }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "auto"
                         }
                       },
                       {
@@ -914,7 +1158,7 @@
                         "props": {
                           "text": "+10s",
                           "style": {
-                            "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                            "classes": "roast-btn-sm roast-btn-ghost roast-btn-compact"
                           }
                         },
                         "events": {
@@ -927,6 +1171,11 @@
                               }
                             }
                           }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "auto"
                         }
                       },
                       {
@@ -937,7 +1186,7 @@
                         "props": {
                           "text": "Latest",
                           "style": {
-                            "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                            "classes": "roast-btn-sm roast-btn-ghost roast-btn-compact"
                           }
                         },
                         "events": {
@@ -950,6 +1199,11 @@
                               }
                             }
                           }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "auto"
                         }
                       }
                     ],
@@ -1206,7 +1460,7 @@
                 "position": {
                   "grow": 0,
                   "shrink": 0,
-                  "basis": "88px"
+                  "basis": "112px"
                 }
               }
             ],
@@ -1265,19 +1519,22 @@
                           "field": "event",
                           "header": {
                             "title": "Event"
-                          }
+                          },
+                          "width": 110
                         },
                         {
                           "field": "time",
                           "header": {
                             "title": "Time"
-                          }
+                          },
+                          "width": 70
                         },
                         {
                           "field": "temp",
                           "header": {
                             "title": "Temp"
-                          }
+                          },
+                          "width": 70
                         }
                       ],
                       "pager": {
@@ -1759,7 +2016,7 @@
                         "height": 32
                       },
                       "style": {
-                        "classes": "roast-table-sm"
+                        "classes": "roast-table-sm roast-cols-full"
                       }
                     },
                     "propConfig": {
@@ -1776,6 +2033,230 @@
                       "grow": 0,
                       "shrink": 0,
                       "basis": "250px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "AnalysisTablePhoneWrap"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-cols-phone"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "ColsToggleRow"
+                        },
+                        "props": {
+                          "direction": "row",
+                          "justify": "flex-end",
+                          "alignItems": "center",
+                          "style": {
+                            "classes": "roast-gap-12"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.input.button",
+                            "meta": {
+                              "name": "AnColsToggleButton"
+                            },
+                            "props": {
+                              "text": "All columns",
+                              "style": {
+                                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                              }
+                            },
+                            "propConfig": {
+                              "props.text": {
+                                "binding": {
+                                  "type": "expr",
+                                  "config": {
+                                    "expression": "if({view.custom.showAllCols}, 'Fewer columns', 'All columns')"
+                                  }
+                                }
+                              }
+                            },
+                            "events": {
+                              "dom": {
+                                "onClick": {
+                                  "scope": "G",
+                                  "type": "script",
+                                  "config": {
+                                    "script": "\timport roastery.core\n\troastery.core.toggle_all_cols(self)\n"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "type": "ia.display.table",
+                        "meta": {
+                          "name": "AnalysisTablePhone"
+                        },
+                        "props": {
+                          "data": [],
+                          "columns": [
+                            {
+                              "field": "phase",
+                              "header": {
+                                "title": "Phase"
+                              },
+                              "width": 78
+                            },
+                            {
+                              "field": "time",
+                              "header": {
+                                "title": "Time"
+                              },
+                              "width": 58
+                            },
+                            {
+                              "field": "share",
+                              "header": {
+                                "title": "Share"
+                              },
+                              "width": 50
+                            },
+                            {
+                              "field": "avgRor",
+                              "header": {
+                                "title": "Avg RoR"
+                              },
+                              "width": 62
+                            }
+                          ],
+                          "pager": {
+                            "enabled": false
+                          },
+                          "rows": {
+                            "height": 32
+                          },
+                          "header": {
+                            "height": 32
+                          },
+                          "style": {
+                            "classes": "roast-table-sm"
+                          }
+                        },
+                        "propConfig": {
+                          "props.data": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.analysisDs"
+                              }
+                            }
+                          },
+                          "props.style.classes": {
+                            "binding": {
+                              "type": "expr",
+                              "config": {
+                                "expression": "if({view.custom.showAllCols}, 'roast-table-sm roast-hidden', 'roast-table-sm')"
+                              }
+                            }
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "250px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.table",
+                        "meta": {
+                          "name": "AnalysisTableFullPhone"
+                        },
+                        "props": {
+                          "data": [],
+                          "columns": [
+                            {
+                              "field": "phase",
+                              "header": {
+                                "title": "Phase"
+                              }
+                            },
+                            {
+                              "field": "time",
+                              "header": {
+                                "title": "Time"
+                              }
+                            },
+                            {
+                              "field": "share",
+                              "header": {
+                                "title": "Share"
+                              }
+                            },
+                            {
+                              "field": "gain",
+                              "header": {
+                                "title": "Gain"
+                              }
+                            },
+                            {
+                              "field": "avgRor",
+                              "header": {
+                                "title": "Avg RoR"
+                              }
+                            },
+                            {
+                              "field": "auc",
+                              "header": {
+                                "title": "AUC"
+                              }
+                            }
+                          ],
+                          "pager": {
+                            "enabled": false
+                          },
+                          "rows": {
+                            "height": 32
+                          },
+                          "header": {
+                            "height": 32
+                          },
+                          "style": {
+                            "classes": "roast-table-sm"
+                          }
+                        },
+                        "propConfig": {
+                          "props.data": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.analysisDs"
+                              }
+                            }
+                          },
+                          "props.style.classes": {
+                            "binding": {
+                              "type": "expr",
+                              "config": {
+                                "expression": "if({view.custom.showAllCols}, 'roast-table-sm', 'roast-table-sm roast-hidden')"
+                              }
+                            }
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "250px"
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "auto"
                     }
                   },
                   {

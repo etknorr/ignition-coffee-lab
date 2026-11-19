@@ -126,6 +126,23 @@ No file in this folder can do these, by design or by platform:
    be deployed to prod; nothing in the gateway config dials the
    real roaster yet, because that connection lives on the Pico
    and app side.
+6. **Install the Embr Periscope module** (polish round 1 phase
+   3): one shot feedback toasts need the Periscope module on the
+   gateway. It is a gateway install, not a project file, so no
+   file in this folder carries it. Download the Periscope
+   `.modl` for your exact Ignition line from the Embr releases
+   (the lab used Embr-Periscope-Ignition2027-0.16.0.modl from
+   suite 2026.11.12 on Ignition 2027; the 8.1 and 8.3 builds do
+   not work on 2027), install it through Platform, System,
+   Modules, Install or Upgrade Module (or the gateway REST
+   API's module upload and install endpoints), accept its
+   certificate and license, and restart the gateway. Then set
+   the tag `[default]Roastery/AppSettings/PeriscopeAvailable`
+   to True. Until both are done the app behaves exactly as it
+   did before phase 3: every toast call no-ops silently behind
+   that tag, and the banners, prompt strip and status labels
+   carry the feedback alone. Periscope is free on Maker
+   Edition (MIT licensed source, Musson Industrial).
 
 ## Security posture
 

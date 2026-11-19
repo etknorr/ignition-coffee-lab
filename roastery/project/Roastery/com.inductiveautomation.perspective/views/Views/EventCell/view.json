@@ -29,7 +29,7 @@
   "root": {
     "type": "ia.container.flex",
     "meta": {
-      "name": "root"
+      "name": "EventCellRoot"
     },
     "props": {
       "direction": "column",

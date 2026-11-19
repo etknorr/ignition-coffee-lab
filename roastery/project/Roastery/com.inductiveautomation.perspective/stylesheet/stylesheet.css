@@ -27,6 +27,11 @@
 .psc-roast-tabbar { border-top: 1px solid var(--border); }
 .psc-roast-controldock { border-top: 1px solid var(--border); }
 .psc-roast-hud { border-bottom: 1px solid var(--border); }
+/* HUNT-31 brightness probe buttons in HudBar: present in
+   the DOM so the startup script can click them, visually
+   nothing (1px, near transparent, clipped). */
+.psc-roast-brightness-probe {
+  opacity: 0.01; overflow: hidden; pointer-events: none; }
 .psc-roast-hud-field { border-left: 1px solid var(--border); }
 .psc-roast-section-div { border-top: 1px solid var(--border); }
 
@@ -93,20 +98,99 @@
    a 360px phone because tiles refused to shrink). */
 .psc-roast-flexmin > * { min-width: 0; }
 
-/* Tab bar compaction under 560px: at 360px the theme button's
-   fixed 88px plus three growing tabs left about 46px per tab,
-   clipping 'Settings' to 'Setting'. Smaller type, tighter
-   padding, a narrower theme button and less nub clearance. */
+/* Tab bar under 560px (polish phase 2): the bar now holds a
+   single horizontal menu, so the v4.1 compaction rules for the
+   old button tabs are gone. One of them pinned the bar's first
+   child to a fixed 46px (the old theme button's slot); applied
+   to the menu it collapsed the whole tab bar to 46px wide at
+   phone widths, found and removed in the phase 2 overflow
+   hunt. Only the shrink allowance remains. */
 @media (max-width: 560px) {
-  /* Perspective emits style class props as element styles, so
-     these overrides need !important to win the cascade (proven
-     live: without it the padding and font size rules silently
-     lost to the class definitions). */
-  .psc-roast-tabbar { padding: 6px 60px 6px 6px !important;
-    gap: 6px !important; }
   .psc-roast-tabbar > * { min-width: 0; }
-  .psc-roast-tabbar > *:first-child { flex: 0 0 46px !important; }
-  .psc-roast-tab-btn { font-size: 12px !important;
-    padding: 8px 1px !important;
-    white-space: nowrap; overflow: hidden; }
+}
+
+/* ---- polish phase 2 ------------------------------------------
+   Tab menu: the horizontal menu items are flex children that
+   must be allowed to shrink at 360px, and the active item's
+   filled tile comes from the roast-tab-active class binding. */
+.psc-roast-tabbar { padding: 6px 10px !important; }
+.psc-roast-tabbar > * { min-width: 0; }
+/* The dock's own expand nub overlays the bar's right end; at
+   phone widths keep the last menu item clear of it: reserve
+   the nub's width on the bar and tighten the menu items so
+   the Log label ends well left of the nub (with the desktop
+   item padding it ended at the nub's edge and the g of Log
+   slid under it, found in the phase 2 overflow hunt). */
+@media (max-width: 560px) {
+  .psc-roast-tabbar { padding-right: 60px !important; }
+  .psc-roast-tab-item { padding: 8px 6px !important;
+    font-size: 13px !important; }
+}
+
+/* Tile units never wrap or shrink away: the unit label keeps
+   its full text and the value label takes the squeeze. */
+.psc-roast-unit { white-space: nowrap; }
+
+/* Analyzer compact buttons: the 44px touch minimum on
+   .psc-roast-btn does not apply (these are not roast-btn
+   classed), this rule pins the compact height so the strip
+   rows keep their fixed heights. */
+.psc-roast-btn-compact { min-height: 28px; }
+
+/* Gear buttons keep a square 40px footprint in headers and
+   the HUD. */
+.psc-roast-gear-btn { min-height: 40px; }
+
+/* HUD tightening (polish phase 2 item 7): the gear joins the
+   HUD at 360px, so the bar's gaps, side padding and field
+   padding shrink before any text does. With these numbers
+   the longest phase text (Second Crack) and a 59:59 clock
+   both fit at 360px. */
+.psc-roast-hud { gap: 3px !important; padding: 3px 4px !important; }
+.psc-roast-hud-field { padding-left: 4px !important; }
+
+
+/* ---- polish round 2: phone column sets (HUNT-13) ------------
+   The three wide tables (Log, Alarms, Phase Analysis) ship in
+   two instances: the full set carries roast-cols-full and a
+   phone wrapper carries roast-cols-phone with a reduced set
+   plus a toggle that swaps in the full set. The stylesheet
+   picks the instance by viewport width, the same breakpoint
+   pattern as the HUD dock above: below 900px the phone
+   wrapper shows, at 900px and up the full table shows and
+   the wrapper is gone, so desktop layouts are unchanged. */
+@media (max-width: 899.98px) {
+  .psc-roast-cols-full { display: none !important; }
+}
+@media (min-width: 900px) {
+  .psc-roast-cols-phone { display: none !important; }
+}
+
+/* ---- polish round 2: phone headers (HUNT-14, HUNT-15) -------
+   LogPage: the title column takes the full first row at phone
+   widths, so the subtitle stops squeezing into a roughly
+   100px column and the header actions wrap onto their own
+   row under the title. BatchDetail: the Back button keeps
+   one line (fixed 118px basis in the view, nowrap here) and
+   the six action buttons share two even rows of three
+   instead of wrapping ad hoc into three rows. */
+@media (max-width: 560px) {
+  .psc-roast-log-headcol { flex: 1 1 100% !important; }
+  .psc-roast-back-btn { white-space: nowrap; }
+  .psc-roast-detail-actions > * { flex: 1 1 28% !important;
+    white-space: nowrap; }
+  /* With the Back button at its full one line width the
+     detail subtitle wraps to two lines at 360px; the head
+     row's fixed 76px basis would clip the second line under
+     the action row, so the row sizes to its content here. */
+  .psc-roast-detail-head { flex-basis: auto !important; }
+  /* Polish round 3 (HUNT-25): the detail head row stacks at
+     phone widths. Back and the gear keep the first row
+     (space-between spreads them to the edges) and the title
+     column wraps onto its own full width second row, so the
+     Back button box and the title box no longer touch at one
+     edge the way HUNT-15 left them. */
+  .psc-roast-detail-head { flex-wrap: wrap !important; }
+  .psc-roast-detail-titlecol { flex: 1 1 100% !important;
+    order: 3; }
 }

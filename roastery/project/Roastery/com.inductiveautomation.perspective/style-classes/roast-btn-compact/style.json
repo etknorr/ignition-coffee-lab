@@ -1,0 +1,10 @@
+{
+  "base": {
+    "style": {
+      "minHeight": "28px",
+      "height": "28px",
+      "padding": "2px 8px",
+      "fontSize": "11px"
+    }
+  }
+}
