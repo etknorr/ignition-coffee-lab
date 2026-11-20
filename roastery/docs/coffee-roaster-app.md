@@ -5040,3 +5040,448 @@ endpoint to quote directly.
 5. The packaged Docker boot test on Eric's machine or
    homelab (still the one parity era item only he can
    run).
+
+## Polish round 5: theme reactivity, short batch detail, dock labels (2026-11-19)
+
+Round 5 closed the three items held from round 4
+(HUNT-37, HUNT-38, HUNT-39), then the closing
+screenshots found one more: the detail chart's event
+labels collide at 360px (HUNT-41, fixed in the round).
+The hunting pass added HUNT-43 and HUNT-44, and the
+closing battery found HUNT-45 (the Reset press
+landing on the wrong batch, fixed in the round).
+The round was interrupted mid close by a VM write
+lock incident (the VM refused data writes system wide
+at 16:38 UTC, Postgres panicked, the gateway JVM died
+and could not restart from the agent exec domain), and
+again by a runtime restart during the fixture delete;
+both recoveries followed the established pattern
+(Postgres reinstall, cluster start, role and database
+recreation, DDL, gateway start, reseed check) and the
+lab came back clean at 7 batches, 101 series, 0
+events with all defaults restored. A third runtime
+restart hit during the HUNT-43 and HUNT-44 fix
+verification: the gateway was down and Postgres came
+back with an empty database (0 batches, 0 series),
+so the recovery ran the DDL again and reseeded from
+the RoastLog tag (7 batches, 101 series), the trial
+was already healthy at 7153 s, and BatchNumber was
+written back to 1042. The verification reran clean
+after that recovery.
+
+### Item 1: HUNT-38 resolved, theme changes reach open sessions
+
+Route (a), a binding on the session theme property,
+is NOT honored on this build (documented with
+evidence in the round 4 hunt notes). Route (b)
+shipped: the HudBar view carries a view custom prop
+bound to the ThemeMode tag with an onChange script
+calling the new library function
+roastery.core.on_theme_mode_change, which runs the
+existing apply_theme plus the brightness re-probe,
+and the HudBar top dock is mounted on every page, so
+a ThemeMode write from anywhere (another session's
+App Settings buttons, a direct tag write) re-applies
+the theme in an already open session without a
+reload. Panel truthfulness shipped with it: the App
+Settings mode buttons derive their selected style
+from session.props.theme via a map transform, so the
+panel can no longer show Dark selected while the
+session renders light. Two session proof: 12 PASS, 1
+FAIL, and the FAIL was a contaminated start check
+(another worker's roast running when the check ran),
+not a theme result. Session 2 followed session 1's
+App Settings change and direct tag writes in both
+directions, charts recoloring each time. Files:
+core/code.py, Views/HudBar/view.json,
+Views/AppSettings/view.json. Evidence: the r5-theme-*
+screenshots.
+
+### Item 2: HUNT-37 resolved, short batch detail spans
+
+batches/code.py only: _detail_span floors the staged
+grid at max(180, end_sec) for spans under 600 (600
+and up untouched), _detail_top_gap scales the event
+label gap proportionally (55 s at 600 span, 16.5 s
+at the 180 floor). Byte identical proof for a normal
+batch: fixture 9920 (720 s) staged before and after,
+canonical JSON exactly equal (captures
+r5_detail_before.json and r5_detail_after.json in the
+lab). Short batch 9919 (43 s) went from 601 rows
+with only CHARGE labeled to 181 rows (axis to 3:00)
+with CHARGE and the 42 s custom labeled. The 360px
+screenshot set and one clean desktop set prove the
+labels read: r5-detail-short-360-light.png,
+r5-detail-short-360-dark.png,
+r5-detail-short-desktop-light.png,
+r5-detail-short-desktop-dark.png,
+r5-detail-1042-desktop-light.png,
+r5-detail-normal-desktop-light.png.
+validate_roastery_artisan.py VALIDATION PASS and
+verify_roastery_axis.py 10 PASS, 2 FAIL, both
+failures explained below (the detail shot click
+timeout is the HUNT-42 harness locator, fixed in
+this round; the lab clean check ran while the 9919
+and 9920 fixtures were still in the database).
+
+### Item 3: HUNT-39 resolved, dock button labels on one line
+
+Root cause: no white-space control in the button
+class chain, and repeater slots narrower than the
+text (custom slots 52.3px desktop, 48.6px at 360px,
+against about 62px needed). Fix inside the style
+system: new classes roast-btn-dock (12px) and
+roast-btn-dock-lead (14px) emitted by
+Views/DockButton/view.json, one advanced stylesheet
+rule pinning nowrap with hidden overflow and
+ellipsis, repeater instance floors in
+Views/Controls/view.json and Views/ControlDock/
+view.json (lead basis 108px, utility 148px, others
+88px, shrink 0; the phone dock repeater wraps to two
+balanced rows). Long name backstop proven with a 28
+character custom name (one line, no page overflow;
+Chromium does not draw the ellipsis glyph for
+centered button text, so over long names truncate by
+center clipping). Phase aware dock behavior
+unchanged and re-proven at three phases.
+validate_roastery_artisan.py VALIDATION PASS.
+verify_roastery_polish1.py: every functional check
+passed; its single failure was the baseline count
+check, contaminated by the HUNT-37 fixtures then in
+the database (clean rerun in the closing battery).
+Evidence: the r5-dockbtn-* screenshots.
+
+### Item 4: HUNT-41 fixed, detail labels collide at 360px
+
+The HUNT-37 screenshot set decided the open
+geometry question with a yes: on batch 1042 the
+CHARGE and DROP labels sit 19 s apart and print as
+one word, CHARGEDROP, at 360px, and on batch 9919
+CHARGE and the 42 s LATE NOTE print as CHARGELATE
+NOTE. The desktop gap (16.5 s at the 180 s floor)
+is correct at desktop widths, where the same two
+labels sit about 95px apart and read cleanly, so a
+global gap increase would regress desktop. Fix, the
+paired instance pattern already used by the live
+chart and the HUNT-13 phone tables: the BatchDetail
+chart now ships in two instances switched by the
+roast-cols-full and roast-cols-phone media query
+classes, the desktop instance keeping
+detail_reference_lines and the phone instance
+binding the new detail_reference_lines_compact,
+whose gap is 0.26 of the staged span (about 65px of
+clearance on the roughly 250px phone plot; 46.8 s at
+the 180 s floor, 187 s at a 720 s span, close to the
+live chart's proven 175 s compact gap). Proof:
+r5-detail-1042-360-light-fixed.png and
+r5-detail-short-360-light-fixed.png show only
+CHARGE labeled with the second event's line present
+but unlabeled, and
+r5-detail-1042-desktop-light-fixed.png shows CHARGE
+and DROP both labeled as before. Files:
+batches/code.py (detail_reference_lines refactored
+over a shared _detail_reference_lines body plus the
+compact variant) and
+Views/BatchDetail/view.json (DetailChartPhone
+instance).
+
+### Item 5: HUNT-42 found and fixed, the Log row click locator
+
+While deleting the HUNT-37 fixtures through the Log
+page UI, the row click timed out three times at 45 s
+each, and the axis suite's detail shot failed on the
+same click. The cause is a harness locator, not the
+app: the scripts clicked locator('tr', ...), but the
+Log table is Perspective's Table component, which
+renders divs (ia_table__cell) and no tr elements at
+all, so the locator can never match. The probe
+screenshot shows the table fully populated with all
+nine batches while the locator counts zero rows. Fix:
+the locators in verify_r5_detail_span.py (stage and
+delete paths), verify_roastery_axis.py, and
+verify_roastery_dark.py now click the batch cell by
+its displayed text with the thousands separator
+(text=9,919, text=1,044), proven live: the cell
+click selects the row (SelectedBatchNumber 9919,
+Delete enabled) and both fixtures then deleted
+through the app UI with the HUNT-35 cascade, the
+database returning to 7 batches, 101 series, 0
+events. The round 4 battery's identical axis detail
+failure was the same locator, misattributed to load
+at the time. Evidence: r5-log-probe.png.
+
+### Item 6: the HUNT-42 onward hunting pass
+
+The hunting pass ran as verify_r5_hunt.py (live roast at
+360px), verify_r5_hunt2.py (abandoned mid run, see
+below), and verify_r5_hunt3.py (fix verification plus
+the parts of the pass that had not run). Two new items
+were found and both were fixed in the round.
+
+HUNT-43 (minor, fixed): the New Roast button wrapped
+to two lines at 360px (56px tall, 84px wide). It is a
+utility button in the Controls head row, not a dock
+button, so the HUNT-39 dock rule did not cover it.
+Fix: a new style class roast-btn-nowrap (one advanced
+stylesheet rule, white-space nowrap, no ellipsis) and
+the class added to the button in Views/Controls. The
+button sizes to its content in its flex row, so
+nowrap alone keeps it one line. Proven live: 44px
+tall at 360px and at desktop, one line both places.
+Files: stylesheet.css, Views/Controls/view.json, new
+style-classes/roast-btn-nowrap/ (resource.json plus
+an empty style.json; the behavior lives in the
+stylesheet, same pattern as the dock classes).
+Evidence: r5hunt-controls-360-light.png (before),
+r5hunt-phases-360-fixed3.png (after, button one line).
+
+HUNT-44 (minor, fixed): the phase bar detail captions
+clipped at 360px. The Development segment (2:30
+target, 65px wide at 360px) has 4px of side padding,
+leaving about 57px for its caption, so the 11px
+"target 02:30" lost a couple of pixels on each side
+while Drying and Maillard read fine. The clip is
+contained by design (the segment text classes clip
+inside the segment, per the earlier fix documented
+in the stylesheet), so the layout held, but the
+caption was unreadable. Fix: a phone media query in
+the advanced stylesheet dropping
+.psc-roast-seg-detail to 9px at 560px and under,
+desktop untouched. Two iterations: 10px fixed the
+left side only (the trailing "0" still cut), 9px
+renders the caption complete. The plain rule did not
+take effect at first; the style class sets 11px and
+its generated rule beats a plain advanced stylesheet
+rule, so the media query carries !important, with
+the reason recorded in the stylesheet comment.
+Lesson: a scrollWidth probe is not a reliable clip
+check here (it reported no clipping while the
+screenshot showed the caption cut); the screenshot
+is the evidence. Files: stylesheet.css only.
+Evidence: r5hunt-live-360-light.png (before,
+"arget 02:3("), r5hunt-phases-360-fixed.png (10px,
+trailing "0" still cut), r5hunt-phases-360-fixed3.png
+(9px, "target 02:30" complete).
+
+The two session theme walk (part A of the hunting
+pass) was DROPPED after three wedge attempts: two
+contexts in one single-process browser die with
+TargetClosedError when the second opens a page, and
+two simultaneous browsers wedge the VM (the third
+attempt hung 7 minutes and was killed by exact PID).
+HUNT-38's proof stands on the pre-incident 12 PASS
+record and the r5-theme-* screenshots; the pattern
+for multi-session work is one fresh browser per
+session, never two contexts in one browser. The same
+single-process limitation hit the hunt2 script (it
+died opening its second context) and the r5 detail
+screenshot loop (fixed by one fresh browser per
+shot).
+
+Parts C and D of the pass ran clean in hunt3: App
+Settings at 360px in Dark has zero page overflow,
+and the Log compare view at 360px has zero
+horizontal overflow. Evidence:
+r5hunt-settings-360-dark.png, r5hunt-compare-360.png.
+
+Checked clean with evidence: the live roast at 360px
+had no horizontal overflow (0px) and all dock labels
+on one line; the phase tile clipping first seen in
+the hunt screenshot was re-measured on the visible
+root only (the first probe had measured the hidden
+desktop root's labels) and is HUNT-44 above, not a
+separate defect. The hunt roast's 8 press rows on
+batch 1042 (counters 3446 to 3453, each action
+exactly once, no gaps) were cleaned with psql, the
+same residue hygiene as round 4. One cosmetic
+observation is carried to round 6, not filed as a
+defect: the MODE pill wraps to two lines ("MODE" /
+"Off") at 360px; both lines render fully, nothing
+clips or overlaps, it is a layout call.
+
+### Item 7: HUNT-45 found in the closing battery, the Reset press landed on the wrong batch
+
+The closing battery's pressfault run failed its two
+aggregate checks and nothing else (60 PASS, 2 FAIL):
+batch 1049's press log opened with 'Reset|3646'
+ahead of the eight driven presses, so "exactly one
+event row per press" and "event counters are unique
+and present" both failed. The mechanism is in the
+PressEvents group, not the library: the group's
+BatchNumber item read the LIVE BatchNumber tag at
+execution time, and new_roast writes the new number
+milliseconds after record_press('Reset'), so the
+group always stamped the Reset row with the NEW
+batch number. The Reset press belongs to the batch
+it clears (the old number), and the new batch's log
+should open with its Charge, not a Reset from before
+it existed. Proven by direct repro: a UI New Roast
+click wrote Reset|3670 against batch 1049 while the
+live number already read 1050.
+
+Fix: the group now stamps press-time identity. A
+new RoastBatch UDT member LastActionBatchNumber
+(Int4, memory, default 1042) is stamped by
+roastery.core._record_press_impl on every press
+alongside LastAction, and the group's BatchNumber
+item now reads
+[default]Roastery/CurrentBatch/LastActionBatchNumber
+instead of the live BatchNumber. The value columns
+(BeanTempF, RateOfRiseF, FanLevel, HeatLevel) still
+read live at execution, as designed; only the
+identity column is press-time. The UDT member was
+added by importing the updated definition over the
+live UDT (POST /tags/import, collisionPolicy
+Overwrite, 203 members, successCount 1); the repo
+script setup_roastery_artisan_tags.py is stale (it
+never learned the press-capture members) and was
+deliberately NOT patched for one member, see the
+round 6 candidates. Proof: the same UI repro now
+writes Reset|3681 against batch 1049 while the live
+number reads 1050, and the pressfault rerun passed
+62 of 62 with exactly the eight expected rows. One
+trip hazard from the proof: a psql delete of a press
+row is undone by the reconciler (it re-inserts the
+slotted context), so the probe row was cleared by
+emptying its ring slot first and then deleting the
+row. Files: core/code.py (stamp), the PressEvents
+group config.json (repoint), the live UDT
+definition (new member, gateway side).
+
+### Verification
+
+Closing battery, 19 suites, all green on the final
+code (the battery ran twice: the first pass caught
+three harness and residue issues plus HUNT-45, each
+explained below, and the reruns below are the
+record). Counts are PASS lines per suite log in
+the lab under r5-battery/.
+
+- validate_roastery_artisan.py: VALIDATION PASS
+  (29 views served deep equal, 12 named queries,
+  94 style classes on disk, zero offenders; the
+  rerun right after the pressfault drill printed
+  CHECK REPORT on the drill's deliberate database
+  stop in its 15 minute log window, and passed
+  clean once the window cleared).
+- validate_chartlab.py: VALIDATION PASS.
+- verify_roastery_ror.py: 6 PASS, 1 designed SKIP.
+  First run failed the live slope check (24.42 vs
+  21.42 F/min); the known under-load RoR race
+  flake, passed on rerun with no code change.
+- verify_roastery_tier1.py: 42 of 42.
+- verify_roastery_tier2.py: 87 of 87. First run
+  failed only its closing baseline check, on press
+  rows the aborted RoR run had left behind; passed
+  on rerun from a clean lab.
+- verify_roastery_tier3a.py: 40 of 40.
+- verify_roastery_tier3b.py: 47 of 47.
+- verify_roastery_tier3c.py: 67 of 67.
+- verify_roastery_v4.py: 59 of 59. The v4 suite
+  leaves one Reset press row and a loaded
+  background behind, which tripped the next two
+  suites' start-baseline checks; the residue is a
+  suite hygiene note, not an app gap.
+- verify_roastery_polish1.py: 46 of 46 on rerun
+  from the reset lab (first battery run: 2 FAILs,
+  the v4 residue above).
+- verify_roastery_polish2.py: 65 of 65 on rerun
+  (first battery run: 1 FAIL, the same residue).
+- verify_roastery_polish3.py: 37 of 37.
+- verify_roastery_dark.py: 10 of 10, including
+  the detail shot the HUNT-42 fix enabled.
+- verify_roastery_pressburst.py: ALL PRESS BURST
+  CHECKS PASSED (rerun after HUNT-45).
+- verify_roastery_pressfault.py: 62 of 62 on
+  rerun after HUNT-45 (first run: 60 PASS, 2 FAIL,
+  the HUNT-45 defect; the rerun's aggregate check
+  shows exactly the eight expected rows).
+- verify_roastery_deletecascade.py: 15 of 15.
+- verify_roastery_axis.py: 12 of 12, all three
+  timezone shots and the mm:ss format shot
+  passing (round 4 had 11 PASS, 1 FAIL on the
+  detail shot; the HUNT-42 text locator fixed
+  it).
+- verify_r5_detail_span.py: data proof
+  reproduced on the final code (fixture 9920
+  byte identical to the pre-change capture at 721
+  rows to 12:00; fixture 9919 down from 601 rows
+  to 181 rows to 3:00). Its shots mode crashed
+  on the single-process browser limit after the
+  first shot (harness, not the app); the seven
+  shots from the close stand as the visual
+  record.
+- verify_r5_hunt3.py: PASS, no failures (New
+  Roast one line at 360px and desktop, detail
+  font 9px at 360px with no clip, settings at
+  360px in Dark zero overflow, compare at 360px
+  zero horizontal overflow).
+
+Battery incidents, all recovered: /tmp filled to
+100 percent mid battery because the runner's
+cleanup missed the suites' *.idb log copies; the
+runner now removes them and resumed cleanly. A VM
+replacement killed the runner during the dark
+suite (recovered: Postgres reinstall, role and
+database recreation, DDL, gateway start, reseed,
+defaults restored, battery resumed from the dark
+suite). A second runtime restart hit during the
+detail span delete (recovered the same way; the
+fixtures were gone with the fresh database, so
+the lab came back clean).
+
+The lab was left clean at the end of the battery:
+7 batches (1042 to 1048, Ethiopia Guji), 101
+series rows, 0 events, CurrentBatch Idle with Fan
+5, Heat 5, BatchNumber 1042, ActiveSource
+Simulated, Mode Off, DispAxisFormat m:ss,
+PressCaptureMode Group, ThemeMode System,
+PeriscopeAvailable True, SelectedBatchNumber 1042,
+background cleared. Gateway RUNNING, trial
+healthy. PressEvents RUNNING by functional proof
+(the pressfault and pressburst reruns both
+passed after the HUNT-45 repoint).
+
+### Round 6 candidates
+
+1. The timezone TIME axis retest on the next
+   Ignition beta (the passthrough candidates from
+   round 2); the shipped category axis stays
+   regardless.
+2. The packaged Docker boot test on Eric's machine
+   or homelab (still the one parity era item only
+   he can run).
+3. The MODE pill wraps to two lines ("MODE" /
+   "Off") at 360px; both lines render fully,
+   nothing clips or overlaps, it is a layout
+   call.
+4. The short-batch dashed event line cluster at
+   the left edge of the detail chart, which
+   matches the settled live-chart design of
+   keeping lines while dropping labels and is a
+   product call.
+5. Reconcile roastery/scripts/
+   setup_roastery_artisan_tags.py with the live
+   UDT: the script never learned the
+   press-capture members (ActionCounter,
+   LastAction, LastActionAt,
+   LastActionElapsedSec) or LastActionBatchNumber,
+   so a rebuild from it would drop them. The
+   live UDT is the source of truth until then.
+6. The phantom Charge press during the hunt3
+   verification (a roast started on batch 1042
+   at 01:55:26 UTC with no suite pressing
+   Charge); a 30 second Log page load test
+   afterwards did not reproduce it, and no
+   mechanism was found. Watch for a repeat
+   before filing it.
+7. The validator's 15 minute log window counts
+   the pressfault drill's deliberate database
+   stop as a warning; a drill-aware window (or
+   a validator run after the window clears)
+   keeps the verdict clean.
+8. The v4 suite leaves one Reset press row and
+   a loaded background behind for the next
+   suite; make its cleanup match the tier
+   suites' so the battery needs no residue
+   reruns.

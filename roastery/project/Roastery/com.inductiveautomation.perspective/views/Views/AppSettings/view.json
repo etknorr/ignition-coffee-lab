@@ -75,10 +75,24 @@
             "propConfig": {
               "props.style.classes": {
                 "binding": {
-                  "type": "expr",
+                  "type": "property",
                   "config": {
-                    "expression": "if({[default]Roastery/AppSettings/ThemeMode} = 'System', 'roast-btn roast-btn-primary', 'roast-btn roast-btn-ghost')"
-                  }
+                    "path": "session.props.theme"
+                  },
+                  "transforms": [
+                    {
+                      "type": "map",
+                      "inputType": "scalar",
+                      "outputType": "scalar",
+                      "fallback": "roast-btn roast-btn-ghost",
+                      "mappings": [
+                        {
+                          "input": "roastsystem",
+                          "output": "roast-btn roast-btn-primary"
+                        }
+                      ]
+                    }
+                  ]
                 }
               }
             },
@@ -113,10 +127,24 @@
             "propConfig": {
               "props.style.classes": {
                 "binding": {
-                  "type": "expr",
+                  "type": "property",
                   "config": {
-                    "expression": "if({[default]Roastery/AppSettings/ThemeMode} = 'Light', 'roast-btn roast-btn-primary', 'roast-btn roast-btn-ghost')"
-                  }
+                    "path": "session.props.theme"
+                  },
+                  "transforms": [
+                    {
+                      "type": "map",
+                      "inputType": "scalar",
+                      "outputType": "scalar",
+                      "fallback": "roast-btn roast-btn-ghost",
+                      "mappings": [
+                        {
+                          "input": "light",
+                          "output": "roast-btn roast-btn-primary"
+                        }
+                      ]
+                    }
+                  ]
                 }
               }
             },
@@ -151,10 +179,24 @@
             "propConfig": {
               "props.style.classes": {
                 "binding": {
-                  "type": "expr",
+                  "type": "property",
                   "config": {
-                    "expression": "if({[default]Roastery/AppSettings/ThemeMode} = 'Dark', 'roast-btn roast-btn-primary', 'roast-btn roast-btn-ghost')"
-                  }
+                    "path": "session.props.theme"
+                  },
+                  "transforms": [
+                    {
+                      "type": "map",
+                      "inputType": "scalar",
+                      "outputType": "scalar",
+                      "fallback": "roast-btn roast-btn-ghost",
+                      "mappings": [
+                        {
+                          "input": "dark",
+                          "output": "roast-btn roast-btn-primary"
+                        }
+                      ]
+                    }
+                  ]
                 }
               }
             },

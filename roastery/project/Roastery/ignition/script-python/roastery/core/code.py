@@ -1657,6 +1657,8 @@ def _record_press_impl(action, known):
     known[0] = counter
     write_members([('ActionCounter', counter), ('LastAction', action),
                    ('LastActionElapsedSec', elapsed),
+                   ('LastActionBatchNumber',
+                    int(vals['BatchNumber'] or 0)),
                    ('LastActionAt', system.date.now())])
     if vals['PressCaptureMode'] != 'Group':
         try:
@@ -2908,6 +2910,22 @@ def set_theme_mode(self, mode):
         return
     system.tag.writeBlocking([THEME_MODE_TAG], [mode])
     apply_theme(self)
+
+
+def on_theme_mode_change(self):
+    """HudBar watcher (round 5, HUNT-38): the HudBar view
+    carries a themeMode custom prop bound to the ThemeMode
+    tag with this onChange script, and the HudBar top dock
+    is mounted on every page, so a ThemeMode write from
+    anywhere (another session's App Settings buttons, a
+    direct tag write) re-applies the theme in this already
+    open session without a reload. apply_theme stays the
+    single apply path; the brightness re-report refreshes
+    the chart probe for the System case. Idempotent: the
+    session's own button writes fire it too, after
+    set_theme_mode already applied."""
+    apply_theme(self)
+    report_brightness(self)
 
 
 def page_startup(self):

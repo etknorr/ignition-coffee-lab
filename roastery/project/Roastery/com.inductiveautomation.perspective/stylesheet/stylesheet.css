@@ -194,3 +194,41 @@
   .psc-roast-detail-titlecol { flex: 1 1 100% !important;
     order: 3; }
 }
+
+/* ---- polish round 5: dock buttons (HUNT-39) -----------------
+   Dock button labels never wrap. The class chain carried no
+   white-space rule, so the button default (normal) wrapped
+   two word custom names (Custom 3, Drum Note) inside the
+   narrow repeater slots, and in the phone dock's fixed
+   height row the second line clipped at the button edge.
+   The dock classes pin the text to one line; a user renamed
+   custom that still does not fit truncates with an ellipsis
+   instead of wrapping or pushing the layout. Paired with
+   the repeater instance floors in Views/Controls and
+   Views/ControlDock, which give every dock button a slot
+   wide enough for the standard labels at this size. */
+.psc-roast-btn-dock, .psc-roast-btn-dock-lead {
+  white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; min-width: 0; }
+
+/* ---- polish round 5, HUNT-43 --------------------------------------
+   The New Roast utility button is not a dock button, so the
+   HUNT-39 dock rule did not cover it, and at 360px its 84px
+   slot wrapped "New Roast" to two lines (56px tall). The
+   button sizes to its content in its flex row, so pinning
+   nowrap alone keeps it one line without an ellipsis. */
+.psc-roast-btn-nowrap { white-space: nowrap; }
+
+/* ---- polish round 5, HUNT-44 --------------------------------------
+   The phase segment detail ("target 02:30") is 11px and the
+   narrowest segment at 360px (Development, 2:30 target, 65px
+   wide) has 4px of side padding, leaving about 57px for the
+   caption, so the 11px "target 02:30" clipped a couple of
+   pixels on each side. At phone widths the detail drops to
+   9px, which fits the narrowest default segment with room
+   for the stamped actuals form ("02:30 · 21%") too. The
+   !important is required: the style class sets 11px and its
+   generated rule beats a plain advanced stylesheet rule.
+   Desktop is untouched. */
+@media (max-width: 560px) {
+  .psc-roast-seg-detail { font-size: 9px !important; } }

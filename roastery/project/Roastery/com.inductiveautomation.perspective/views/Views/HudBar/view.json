@@ -2,7 +2,8 @@
   "custom": {
     "clockText": "00:00",
     "clockCaption": "ROAST TIME",
-    "phaseText": "Pre-charge"
+    "phaseText": "Pre-charge",
+    "themeMode": "System"
   },
   "params": {},
   "propConfig": {
@@ -31,6 +32,21 @@
           "bidirectional": false
         },
         "bidirectional": false
+      }
+    },
+    "custom.themeMode": {
+      "binding": {
+        "type": "tag",
+        "config": {
+          "tagPath": "[default]Roastery/AppSettings/ThemeMode",
+          "mode": "direct",
+          "bidirectional": false
+        },
+        "bidirectional": false
+      },
+      "onChange": {
+        "enabled": true,
+        "script": "\timport roastery.core\n\troastery.core.on_theme_mode_change(self)\n"
       }
     }
   },

@@ -50,7 +50,7 @@
         "props": {
           "text": "",
           "style": {
-            "classes": "roast-btn roast-btn-primary"
+            "classes": "roast-btn roast-btn-dock roast-btn-primary"
           }
         },
         "position": {
@@ -71,7 +71,7 @@
             "binding": {
               "type": "expr",
               "config": {
-                "expression": "if({view.params.lead}, 'roast-btn roast-btn-primary roast-btn-lg', if({view.params.kind} = 'custom', 'roast-btn roast-btn-event', if({view.params.kind} = 'utility', 'roast-btn roast-btn-reset', 'roast-btn roast-btn-event')))"
+                "expression": "if({view.params.lead}, 'roast-btn roast-btn-primary roast-btn-dock-lead', if({view.params.kind} = 'custom', 'roast-btn roast-btn-dock', if({view.params.kind} = 'utility', 'roast-btn roast-btn-reset roast-btn-dock', 'roast-btn roast-btn-dock')))"
               }
             }
           }

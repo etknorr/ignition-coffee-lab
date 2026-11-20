@@ -35,7 +35,7 @@
         {
             "type_key": "grouptag_sqltref",
             "name": "BatchNumber",
-            "driving_tag_path": "[default]Roastery/CurrentBatch/BatchNumber",
+            "driving_tag_path": "[default]Roastery/CurrentBatch/LastActionBatchNumber",
             "target_data_type": "Int4",
             "target_name": "batch_number",
             "target_type": "DB_FIELD"

@@ -63,6 +63,21 @@ DETAIL_REFRESH_MESSAGE = 'roastery-detail-refresh'
 # longer batches keep their natural end. Sized empirically
 # against the rendered ticks on batch 1042.
 DETAIL_MIN_SPAN_SEC = 600
+# Short batch span floor in seconds (polish round 5,
+# HUNT-37): a batch shorter than DETAIL_MIN_SPAN_SEC no
+# longer pads all the way to 600, which left a 43 s batch
+# plotted in the first tenth of the axis. _detail_span
+# floors the staged grid at the larger of this floor and
+# the batch extent, and _detail_top_gap scales the event
+# label gap down by the same proportion, so short batches
+# fill the chart and their later events can carry labels.
+# Batches at or over DETAIL_MIN_SPAN_SEC stage exactly as
+# before: natural extent, 55 s label gap.
+DETAIL_SHORT_FLOOR_SEC = 180
+# Event label gap in seconds on a full span detail chart
+# (the round 3 settlement detail_reference_lines used as a
+# bare 55.0 before HUNT-37).
+DETAIL_REF_GAP_SEC = 55.0
 
 BACKGROUND_LABEL = '[default]Roastery/BackgroundLabel'
 ROASTLOG_TAG = '[default]Roastery/RoastLog'
@@ -909,6 +924,37 @@ def _apply_events(doc, payload):
 
 # ---------------------------------------------------------------- detail + new roast
 
+def _detail_span(end_sec):
+    """Staged detail grid span in seconds for a batch whose
+    extent (last event or curve point) is end_sec. At or
+    over DETAIL_MIN_SPAN_SEC the span is the natural extent,
+    unchanged from the round 2 and 3 behavior. Under it the
+    span floors at the larger of DETAIL_SHORT_FLOOR_SEC and
+    the extent (HUNT-37), so a short batch fills a sensible
+    share of the axis instead of the first tenth of a 600 s
+    grid."""
+    end_sec = int(end_sec)
+    if end_sec >= DETAIL_MIN_SPAN_SEC:
+        return end_sec
+    return max(DETAIL_SHORT_FLOOR_SEC, end_sec)
+
+
+def _detail_top_gap(span):
+    """Event label gap in seconds for a detail chart staged
+    at span seconds: DETAIL_REF_GAP_SEC at the full span,
+    scaled in proportion under it (55 s at 600 scales to
+    16.5 s at the 180 s floor), so events a few seconds
+    apart on a short batch still drop their labels while
+    events tens of seconds apart earn them. At or over
+    DETAIL_MIN_SPAN_SEC the gap is exactly
+    DETAIL_REF_GAP_SEC."""
+    span = int(span)
+    if span >= DETAIL_MIN_SPAN_SEC:
+        return DETAIL_REF_GAP_SEC
+    return DETAIL_REF_GAP_SEC * float(span) / float(
+        DETAIL_MIN_SPAN_SEC)
+
+
 def stage_detail(batch_number):
     """Stage everything the Log detail view binds for one batch:
     DetailDS (bean temp + RoR recomputed from the stored temps
@@ -938,12 +984,12 @@ def stage_detail(batch_number):
     # any browser timezone, and no longer depends on the
     # batch having a stored roast_start wall clock (the
     # generated fixture batches have none, and their detail
-    # curves used to stage empty). The grid is floored at
-    # DETAIL_MIN_SPAN_SEC (the round 2 tick span fix, which
-    # used to bind the axis max from detail_startup; the
-    # padded grid now carries the span itself). A stored
-    # point at a fractional second lands on its nearest
-    # second.
+    # curves used to stage empty). The grid span comes from
+    # _detail_span (the round 2 tick span fix, which used to
+    # bind the axis max from detail_startup; the padded grid
+    # now carries the span itself, floored by HUNT-37 for
+    # short batches). A stored point at a fractional second
+    # lands on its nearest second.
     placed = {'bt': {}, 'ror': {}}
     for (t, bt), (_t2, ror) in zip(points, rors):
         s = int(round(float(t)))
@@ -954,7 +1000,7 @@ def stage_detail(batch_number):
         end_sec = max(end_sec, int(round(points[-1][0])))
     rows = core.second_grid(
         placed, ['bt', 'ror'],
-        max(end_sec, DETAIL_MIN_SPAN_SEC))
+        _detail_span(end_sec))
     evs = []
     events = doc.get('events') or {}
     for key, lbl in (('charge', 'CHARGE'), ('dryEnd', 'DRY END'),
@@ -1053,11 +1099,17 @@ def detail_analyzer_latest():
     detail_analyzer_refresh()
 
 
-def detail_reference_lines():
-    """Reference line items for the staged batch's events, from
-    the DetailDocJson document stage_detail wrote (custom event
-    names intact). Bound on the detail chart's bean series
-    through a script transform triggered by DetailMarksDS."""
+def _detail_reference_lines(gap_fn):
+    """Shared body for detail_reference_lines and its compact
+    variant: reference line items for the staged batch's
+    events, from the DetailDocJson document stage_detail
+    wrote (custom event names intact). The label gap comes
+    from gap_fn(span): the span is read back from the staged
+    DetailDS grid itself (one row per second, so rowCount
+    minus 1 is the span stage_detail built), which keeps the
+    gap in exact step with the grid; when no grid is staged
+    the span falls back to the document extent through
+    _detail_span."""
     raw = system.tag.readBlocking([DETAIL_JSON])[0].value
     if not raw:
         return []
@@ -1075,7 +1127,42 @@ def detail_reference_lines():
         if c.get('t') is not None:
             evs.append((float(c['t']),
                         (c.get('name') or 'CUSTOM').upper()))
-    return core._ref_items(evs, top_gap=55.0)
+    span = None
+    ds = system.tag.readBlocking([DETAIL_DS])[0].value
+    if ds is not None and ds.rowCount > 0:
+        span = ds.rowCount - 1
+    if span is None:
+        end_sec = int(float(doc.get('totalSec') or 0))
+        for _t, _lbl in evs:
+            end_sec = max(end_sec, int(_t))
+        span = _detail_span(end_sec)
+    return core._ref_items(evs, top_gap=gap_fn(span))
+
+
+def detail_reference_lines():
+    """Reference line items for the staged batch's events.
+    Bound on the desktop detail chart's bean series through
+    a script transform triggered by DetailMarksDS. The label
+    gap scales with the staged span (HUNT-37): 55 s at the
+    600 s span, proportionally less under it."""
+    return _detail_reference_lines(_detail_top_gap)
+
+
+def detail_reference_lines_compact():
+    """Phone variant of the detail reference lines (round 5,
+    HUNT-41): the phone detail chart squeezes the span into
+    about 250 px, so two labels in the top band need about
+    65 px of clearance not to touch, which is 0.26 of the
+    span in seconds. The desktop gap (16.5 s at the 180 s
+    floor) let batch 1042's CHARGE and DROP print as one
+    word, CHARGEDROP, and batch 9919's CHARGE and LATE NOTE
+    as CHARGELATE NOTE at 360 px; the compact gap drops the
+    second label instead (the events strip under the chart
+    always names every event). Bound on the phone detail
+    chart instance, the same paired instance pattern as the
+    live chart and the HUNT-13 phone tables."""
+    return _detail_reference_lines(
+        lambda span: 0.26 * float(span))
 
 
 def open_detail(self):
