@@ -150,6 +150,20 @@
 .psc-roast-hud-field { padding-left: 4px !important; }
 
 
+/* ---- polish round 6: HUD clock clip (HUNT-49) ---------------------
+   The roast clock value ("00:00", 16px monospace) needs 48px
+   but its tile is 47px at 360px: the HUD row is exactly full
+   (pill plus four tiles plus the gear), so the tile is squeezed
+   1px below what the value needs and the last "0" loses a
+   pixel, with overflow hidden. The phase 2 note claimed a
+   59:59 clock fits; it is off by that 1px (same width in
+   monospace). At phone widths the HUD values drop to 15px,
+   which needs about 45px and leaves room. Desktop keeps
+   16px. The phase value is unaffected: its tile grows to fit
+   ("Development" and "Second Crack" both measure exact). */
+@media (max-width: 560px) {
+  .psc-roast-hud-value { font-size: 15px !important; } }
+
 /* ---- polish round 2: phone column sets (HUNT-13) ------------
    The three wide tables (Log, Alarms, Phase Analysis) ship in
    two instances: the full set carries roast-cols-full and a
@@ -232,3 +246,27 @@
    Desktop is untouched. */
 @media (max-width: 560px) {
   .psc-roast-seg-detail { font-size: 9px !important; } }
+
+/* ---- polish round 6: mode pill (round 6 candidate 3) --------------
+   The pill read "MODE Off" and wrapped to two lines at 360px:
+   the HeadRow is exactly full (heading 128px plus New Roast
+   87px leave about 71px), while "MODE Roast" needs about
+   89px at 11px bold, so no font or padding tweak can fit the
+   prefix in every mode. The pill now shows just the mode
+   value (Off, Roast, Cool); the section heading already says
+   Roaster Controls and the pill color still codes the mode
+   (gray, red, blue). The nowrap pins it to one line so a
+   future longer mode value cannot wrap it again. */
+.psc-roast-mode-pill { white-space: nowrap; }
+
+/* ---- polish round 6: unnamed custom event cells (HUNT-47) --------
+   An unnamed custom slot has no button and no name, so its
+   EventsStrip cell must not render at all. A props.visible
+   binding on these embedded cells is not honored on this
+   build (an expression binding and a tag binding with an
+   expression transform were both tried: the unnamed cells
+   kept rendering as blank boxes with dashes). The cells are
+   hidden by class instead, through the same style system as
+   every other rule here. The !important is required: the
+   embedded view's own layout beats a plain rule. */
+.psc-roast-cell-hidden { display: none !important; }

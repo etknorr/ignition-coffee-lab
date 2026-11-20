@@ -11,6 +11,11 @@ One phone context drives the roast; desktop contexts
 are opened one at a time per timezone and closed after
 their screenshot (parallel chart sessions saturate
 this VM and stall screenshot calls).
+
+Polish round 6 (HUNT-51): the live and detail datasets
+must carry even 30 s labels, so this suite now asserts
+every t_label parses as M:SS with total seconds a
+multiple of 30, on LiveCurveDS and on DetailDS.
 """
 import sys
 
@@ -70,6 +75,26 @@ def shot(pg, name):
         return False
 
 
+def even_labels(ds_value):
+    """(ok, labels): every t_label in the dataset parses as
+    M:SS with total seconds a multiple of 30 (polish round 6,
+    HUNT-51, the even-step axis)."""
+    cols, rows = P.ds_rows(ds_value)
+    if 't_label' not in cols or not rows:
+        return False, []
+    li = cols.index('t_label')
+    labels = [str(r[li]) for r in rows]
+    for lbl in labels:
+        try:
+            m, s = lbl.split(':')
+            total = int(m) * 60 + int(s)
+        except Exception:
+            return False, labels
+        if total % 30 != 0:
+            return False, labels
+    return True, labels
+
+
 def main():
     check('lab starts clean', P.tag(B + '/State') == 'Idle')
     P.write_tags([(B + '/DispAxisFormat', 'm:ss'),
@@ -91,6 +116,10 @@ def main():
         P.wait_until(
             lambda: (P.tag(B + '/BeanTempF') or 0) >= 270,
             360)
+        ok_live, live_labels = even_labels(
+            P.tag('[default]Roastery/LiveCurveDS'))
+        check('live curve labels are even 30 s steps',
+              ok_live, live_labels)
         for tz in ('America/Denver', 'America/Los_Angeles',
                    'UTC'):
             ctx = b.new_context(
@@ -115,7 +144,7 @@ def main():
             timezone_id='America/Denver')
         log = open_page(ctx, '/log')
         try:
-            log.locator('tr', has_text='1044').first.click(
+            log.locator('text=1,044').first.click(
                 timeout=25000)
             log.wait_for_timeout(1200)
             log.get_by_role(
@@ -129,6 +158,10 @@ def main():
         check('detail shot taken',
               'Batch 1044' in log.locator('body').inner_text()
               and shot(log, 'axis-detail-utc.png'))
+        ok_det, det_labels = even_labels(
+            P.tag('[default]Roastery/DetailDS'))
+        check('detail labels are even 30 s steps',
+              ok_det, det_labels)
         log2 = open_page(ctx, '/log')
         btn = log2.get_by_role('button', name='Compare').first
         okc = False

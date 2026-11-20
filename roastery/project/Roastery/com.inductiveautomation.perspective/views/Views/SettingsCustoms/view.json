@@ -38,7 +38,7 @@
           "name": "CustomSectionDesc"
         },
         "props": {
-          "text": "Custom buttons are your own event markers for anything the standard events do not cover, for example a fan change you want to remember or a note about the beans. During a roast they appear in the roast controls and in the phone dock, next to the standard events. Stamping one drops a labeled marker on the chart at that moment and saves the event in the batch record. Use Show to keep a button on the controls, or turn Show off to hide it. Name and kind are free text: the name is the button label and the marker text, the kind is a short category note (Airflow, Note, Info, ...).",
+          "text": "Custom buttons are your own event markers for anything the standard events do not cover, for example a fan change you want to remember or a note about the beans. During a roast they appear in the roast controls and in the phone dock, next to the standard events. Stamping one drops a labeled marker on the chart at that moment and saves the event in the batch record. Use Show to keep a button on the controls, or turn Show off to hide it. Name and kind are free text: the name is the button label and the marker text, the kind is a short category note (Airflow, Note, Info, ...). Leave a name blank to hide that button until you name it.",
           "style": {
             "classes": "roast-section-desc"
           }

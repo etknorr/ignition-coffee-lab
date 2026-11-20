@@ -382,7 +382,13 @@ def main():
     wait_tag(B + '/State', 'Idle')
     write_tags([(B + '/CustomEvent2Name', 'Drum Note'),
                 (B + '/CustomEvent2Enabled', True),
+                # Polish round 6: slots 3 and 4 ship unnamed,
+                # so this suite names them explicitly for the
+                # dock test below, then restores the blanks.
+                (B + '/CustomEvent3Name', 'Custom 3'),
                 (B + '/CustomEvent3Enabled', True),
+                (B + '/CustomEvent4Name', 'Custom 4'),
+                (B + '/CustomEvent4Enabled', True),
                 ('[default]Roastery/AppSettings/ThemeMode',
                  'System')])
     probe('updatedock')
@@ -761,9 +767,12 @@ def main():
         drain_pending()
         psql('DELETE FROM batch_events WHERE batch_number = %d'
              % roast_no)
-        write_tags([(B + '/CustomEvent2Name', 'Drum Note'),
+        write_tags([(B + '/CustomEvent2Name', ''),
                     (B + '/CustomEvent2Enabled', True),
+                    (B + '/CustomEvent3Name', ''),
                     (B + '/CustomEvent3Enabled', True),
+                    (B + '/CustomEvent4Name', ''),
+                    (B + '/CustomEvent4Enabled', True),
                     (B + '/BatchNumber', batch_no)])
         probe('reset')
         wait_tag(B + '/State', 'Idle')

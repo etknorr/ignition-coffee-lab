@@ -81,14 +81,32 @@ def elapsed_date(sec):
 # probe and the timezone verification shots).
 #
 # Consequences, all worked through in the probe:
-# - Categories are one per second (second_grid below), so
-#   the axis stays time proportional and the auto label
+# - Categories are one per grid step (second_grid below),
+#   so the axis stays time proportional and the auto label
 #   interval thins the text to whatever fits the width,
 #   which is the no overlap rule. Fixed tick steps are NOT
 #   exposed by the component on this build (axisLabel
 #   interval keys in both advanced and labels are silently
 #   dropped, proven with a freshness control), so spacing
 #   is Auto only, like Artisan's auto grid.
+# - Polish round 6 (HUNT-51, Eric 2026-11-19: the axis must
+#   read even increments like 15 30 45 1:00 1:15 1:30, and
+#   30 s resolution is fine). The auto interval alone cannot
+#   promise that: it samples every Nth category for N from
+#   label width and plot width, and N lands on 51 s steps
+#   on a full roast. The fix is in the category set itself:
+#   second_grid now emits one row per AXIS_GRID_STEP_SEC
+#   (30 s), so every category name is an even step and any
+#   auto interval stride over them stays even (30, 60, 90,
+#   120 s). The blanking shortcut was NOT used: the round 3
+#   probe proved blank names merge into a single category
+#   and scramble the line, so categories must stay unique
+#   and non blank. The cost is quantization: samples,
+#   overlays, bands and markers land on the nearest 30 s
+#   bucket (at most 15 s off their true second), which Eric
+#   accepted as 30 s resolution. Reference lines snap to
+#   the same grid in _ref_items, because a line can only
+#   draw on a category that exists.
 # - Category names must be unique per second or ECharts
 #   collapses the duplicates into one slot (proven: blank
 #   names merged into a single category and scrambled the
@@ -125,24 +143,55 @@ def axis_label(sec, fmt=None):
     return '%d:%02d' % (m, ss)
 
 
+# Polish round 6 (HUNT-51): the elapsed axis grid step in
+# seconds. Every chart category is a multiple of this step,
+# so every label the auto interval can show is an even
+# increment (30, 60, 90, 120 s) at any width. 30 s is the
+# step Eric named as fine; the grid is the same for the
+# phone and desktop instances (they share one dataset tag),
+# and the auto interval thins it per instance.
+AXIS_GRID_STEP_SEC = 30
+
+
+def grid_bucket(sec, step=AXIS_GRID_STEP_SEC):
+    """Nearest grid step multiple for one elapsed second.
+    Integer arithmetic (round half up) so the Jython library
+    and the CPython suites agree exactly, including at half
+    step boundaries where round() differs between the two.
+    A value lands at most step / 2 from its true second."""
+    s = int(round(float(sec)))
+    return (s + step // 2) // step * step
+
+
 def second_grid(placed, cols, max_sec, fmt=None,
                 fill_cols=()):
     """Dataset rows for a category axis chart: one row per
-    second 0..max_sec, [Date, t_label, t_sec] plus one value
-    per column in cols. placed maps col -> {sec: value}; a
-    value lands on its own second and is null elsewhere
-    (the series run connectNulls, so a gap of a few seconds
-    bridges without warping the time scale), except the
-    cols in fill_cols, which forward fill: fan and heat
-    levels are constant between changes, so their fill is
-    exact, and their step series need a value at every
-    second to draw the steps."""
+    AXIS_GRID_STEP_SEC seconds, 0..max_sec, [Date, t_label,
+    t_sec] plus one value per column in cols. Callers bucket
+    their placed seconds to the grid step first (see
+    grid_bucket), so a value lands on its nearest grid row
+    and is null elsewhere (the series run connectNulls, so a
+    gap of a few buckets bridges without warping the time
+    scale), except the cols in fill_cols, which forward fill:
+    fan and heat levels are constant between changes, so
+    their fill is exact, and their step series need a value
+    at every grid row to draw the steps. The grid extends
+    past max_sec when a bucketed value lands beyond it, so
+    no sample is ever dropped. Every t_label is a multiple
+    of the grid step (HUNT-51), so the auto interval can
+    only ever show even increments.
+    """
     from java.util import Date
     if fmt is None:
         fmt = axis_format()
     rows = []
     last = dict((c, None) for c in fill_cols)
-    for s in range(int(max_sec) + 1):
+    top = int(max_sec)
+    for c in cols:
+        keys = placed.get(c, {})
+        if keys:
+            top = max(top, max(keys))
+    for s in range(0, top + 1, AXIS_GRID_STEP_SEC):
         row = [Date(elapsed_ms(s)), axis_label(s, fmt), s]
         for c in cols:
             v = placed.get(c, {}).get(s)
@@ -280,7 +329,14 @@ def show_toast(self, message, kind='info'):
                          'position': 'top-center',
                          'theme': _toast_theme(self),
                          'closeOnClick': True}})
-    except Exception:
+    except:
+        # Polish round 6, HUNT-48: runJavaScriptAsync goes
+        # through Periscope to a page that may be closing,
+        # and a Java throwable is not a Python Exception in
+        # Jython (round 4, HUNT-36), so except Exception
+        # does not catch it. Bare except keeps the Never
+        # raises promise; a toast to a gone page is nothing
+        # to log.
         pass
 
 
@@ -1804,7 +1860,8 @@ def build_marks():
     system.tag.writeBlocking([MARKS_DS], [ds])
 
 
-def _ref_items(evs, top_gap=55.0, mid_gap=45.0, mid_top_gap=45.0):
+def _ref_items(evs, top_gap=55.0, mid_gap=45.0, mid_top_gap=45.0,
+               line_gap=None, grid_step=AXIS_GRID_STEP_SEC):
     """Canvas chart reference line items for (elapsed sec,
     label) events: native ECharts markLines through the
     component's series referenceLines. Polish phase 2 item 3:
@@ -1830,18 +1887,40 @@ def _ref_items(evs, top_gap=55.0, mid_gap=45.0, mid_top_gap=45.0):
     callers and are ignored.) Values are category names on
     the elapsed category axis (polish round 3, HUNT-23):
     the axis_label string of the event's second, from the
-    same formatter that names the categories, so a line
-    always lands exactly on its event's second.
+    same formatter that names the categories.
+
+    Polish round 6 (HUNT-51): the value snaps to the grid
+    step first (grid_bucket), because a markLine can only
+    draw on a category that exists, and the categories are
+    now the 30 s grid steps. An event at 273 s draws its
+    line at 270 s, at most 15 s from its true second; the
+    exact time still lives in the events strip and the batch
+    document. The gap and line thinning below run on the
+    snapped seconds, since that is where the lines draw.
+
+    line_gap (round 6, detail chart only) thins the LINES
+    themselves: an unlabeled line closer than line_gap to
+    the last kept line is dropped, so lines a second or two
+    apart do not merge into a solid band at the left edge
+    of a short batch. It is deliberately far smaller than
+    top_gap (labels need tens of seconds of clearance,
+    lines only need a few pixels): a labeled line is never
+    dropped, and when a labeled line lands within line_gap
+    of a kept unlabeled line the unlabeled one goes instead,
+    so every visible label keeps its line. None keeps every
+    line, which is the live chart's settled behavior.
     """
     items = []
+    secs = []
     last_top = None
     for sec, lbl in sorted(evs, key=lambda e: float(e[0])):
-        sec = float(sec)
+        sec = float(grid_bucket(sec, grid_step))
         if last_top is None or sec - last_top >= top_gap:
             vis = True
             last_top = sec
         else:
             vis = False
+        secs.append(sec)
         items.append({
             'value': axis_label(sec),
             'orientation': 'vertical',
@@ -1850,6 +1929,17 @@ def _ref_items(evs, top_gap=55.0, mid_gap=45.0, mid_top_gap=45.0):
                       'fontSize': 11, 'elementStyle': {}},
             'line': {'color': '#f59e0b', 'width': 1.5,
                      'type': 'dashed', 'opacity': 0.9}})
+    if line_gap is not None:
+        kept = []
+        for sec, item in zip(secs, items):
+            labeled = item['label']['visible']
+            if kept and sec - kept[-1][0] < line_gap:
+                if not labeled:
+                    continue
+                if not kept[-1][1]['label']['visible']:
+                    kept.pop()
+            kept.append([sec, item])
+        items = [item for _sec, item in kept]
     return items
 
 
@@ -2499,21 +2589,26 @@ def build_live_curve():
             for t, r in rors]
     # The canvas line chart reads ONE wide dataset (v4.4
     # migration): the ghost and target overlays merge into
-    # the same per second grid, each column null where its
-    # source has no point at that second. The chart series
-    # set connectNulls, so the merge nulls never break a
-    # line; they are not data gaps. Columns bg, bgRor and
-    # plan come from the overlay datasets build_overlays
+    # the same grid, each column null where its source has
+    # no point at that grid row. The chart series set
+    # connectNulls, so the merge nulls never break a line;
+    # they are not data gaps. Columns bg, bgRor and plan
+    # come from the overlay datasets build_overlays
     # maintains. (Before polish round 3 the merge keyed rows
     # by union timestamp on the time axis; the category axis
-    # needs the regular one second grid second_grid builds,
-    # and a point at a fractional second lands on its
-    # nearest second.)
+    # needs the regular grid second_grid builds, and a point
+    # at a fractional second lands on its nearest grid
+    # step, polish round 6 HUNT-51.)
     placed = {}
     max_sec = [-1]
 
     def put(sec, col, val):
-        s = int(round(float(sec)))
+        # Polish round 6 (HUNT-51): values land on the
+        # nearest 30 s grid bucket, so the drawn position is
+        # at most 15 s from the true second. The stored
+        # samples keep the true seconds; only this drawn
+        # grid quantizes.
+        s = grid_bucket(sec)
         if s < 0:
             s = 0
         colmap = placed.get(col)
@@ -2630,13 +2725,25 @@ def stamp_custom(index):
     at all (polish round 1 item 7): the guard lives here in
     the library, not only in the view, so no caller can
     bypass it. A missing Enabled member (an older tag tree)
-    reads as enabled. Returns True when the stamp landed."""
+    reads as enabled. A slot with a blank name cannot be
+    stamped either (polish round 6): an unnamed slot has no
+    button, so no caller should reach it, and stamping it
+    would record an event with no label. Returns True when
+    the stamp landed."""
     name_member = 'CustomEvent%dName' % index
     enabled_member = 'CustomEvent%dEnabled' % index
     vals = read_members(['BeanTempF', 'StartTime', name_member,
                          enabled_member])
     enabled = vals[enabled_member]
     if enabled is not None and not enabled:
+        return False
+    # Polish round 6: a slot with no name is hidden, so it
+    # cannot be stamped either. A name that is blank (or
+    # only whitespace) means Eric has not given this slot
+    # a name yet; stamping it would record an event with
+    # no label and a press row with no key.
+    name = vals[name_member]
+    if name is None or not str(name).strip():
         return False
     now = system.date.now()
     elapsed = elapsed_sec(vals['StartTime'], now)
@@ -2658,7 +2765,9 @@ def dock_actions():
       key:   the action key record_press and the stamp
              functions use ('Charge', 'Dry End',
              'First Crack Start', ..., or a custom's name),
-      label: the button text (customs use CustomEventNName),
+      label: the button text (customs use CustomEventNName;
+             a slot whose name is blank is left out entirely,
+             polish round 6),
       kind:  'primary', 'secondary', 'custom' or 'utility',
       lead:  True for the one action the phase leads with,
       customIndex: the custom slot (1 to 4) on customs, 0 on
@@ -2695,8 +2804,15 @@ def dock_actions():
             enabled = vals['CustomEvent%dEnabled' % i]
             if enabled is not None and not enabled:
                 continue
-            name = vals['CustomEvent%dName' % i] \
-                or ('Custom %d' % i)
+            # Polish round 6: a slot with no name is hidden.
+            # Eric names his own customs in Settings; the
+            # shipped defaults name only slot 1 (Fan Boost),
+            # so the dock shows one custom button instead of
+            # four, and a slot he clears in Settings drops
+            # off the controls until he names it again.
+            name = vals['CustomEvent%dName' % i]
+            if name is None or not str(name).strip():
+                continue
             d = act(name, name, 'custom')
             d['customIndex'] = i
             out.append(d)
@@ -3043,7 +3159,17 @@ def report_brightness(self):
             return
         system.perspective.runJavaScriptAsync(
             BRIGHTNESS_JS, {})
-    except Exception:
+    except:
+        # Polish round 6, HUNT-48: the brightness probe goes
+        # through Periscope to a page that may be closing
+        # (the themeMode onChange fires in every open
+        # session on a ThemeMode write), and a Java
+        # throwable is not a Python Exception in Jython
+        # (round 4, HUNT-36), so except Exception does not
+        # catch it and the onChange logs an error. Bare
+        # except keeps the Never raises promise; the theme
+        # itself was already applied by apply_theme, so a
+        # missed re-probe costs nothing.
         pass
 
 

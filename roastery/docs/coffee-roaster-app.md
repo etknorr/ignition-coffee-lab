@@ -5485,3 +5485,680 @@ passed after the HUNT-45 repoint).
    suite; make its cleanup match the tier
    suites' so the battery needs no residue
    reruns.
+
+## Polish round 6: custom buttons, MODE pill, detail lines (2026-11-19/20)
+
+Eric's feedback opened the round (2026-11-19 evening, from
+the live session): "I don't know what drum note, custom.3
+or custom 4 buttons do, but they take up a ton of space.
+But they mean nothing to me. I have a fluid bed roaster,
+I don't even have a drum." The standing brief (2026-11-19)
+is to keep refining and finding bugs, keep making updates
+based on Artisan, keep updating the math and making it
+better, high quality graphics and helpful dynamic views and
+pages, smoothing out rough edges. The round covers the
+eight scope items in order, then a hunting pass.
+
+### Item 1: Eric's custom buttons (Eric item)
+
+The defaults named all four custom slots (slot 1 'Fan
+Boost' / 'Airflow', slot 2 'Drum Note' / 'Note', slot 3
+'Custom 3' / 'Info', slot 4 'Custom 4' / 'Info'), so the
+Controls rail and the phone dock showed four custom buttons
+and the EventsStrip showed four custom cells. His SR800 is
+a fluid bed roaster with no drum, so 'Drum Note' meant
+nothing, and 'Custom 3' / 'Custom 4' were placeholders.
+
+Fix, all in the library and the views:
+
+- core.dock_actions() now skips any slot whose name is
+  None or blank after strip (the old 'Custom %d' fallback
+  is gone). The dock shows one custom button (Fan Boost)
+  instead of four.
+- core.stamp_custom() returns False for a blank name, so
+  an unnamed slot cannot be stamped by any caller (the
+  guard lives in the library, not only in the view, the
+  same pattern as the Enabled guard from polish round 1).
+- The live UDT defaults changed to match: slot 1 'Fan
+  Boost' / 'Airflow', slots 2 to 4 blank name and kind
+  (exported the live UDT, set the six defaults to '',
+  imported over it with collisionPolicy Overwrite,
+  successCount 1, then wrote the live instance values
+  directly, all code 192).
+- Settings, Custom Events gained the sentence "Leave a
+  name blank to hide that button until you name it."
+  Custom events stay renamable and showable in Settings
+  for ones he names himself.
+- The EventsStrip cells hide by class (HUNT-47, below):
+  a props.style.classes expression binding returns
+  'roast-cell-hidden' when the slot name is blank, and
+  the advanced stylesheet hides it with display none.
+  A props.visible binding was tried first in two forms
+  (an expression binding, then a tag binding with an
+  expression transform) and neither hid the cells on
+  this build, so the class hide is the shipped form and
+  the visible bindings were removed again.
+
+Proof, verify_r6_customs.py, 17 checks, ALL R6 CUSTOMS
+CHECKS PASSED, live at desktop and 360px:
+
+- Phone dock before Dry End: ['Dry End', 'Fan Boost',
+  '-', '+', '-', '+'] only. Controls rail: ['Dry End',
+  'Fan Boost'] only. Events strip: 8 cells (7 standard
+  plus Fan Boost), no blank cells.
+- Naming slot 3 'Test Note' in Settings puts its button
+  on the dock and its cell in the strip (9 cells);
+  clearing the name drops both again (8 cells).
+- stamp_custom on an unnamed slot returns False with 0
+  press rows; on Fan Boost it returns True with exactly
+  1 press row.
+- Lab counts back to the start of the run, Idle on batch
+  1042.
+
+Screenshots: r6-customs-dock-360.png (phone dock, two
+buttons), r6-customs-rail-desktop.png (Controls rail,
+two buttons), r6-customs-strip-desktop.png,
+r6-customs-named-360.png. Suites updated for the new
+defaults: verify_roastery_polish1.py (CUSTOMS is now
+only Fan Boost, plus name/hide checks), verify_roastery_
+polish2.py (setup names slots 3 and 4 explicitly for the
+dock test, teardown restores blanks), verify_roastery_
+r4hunt_a.py (setup names slot 2 'Drum Note' explicitly).
+
+### Item 2: MODE pill on one line (round 6 candidate 3)
+
+The pill read "MODE Off" and wrapped to two lines at
+360px. Measured: the pill was 70.58px wide and 36px tall
+(two lines), and the HeadRow is exactly full (heading
+128.19px plus pill 70.58px plus "New Roast" 87.23px
+equals the 286px row), while "MODE Roast" needs about
+89px at 11px bold, so no font or padding tweak can fit
+the prefix in every mode. Fix: the Controls view's
+ModePill text expression now shows just the mode value
+(Off, Roast, Cool); the section heading already says
+Roaster Controls and the pill color still codes the mode
+(gray, red, blue). A stylesheet rule pins the pill to
+nowrap so a future longer mode value cannot wrap it
+again. Measured after: 360px pill 'Off', 41.9px wide,
+21px tall (one line), row and page overflow 0; desktop
+'Off', 42px wide, 21px tall. Screenshots:
+r6-mode-pill-360-before.png, r6-mode-pill-360-after.png,
+r6-mode-pill-desktop-after.png.
+
+### Item 3: short-batch dashed line cluster (round 6 candidate 4)
+
+On a short batch the detail chart drew every event's
+dashed vertical line, so fixture 9919 (43 s extent, 180 s
+floored span) showed six lines in the first 10 s, 1.4 px
+apart on the roughly 250 px phone plot, merging into a
+solid band at the left edge. The label gap already
+dropped labels for close events but kept every line. The
+fix thins the LINES with a separate, much smaller gap
+than the label gap: new constant DETAIL_LINE_GAP_FRAC =
+0.03 in batches/code.py, passed as line_gap = 0.03 of
+span into core._ref_items (new optional line_gap
+parameter). An unlabeled line closer than line_gap to
+the last kept line is dropped; a labeled line is never
+dropped, and when a labeled line lands within line_gap
+of a kept unlabeled line the unlabeled one goes instead,
+so every visible label keeps its line. With line_gap
+None (the live chart callers) the path is identical to
+before. 0.03 of span is about 7.5 px on the phone plot
+and about 30 px on desktop. Thinning lines by the label
+gap was rejected: it would drop real lines on a normal
+batch (fixture 9920's FC END and SC END sit 30 s from
+their neighbors, under the 55 s label gap).
+
+Data proof, capture before (round 5
+r5_detail_after.json) versus after (/tmp/r6_detail_after.
+json), staged through the library on the gateway:
+
+- Fixture 9920 (720 s, 721 rows): reference items byte
+  identical, 7 lines, same labels. Grid and marks
+  identical.
+- Fixture 9919 (43 s, 181 rows): 8 lines to 3 lines
+  (CHARGE 0:00, FC START 0:06, LATE NOTE 0:42); labels
+  unchanged (CHARGE and LATE NOTE). Marks identical:
+  all 8 events are still plotted as marks, only the
+  vertical lines thinned. The DROP line at 0:43 carried
+  no label and is named in the events strip.
+- Batch 1042: the current seed's document has only two
+  events (CHARGE 0, DROP 19); the round 5 capture's
+  document had a third (Dry End 10). The 3 to 2 line
+  difference against round 5 is that reseed shape
+  difference, not a thinning effect: with the current
+  document both lines are kept, and worker B's
+  before/after on the same document is byte identical
+  for 1042 in both variants.
+
+Visual proof: r6-detail-short-360-light.png (phone plot,
+three separated dashed lines, CHARGE and LATE NOTE
+labeled), r6-detail-short-desktop-light.png,
+r6-detail-1042-360-light.png (HUNT-41 intact: only
+CHARGE labeled on the phone instance, DROP line present
+but unlabeled, no CHARGEDROP collision).
+
+### Item 4: UDT script reconciled with the live UDT (round 6 candidate 5)
+
+roastery/scripts/setup_roastery_artisan_tags.py is now
+the faithful record of the live UDT. It had 81 members;
+the live RoastBatch UDT has 203 (202 atomics plus the
+Sources folder), and the script never learned the
+press-capture members or LastActionBatchNumber, so a
+rebuild from it would have dropped them. The script was
+regenerated mechanically from a live export (not hand
+typed) and now carries all 203 RoastBatch members plus
+the 7-member RoasterSource UDT, including BeanTempF as
+an expression tag over ActiveSource with history on db
+and the on_bean_temp valueChanged script, RateOfRiseF
+with history on db, the Sources folder with per-instance
+overrides, and the round 6 custom defaults (slot 1 'Fan
+Boost' / 'Airflow', slots 2 to 4 blank). Proof:
+/tmp/r6_udt_diff.py compares the script against a fresh
+live export on name, data type, value source, default
+value and presence, history settings, expression, event
+scripts, and documentation for every member: live
+RoastBatch 203, script 203, live RoasterSource 7, script
+7, total differences 0, exit 0. main() is updated but
+never run (it is destructive by design; the header says
+so). Note: ~/workspace/ignition-lab/
+setup_roastery_artisan_tags.py still holds the old
+81-member version; it is a stale duplicate copy, not
+the live script, and should be deleted or resynced
+separately.
+
+### Item 5: phantom Charge press (round 6 candidate 6, watch item)
+
+It REPEATED once in this round, then did not repeat
+again. The round 5 hunt3 phantom (a roast started on
+batch 1042 at 01:55:26 UTC with no suite pressing
+Charge) did not reproduce in any round 6 live session
+(customs runs, HUNT-46 probes, detail shots), but the
+closing battery rerun's tier3c failed 'workspace clean
+Idle' with the workspace Roasting on batch 1042 after
+its reset, with no surviving Charge press row in the
+window (the only Charge rows then were polish1's
+startup, after tier3c had exited). The leading
+mechanism is the HUNT-27 click re-delivery: tier3c
+charges through UI dock clicks, and charge() blocks a
+replay only while State is 'Roasting', so a replay
+arriving after the reset to Idle re-charges. The same
+pattern showed again in the round 6 ABC verification:
+the walk-home left the roast Roasting (BT fell from
+416.7 to 365.3 as the drop cooling ran, then the roast
+restarted). Tier3c now probe-resets AFTER its checks
+so the lab is left clean for the next suite even when
+a phantom lands after the check. In the final battery
+rerun (runner4) tier3c PASSED and polish1 PASSED, so
+the phantom did not repeat there and the HUNT-53
+guard (block a replayed Charge after a reset, e.g. by
+remembering the last Charge counter or timestamp) is
+still open but not filed as a defect. It stays a watch
+item.
+
+### Item 6: validator drill-aware window (round 6 candidate 7)
+
+The pressfault drill's deliberate database stops log
+gateway WARN/ERROR rows, which the validator's 15
+minute window counted as failures on a rerun. Fix:
+verify_roastery_pressfault.py writes its fault window
+(first cluster stop to last gateway recovery) to
+pressfault-drill.json in the finally block, and
+validate_roastery_artisan.py reads it and treats rows
+inside the window as drill noise, reported under
+drill_window_warnings instead of counted. No staleness
+filter is needed: the window is bounded to the drill's
+own interval, and the validator's 15 minute window only
+overlaps it when a drill just ran. Proof: the validator
+rerun after the pressfault drill in the closing battery
+(see Verification).
+
+### Item 7: v4 suite cleanup (round 6 candidate 8)
+
+The v4 suite left one Reset press row and a loaded
+background for the next suite. Root causes: the loaded
+background is deterministic (the v4 ghost section stages
+a background and nothing cleared it; the tier suites
+clear it through the 'Clear ghost' button), and the
+leftover Reset row is a race (drain_pending waits at
+most 30 s for lagging group writes and never fails, so
+a press row can land after the DELETE). Fix: the suite
+now clicks 'Clear ghost' before closing the browser,
+through the app's own button the way the tier suites
+do, and its cleanup wraps the drain plus deletes in a
+retry loop (up to 3 attempts: drain, delete, sleep 5,
+re-check batch_events for the batch, break when 0),
+with the final 'test batch cleaned' check extended to
+require 0 press rows for the batch. Two HUNT-46
+consequences found while wiring this in: the Clear
+ghost click runs on a fresh page (a fresh session,
+first mount), because this desk session has already
+mounted /settings twice and a remounted page
+intermittently stops writing; and the phase target
+restore (set_numeric 270 on the second /settings
+mount) is now checked and finished through the tag API
+when the UI write does not land, since the app
+behavior was already proven by the 300 write on the
+first mount. Proof: the v4 suite in the closing battery
+(see Verification).
+
+### Item 8: the HUNT-46 onward hunting pass
+
+HUNT-46 (major, platform-blocked): a remounted page
+goes dead on this build. After navigating away from a
+page and back to it in the same Perspective session,
+that page's view instance intermittently stops applying
+updates: its controls stop writing (text field commits,
+stepper clicks, both bidirectional bindings and
+scripted onClick handlers) and its reads freeze at the
+first mount's values (strip names, mode pill). Proven
+with two live sessions side by side: the never
+remounted page followed a rename and a Mode change,
+the remounted page kept showing the old name and 'Off'.
+A 90 second wait does not revive it, so it is not the
+round 2 aged-session stall (which recovers in 60 to
+90 seconds); only a fresh session (new tab) restores
+writes. A page's FIRST mount in a session always
+writes, even after other pages were visited. It is a
+2027.2.0-beta1 client defect, not an app bug: there is
+no app-side fix for a dead binding, and the suites now
+use a fresh page per Settings visit and a reload or
+fresh page where a write must land after a remount.
+Eric works at IA and can file it. It matters for his
+phone-as-remote pattern: Roast to Log or Configure and
+back, then his presses silently do nothing until he
+opens a fresh tab. Recorded here and in the round 6
+report; held for the next beta, not fixed in the app.
+
+HUNT-47 (minor, fixed): the EventsStrip custom cells
+ignored their props.visible binding. The round 6 item 1
+fix first hid the unnamed cells with a props.visible
+expression binding ({CustomEventNName} != ''), then
+with a tag binding plus an expression transform; both
+forms left the unnamed cells rendering as blank boxes
+with dashes (11 cells visible in the DOM, 3 blank).
+No binding error appears in the gateway log. The
+shipped form hides by class: a props.style.classes
+expression binding returns 'roast-cell-hidden' when
+the name is blank, and the advanced stylesheet hides
+it with display none. The visible bindings were
+removed again. Proof: a live probe counts 8 rendered
+cells (7 standard plus Fan Boost) with slots 2 to 4
+blank, 9 when slot 3 is named, 8 after it is cleared;
+verify_r6_customs.py now asserts the rendered cell
+count (the name list alone cannot catch a blank cell,
+because an empty name label reports invisible).
+
+HUNT-48 (minor, fixed): the themeMode onChange script
+logged an error on ThemeMode writes. The log showed
+"Error running property change script on
+view.custom.themeMode", tracing through
+on_theme_mode_change to report_brightness to Periscope's
+runJavaScript, failing at PageModel.send when the page
+was closing. report_brightness and show_toast both
+promise "Never raises" but guarded only with except
+Exception, and a Java throwable is not a Python
+Exception in Jython (round 4, HUNT-36), so it escaped.
+Fix: both use a bare except now, the round 4 isolation
+pattern, with an evidence comment. The theme itself was
+already applied by apply_theme before the probe, so a
+missed re-probe costs nothing. Proof: verify_r6_hunt.py
+flips ThemeMode across open and closing sessions and
+counts themeMode errors in the log since its start: 0.
+The post-battery validator rerun also covers the dark
+suite's flips (see Verification).
+
+HUNT-49 (cosmetic, fixed): the roast clock value
+clipped 1px at 360px. Measured live: the ClockVal
+("00:00", 16px monospace) needs 48px but its tile is
+47px, because the HUD row is exactly full at 360px
+(pill plus four tiles plus the gear), so the tile is
+squeezed 1px below what the value needs and the last
+"0" loses a pixel with overflow hidden. The phase 2
+note claimed a 59:59 clock fits; it is off by that 1px
+(same width in monospace). Fix: at phone widths the
+HUD values drop to 15px (advanced stylesheet media
+query, the HUNT-44 pattern), which needs about 45px.
+Desktop keeps 16px. The phase value is unaffected:
+its tile grows to fit ("Development" and "Second
+Crack" both measure exact). Proof: verify_r6_hunt.py
+measures every HUD value at 360px; the clock reads
+scrollWidth 47, clientWidth 47 after the fix.
+
+HUNT-50 (Eric, 2026-11-19, the black bar): "What's
+up with the big black bar at the top? Unused space?"
+His phone screenshot showed a large empty black band
+between the HUD strip and the chart card. Root cause:
+the Roast page stacks an alarm banner (38px) and a
+prompt strip (56px), 94px total, always rendered, and
+both are transparent when they have nothing to show,
+so over the dark page background they read as one
+black band. The same pair exists on the desktop
+LargeRoot and the phone SmallRoot. The prompt strip's
+reservation is the Tier 2 deliberate design (playback
+prompts fire into a reserved strip so the chart does
+not shift mid roast); the alarm banner's 38px is the
+same pattern. Fix: a props.style.classes expression
+binding on all four banner containers selects
+'roast-banner roast-hidden' (display none) when the
+banner is empty. The alarm banner hides when no alarm
+is active; the prompt strip hides when no prompt is
+active AND no background is loaded, so the strip stays
+reserved while a background is loaded (a prompt can
+only fire then, so no roast layout shifts when one
+fires) and collapses otherwise. The hide is by class,
+not props.visible: the HUNT-47 lesson is that visible
+bindings are not honored for these containers on this
+build. Trade-off, stated plainly: an alarm firing
+while the banner is hidden shifts the chart down 38px
+once; alarms are exceptional, and the permanent 94px
+dead band is what Eric flagged. The validator
+allowlist gained the four new props.style.classes
+bindings (the same class selection pattern as the
+Dismiss buttons). Proof: verify_r6_abc2.py, ALL CHECKS
+PASSED (no failures): both banners hidden while empty
+(2 hidden banner containers at 360px), the prompt
+strip reserved while a background is loaded (1 hidden),
+collapsed again after the background clears (2 hidden),
+and a real banner alarm (BT above 200 F, guard
+Charge) fires AlarmActive and shows the banner (1
+hidden), then clears when the alarm is removed (2
+hidden). The first ABC run used a lowercase 'charge'
+guard, which is not a guard name, so its alarm never
+armed; that was the test's bug, not the app's, and
+the guard is 'Charge' in the rerun. Screenshots:
+r6-abc-phone-360-dark-chart.png (chart directly
+under the HUD, no band), r6-abc-desktop-dark.png
+(the blue suggestion strip correctly visible while
+a prompt is active).
+
+HUNT-51 (Eric, 2026-11-19, the axis): "the time on
+the bottom should be even increments, like 15 30 45
+1:00 1:15 1:30, etc. maybe 30s resolution is fine."
+His screenshot showed the auto spacing at 56 second
+steps (0:00, 0:56, 1:52, 2:48, 3:44). This supersedes
+the round 3 acceptance of width-adaptive auto spacing.
+The round 3 evidence stands that axis interval
+passthroughs are silently dropped on this beta, so
+those were not retried. The proposed blanking
+mechanism (emit the category label only at even steps,
+blank elsewhere) is PROVEN BROKEN on this build and
+was not used: the round 3 probe proved blank category
+names merge into a single category and scramble the
+line, and reference lines take the category NAME as
+their value, so a numeric markLine value draws
+nothing. Chosen mechanism, the coarse grid:
+core.second_grid now emits one row per
+AXIS_GRID_STEP_SEC (30 s, the step Eric named as
+fine), so every category name is an even step and any
+auto interval stride over them stays even (30, 60, 90,
+120 s). One shared grid serves phone and desktop
+(they bind the same LiveCurveDS / DetailDS tags), so
+no new tags, no binding changes, no hot-path doubling;
+ECharts thins per instance (desktop shows more labels,
+phone fewer, all even). The 15 s grid was considered
+and set aside: it risks 105 s display steps on phone
+(auto stride 7 over 15 s categories), which reads
+arbitrary; 30 s keeps displayed steps round multiples
+of 30. Temps and math are untouched: stored samples
+keep true seconds, only the drawn grid quantizes;
+samples, overlays, bands and markers land on the
+nearest 30 s bucket (at most 15 s off their true
+second), which Eric accepted as 30 s resolution.
+Markers snap: _ref_items snaps each event second to
+the nearest grid step for its value (a reference line
+can only draw on a category that exists) and uses the
+snapped seconds for the label-gap and line-gap logic;
+two events snapping to the same bucket draw one line
+and the gap logic drops one label. That is the price
+of even labels on a category axis; exact times remain
+in the events strip and the BatchDetail tables.
+batches.stage_detail and build_compare bucket their
+placed keys through core.grid_bucket (integer
+arithmetic, round half up, so the Jython library and
+the CPython suites agree exactly at half-step
+boundaries), and _detail_reference_lines reads the
+span back as (rowCount minus 1) times the step.
+Suite updates for the grid: tier2 projection
+len(future) >= 5 to >= 4 (a 2 minute projection is 4
+future 30 s buckets); tier2 smoothing now assigns
+each raw sample to its bucket and accepts the live
+value when it equals any raw sample in that bucket,
+and reads the raw rise by interpolation (a grid row's
+second is a bucket edge, not a raw sample second);
+tier3b band edges are asserted snapped with a snap30
+helper (the 585 s ghost drop boundary draws at the
+600 s grid row); v4 'live curve dataset has the roast
+samples' len >= 20 to >= 4 (about 5 rows at the 2
+minute mark); the axis suite asserts every LiveCurveDS
+and DetailDS t_label parses as M:SS with total seconds
+a multiple of 30; the detail-span capture asserts 25
+rows for the 720 s fixture and 7 rows for the 180 s
+floored span, every t_sec a multiple of 30.
+Proof: the axis suite's live data assertion reads
+['0:00', '0:30', '1:00', '1:30', '2:00', '2:30',
+'3:00', '3:30', '4:00', '4:30', '5:00', '5:30',
+...] off LiveCurveDS mid roast. Screenshots:
+r6-abc-desktop-dark.png (labels 0:00, 1:00, ...,
+10:00 at a 10 minute span), r6-abc-phone-360-dark-
+chart.png (labels 0:00, 5:00, 10:00 at the same span
+on the narrow phone plot, all even). Note for the
+report: the displayed step follows span and width
+(the grid is 30 s, the auto interval thins it), so on
+a full 10 minute span the phone shows 5 minute steps
+and the desktop 1 minute steps; at a short span the
+phone shows 30 s steps. The 56 s steps are gone.
+
+HUNT-52 (Eric, 2026-11-19, the y axes): "Also, make
+the left y-axis and right y-axis, and units. Those
+are missing." The chart showed tick numbers on both
+sides but no axis titles. The titles already existed
+with text ("Bean Temp (deg F)" and "Rate of Rise
+(deg F/min)") and the HUNT-31 per-theme color bindings
+already existed on every chart; the desktop RoastChart
+already showed both. The phone RoastChart, both
+DetailCharts and the CompareChart all had both titles
+visible false. Fix: visible true on the phone
+RoastChart (2 titles), both DetailCharts (4 titles)
+and the CompareChart (2 titles); the x-axis title
+stays off (HUNT-33 removed it for colliding with the
+wrapped legend). Phone title fit: on the 360px phone
+plot both titles clip (the left loses "Bea", the
+right loses "/min)"), because the horizontal titles
+are wider than the room beside the plot. The phone
+instances (RoastChart in SmallRoot, DetailChartPhone)
+use shorter titles that keep the units: "Bean Temp
+(F)" and "RoR (deg F/min)" (RoR is the app's own
+abbreviation, used in the HUD and the RoR column).
+Desktop and the desktop DetailChart keep the full
+"Bean Temp (deg F)" and "Rate of Rise (deg F/min)".
+The CompareChart keeps the full titles (it is a
+desktop panel). Proof: r6-abc-desktop-dark.png (both
+titles fully readable in dark mode), r6-abc-phone-
+360-dark-chart.png (both short titles fully readable
+at 360px, no clipping, no collisions).
+
+### Lab incident during the round
+
+A runtime restart around 03:36 UTC on 2026-11-20
+replaced the VM mid-round and interrupted the v4 smoke
+test. Postgres was not installed on the fresh VM, the
+gateway was down, and the OS-intent replay's apt-get
+update hung on mirror.cogentco.com holding the apt
+lock. Recovery: the hung apt was killed by exact PID
+807 (an apt-get update, safe to kill; the replay
+retries on its own), a timeout-bounded apt-get update
+ran (mirror warning only), postgresql-16 installed,
+cluster started, role ignition and database db
+recreated from .roastery-pgpass, DDL applied, and the
+gateway was already RUNNING (started by the
+recover-lab.sh run). The seed was already in place
+(7 batches, 101 series). The interrupted v4 run had
+left 6 press rows (batch 1049 Charge, Dry End, Fan +1,
+Heat +1, First Crack Start, plus a Reset on 1042) and
+the workspace Roasting on batch 1049 with Fan and Heat
+at 6 and the phase target at 300; those were cleaned
+through a probe reset plus a psql delete (ring slots
+emptied first), and defaults restored (Idle, Fan 5,
+Heat 5, BatchNumber 1042, Mode Off, PhaseDryTargetSec
+270). Lab left clean at 7 batches, 101 series, 0
+events. Trial healthy (about 6943 s at recovery).
+
+### Verification
+
+The closing battery is 21 suites, all green on the final
+code. The first pass (runner3, 2026-11-20 08:17 to 08:52
+UTC) landed 7 green and 6 failed, then was interrupted
+by a VM replacement during the dark suite. The failures
+were all diagnosed and fixed, and the rerun (runner4)
+plus a short rerun2 cleared them. The table below is the
+final state; the results file is
+~/workspace/ignition-lab/r6-battery/results-final.txt.
+
+| Suite | Result |
+| --- | --- |
+| validate_roastery_artisan | VALIDATION PASS |
+| validate_chartlab | VALIDATION CHECK REPORT (bogus warning present, no product finding) |
+| verify_roastery_ror | 6 PASS, 1 designed SKIP |
+| verify_roastery_tier1 | 42/42 |
+| verify_roastery_tier2 | 87/87 |
+| verify_roastery_tier3a | 40/40 |
+| verify_roastery_tier3b | 47/47 |
+| verify_roastery_tier3c | 69/69 |
+| verify_roastery_v4 | 60/60 |
+| verify_roastery_polish1 | 49/49 |
+| verify_roastery_polish2 | 65/65 |
+| verify_roastery_polish3 | 37/37 |
+| verify_r6_customs | 17/17 |
+| verify_roastery_dark | 10/10 |
+| verify_r6_hunt | 7/7 |
+| verify_roastery_pressburst | PASS (11 presses, 11 rows, each action exactly once) |
+| verify_roastery_pressfault | 62/62 |
+| verify_roastery_deletecascade | 15/15 |
+| verify_r5_hunt3 | 7/7, no phantom |
+| verify_roastery_axis | 14/14, including even 30 s labels |
+| verify_r5_detail_span capture | 9920 25 rows, 9919 7 rows, 1042 7 rows, all labels even |
+
+First pass failures and fixes, all in the repo and
+proven by the rerun. Tier2 failed 5 checks, all from
+the 30 s grid (HUNT-51): the detail analyzer read the
+grid instead of the stored series (fixed in
+batches/code.py, _detail_points now reads _series_rows);
+the bg deviation compared against a stale bucket (the
+suite now recomputes from the live BT tag and StartTime);
+the smoothing lag threshold and the RoR identity check
+needed grid-aware counts (rising >= 2, most recent
+bucket excluded from the RoR identity only). Tier3b
+crashed on a suite bug I introduced: the snap30 helper
+was inserted inside band_range and swallowed its body,
+so band_range always returned None and snap30 raised
+NameError; fixed by restoring band_range and making
+snap30 a plain return. Tier3c failed only its baseline
+(3 press rows left by tier3b's crash); v4 failed 3
+checks (the alarm banner check asserted the old 38px
+reserved slot that HUNT-50 removed, the RoR threshold
+needed >= 2 on the 30 s grid, the phase bar read hit
+HUNT-46 on a remounted Roast page); polish1 and
+polish2 failed only their baselines on v4's leftover
+Reset row. The v4 cleanup now also deletes press rows
+with id above the run's starting max (tier1 pattern),
+so its startup Reset on 1042 cannot survive.
+
+The rerun (runner4, 09:21 to 11:11 UTC) passed
+tier3c, v4, polish1, polish2, dark, r6_hunt,
+pressburst, pressfault, deletecascade, hunt3, and
+axis, but tier2 and tier3b failed again on recovery
+residue, not product bugs: my post-recovery probe
+reset wrote a Reset press row after I had verified
+7/101/0, so tier2 started at 1 event and ended at 0;
+and PhaseFromBg was left True by the interrupted dark
+suite and my restore did not cover it, so tier3b's
+defaults check failed on that one tag. Both were fixed
+by cleaning the lab (no probe reset, tags written
+directly) and rerun2 passed tier2 (11:30:47 UTC),
+tier3b (11:33:50 UTC). The detail span capture failed
+in the rerun because its fixtures (9919, 9920) had been
+deleted after the earlier capture and the capture mode
+never re-inserted them, so stage_detail returned False
+and it read the stale 1042 DetailDS for every batch;
+capture now calls fixtures() first (idempotent), and
+rerun2 passed (11:34:06 UTC): 9920 25 rows with
+CHARGE, DRY END, FC START, SC START, DROP labeled at
+even 30 s steps, 9919 and 1042 7 rows each.
+
+Item 6 proof (validator drill-aware window): after a
+fresh pressfault drill (11:36 UTC, ALL PRESS FAULT
+CHECKS PASSED, 62/62), the validator was rerun
+immediately and reported VALIDATION PASS with
+roastery_warnings [] and the drill's deliberate
+database stop listed under drill_window_warnings
+("ERROR SQL Bridge.Roastery.PressEvents: Error during
+group execution."), not counted.
+
+Lab incidents during the round: a VM replacement at
+about 03:36 UTC interrupted a v4 smoke test (recovered,
+Postgres reinstalled, gateway RUNNING, seed intact,
+6 leftover press rows cleaned); a second replacement
+at about 05:37 UTC interrupted the axis suite
+(recovered, DB already 7/101/0, workspace reset); a
+third at about 09:16 UTC interrupted the final
+battery during the dark suite (recovered, Postgres
+reinstalled, DDL applied, gateway RUNNING, reseeded
+to 7 batches and 101 series, 2 leftover dark-suite
+events cleaned, defaults restored including
+PhaseFromBg False). A fourth replacement at about
+11:17 UTC landed after the rerun battery completed
+(axis rc=0 11:11:07, detail span rc=1 11:11:20);
+recovery followed the same pattern and the rerun2
+fixes were proven on the fresh lab.
+
+Lab left clean at 7 batches (1042-1048), 101 series,
+0 events, defaults restored (Fan 5, Heat 5,
+BatchNumber 1042, ActiveSource Simulated, Mode Off,
+ThemeMode System, DispAxisFormat m:ss, PressCaptureMode
+Group, PeriscopeAvailable True, background cleared,
+PhaseFromBg False), PressEvents RUNNING by functional
+proof.
+
+### Round 7 candidates
+
+1. The timezone TIME axis retest on the next Ignition
+   beta (the passthrough candidates from round 2); the
+   shipped category axis stays regardless.
+2. The packaged Docker boot test on Eric's machine or
+   homelab (still the one parity era item only he can
+   run).
+3. HUNT-46: the remounted page freeze on
+   2027.2.0-beta1. Retest on the next beta; if it is
+   fixed, the suite fresh-page workarounds can stay
+   (they are harmless) and the docs note closes.
+4. The phantom Charge press watch item (round 5
+   candidate 6). It REPEATED once in round 6 (the
+   closing battery rerun's tier3c, see Item 5), with
+   the HUNT-27 click re-delivery as the leading
+   mechanism, but it did NOT repeat in the final
+   battery rerun (runner4): tier3c and polish1 both
+   passed. The guard itself (block a replayed Charge
+   after a reset, e.g. by remembering the last Charge
+   counter or timestamp) is still open; file it as
+   HUNT-53 only if it reproduces again in a battery.
+   Tier3c already probe-resets AFTER its checks so
+   the lab is left clean even when a phantom lands
+   after the check.
+5. The stale duplicate ~/workspace/ignition-lab/
+   setup_roastery_artisan_tags.py (old 81-member
+   version): delete it or resync it to the live UDT.
+6. The Log UI delete of a second fixture in one
+   browser session hung for 10-plus minutes in this
+   round (9919 deleted fine, 9920 stalled); the
+   deletecascade suite covers the delete path, but the
+   delete mode's flow in verify_r5_detail_span.py is
+   worth a look before the next fixture cleanup.
+7. The CompareChart keeps the full y-axis titles
+   ("Bean Temp (deg F)", "Rate of Rise (deg F/min)")
+   because it is a single instance, not a paired one;
+   on a 360px phone the Log compare view likely clips
+   them the same way the RoastChart phone instance
+   did before HUNT-52's shortening. Either pair it
+   (a CompareChartPhone with the short titles) or
+   shorten the single instance's titles.

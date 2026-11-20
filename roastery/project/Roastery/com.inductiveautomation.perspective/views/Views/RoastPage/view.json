@@ -482,6 +482,14 @@
                     "expression": "if({[default]Roastery/CurrentBatch/AlarmActive}, '#991b1b', 'rgba(0,0,0,0)')"
                   }
                 }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/AlarmActive}, 'roast-banner', 'roast-banner roast-hidden')"
+                  }
+                }
               }
             }
           },
@@ -585,6 +593,14 @@
                   "type": "expr",
                   "config": {
                     "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive}, '#92400e', if({[default]Roastery/CurrentBatch/SuggestionActive}, '#1e40af', 'rgba(0,0,0,0)'))"
+                  }
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive} || {[default]Roastery/CurrentBatch/SuggestionActive} || {[default]Roastery/BackgroundLabel} != '', 'roast-banner', 'roast-banner roast-hidden')"
                   }
                 }
               }
@@ -3535,6 +3551,14 @@
                     "expression": "if({[default]Roastery/CurrentBatch/AlarmActive}, '#991b1b', 'rgba(0,0,0,0)')"
                   }
                 }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/AlarmActive}, 'roast-banner', 'roast-banner roast-hidden')"
+                  }
+                }
               }
             }
           },
@@ -3638,6 +3662,14 @@
                   "type": "expr",
                   "config": {
                     "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive}, '#92400e', if({[default]Roastery/CurrentBatch/SuggestionActive}, '#1e40af', 'rgba(0,0,0,0)'))"
+                  }
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive} || {[default]Roastery/CurrentBatch/SuggestionActive} || {[default]Roastery/BackgroundLabel} != '', 'roast-banner', 'roast-banner roast-hidden')"
                   }
                 }
               }
@@ -4634,8 +4666,8 @@
                             "gap": 15,
                             "position": "middle",
                             "rotation": 0,
-                            "text": "Bean Temp (deg F)",
-                            "visible": false
+                            "text": "Bean Temp (F)",
+                            "visible": true
                           },
                           "visible": true
                         },
@@ -4687,8 +4719,8 @@
                             "gap": 15,
                             "position": "middle",
                             "rotation": 0,
-                            "text": "Rate of Rise (deg F/min)",
-                            "visible": false
+                            "text": "RoR (deg F/min)",
+                            "visible": true
                           },
                           "visible": true,
                           "position": "right"

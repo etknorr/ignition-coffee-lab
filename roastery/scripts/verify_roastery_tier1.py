@@ -225,6 +225,16 @@ def main():
     seeded_alarms = tag(B + '/AlarmDefsJson')
     base_batches = int(psql('SELECT COUNT(*) FROM batches'))
     base_series = int(psql('SELECT COUNT(*) FROM batch_series'))
+    base_events = int(psql('SELECT COUNT(*) FROM batch_events'))
+    base_max_event_id = int(
+        psql('SELECT COALESCE(MAX(id), 0) FROM batch_events'))
+    # Polish round 6: the suite's own probe reset stamps a
+    # Reset press row on the seeded batch 1042, which is not
+    # one of this suite's test batches, so the per-batch
+    # cleanup below would leave it behind. Capture the
+    # highest event id at start so cleanup can also delete
+    # every press row this suite created, whatever batch it
+    # landed on (tier3c's pattern).
     check('starting point is the seeded log',
           (base_batches, base_series) == (7, 101),
           (base_batches, base_series))
@@ -577,11 +587,44 @@ def main():
         browser.close()
 
     # ---------- final state --------------------------------------
+    # Polish round 6: the suite used to delete its test batches
+    # with raw psql but leave their press rows behind (the
+    # Reset press lands after the roast batch row is deleted,
+    # so the row survives the suite and fails the next
+    # suite's baseline check). Delete the test batches'
+    # events and series too, with a retry for a lagging group
+    # write (the v4 race), and check all three counts. The
+    # ring slots are emptied first: the reconciler
+    # re-inserts a slotted press row after a psql delete if
+    # its slot still holds the context.
+    _slot_paths = ['[default]Roastery/PressSlots/Slot%02d' % i
+                   for i in range(16)]
+    api('POST', '/tags/write', body=json.dumps(
+        {'tagPaths': _slot_paths, 'values': [''] * 16}))
+    for _attempt in range(3):
+        for _no in (imported_no, roast_no):
+            if _no is not None:
+                psql('DELETE FROM batch_events WHERE batch_number '
+                     '= %d' % _no)
+                psql('DELETE FROM batch_series WHERE batch_number '
+                     '= %d' % _no)
+                psql('DELETE FROM batches WHERE batch_number = %d'
+                     % _no)
+        psql('DELETE FROM batch_events WHERE id > %d'
+             % base_max_event_id)
+        time.sleep(5)
+        if int(psql('SELECT COUNT(*) FROM batch_events')) \
+                == base_events:
+            break
     check('lab back to the seeded log',
           int(psql('SELECT COUNT(*) FROM batches')) == base_batches
-          and int(psql('SELECT COUNT(*) FROM batch_series')) == base_series,
+          and int(psql('SELECT COUNT(*) FROM batch_series'))
+          == base_series
+          and int(psql('SELECT COUNT(*) FROM batch_events'))
+          == base_events,
           (psql('SELECT COUNT(*) FROM batches'),
-           psql('SELECT COUNT(*) FROM batch_series')))
+           psql('SELECT COUNT(*) FROM batch_series'),
+           psql('SELECT COUNT(*) FROM batch_events')))
     check('alarm definitions restored to the seeded table',
           tag(B + '/AlarmDefsJson') == seeded_alarms)
     check('background cleared at the end',

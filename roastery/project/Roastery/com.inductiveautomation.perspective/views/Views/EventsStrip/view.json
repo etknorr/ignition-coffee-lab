@@ -436,6 +436,14 @@
                   },
                   "bidirectional": false
                 }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/CustomEvent1Name} = '', 'roast-cell-hidden', '')"
+                  }
+                }
               }
             }
           },
@@ -492,6 +500,14 @@
                     "bidirectional": false
                   },
                   "bidirectional": false
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/CustomEvent2Name} = '', 'roast-cell-hidden', '')"
+                  }
                 }
               }
             }
@@ -550,6 +566,14 @@
                   },
                   "bidirectional": false
                 }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/CustomEvent3Name} = '', 'roast-cell-hidden', '')"
+                  }
+                }
               }
             }
           },
@@ -606,6 +630,14 @@
                     "bidirectional": false
                   },
                   "bidirectional": false
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/CustomEvent4Name} = '', 'roast-cell-hidden', '')"
+                  }
                 }
               }
             }

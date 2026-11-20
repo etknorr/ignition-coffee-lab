@@ -59,7 +59,7 @@
                 "binding": {
                   "type": "expr",
                   "config": {
-                    "expression": "'MODE ' + {[default]Roastery/CurrentBatch/Mode}"
+                    "expression": "{[default]Roastery/CurrentBatch/Mode}"
                   }
                 }
               },

@@ -97,7 +97,7 @@ def main():
         # Detail and compare in Dark from this session.
         log = open_page(desk, '/log')
         try:
-            log.locator('tr', has_text='1044').first.click(
+            log.locator('text=1,044').first.click(
                 timeout=25000)
             log.wait_for_timeout(1200)
             log.get_by_role(

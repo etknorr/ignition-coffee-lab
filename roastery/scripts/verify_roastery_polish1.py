@@ -367,23 +367,34 @@ def main():
     def keys(ds):
         return [(d['key'], d['kind'], d['lead']) for d in ds]
 
-    CUSTOMS = [('Fan Boost', 'custom', False),
-               ('Drum Note', 'custom', False),
-               ('Custom 3', 'custom', False),
-               ('Custom 4', 'custom', False)]
+    # Polish round 6: only slot 1 ships with a name (Fan
+    # Boost). Slots 2 to 4 are unnamed by default and stay
+    # hidden until Eric names them in Settings.
+    CUSTOMS = [('Fan Boost', 'custom', False)]
     check('dock at Idle is Charge only',
           keys(dock()) == [('Charge', 'primary', True)])
     write_tags([(B + '/State', 'Roasting')])
-    check('dock before Dry End: Dry End lead plus customs',
+    check('dock before Dry End: Dry End lead plus the one '
+          'named custom',
           keys(dock()) == [('Dry End', 'primary', True)] + CUSTOMS,
           keys(dock()))
-    write_tags([(B + '/CustomEvent2Enabled', False)])
+    # Naming an unnamed slot puts its button on the dock;
+    # clearing the name hides it again.
+    write_tags([(B + '/CustomEvent3Name', 'Test Note')])
+    check('dock gains a slot once it is named',
+          [x['key'] for x in dock()] == ['Dry End', 'Fan Boost',
+                                         'Test Note'],
+          [x['key'] for x in dock()])
+    write_tags([(B + '/CustomEvent3Name', '')])
+    check('dock drops the slot again once its name is cleared',
+          keys(dock()) == [('Dry End', 'primary', True)] + CUSTOMS,
+          keys(dock()))
+    write_tags([(B + '/CustomEvent1Enabled', False)])
     d = dock()
     check('dock drops a disabled custom',
-          [x['key'] for x in d] == ['Dry End', 'Fan Boost',
-                                    'Custom 3', 'Custom 4'],
+          [x['key'] for x in d] == ['Dry End'],
           [x['key'] for x in d])
-    write_tags([(B + '/CustomEvent2Enabled', True),
+    write_tags([(B + '/CustomEvent1Enabled', True),
                 (B + '/DryEndElapsedSec', 100)])
     check('dock after Dry End: FC Start lead plus customs',
           keys(dock()) == [('First Crack Start', 'primary', True)]
@@ -604,23 +615,33 @@ def main():
         # Item 7 refusal, inside this live roast.
         ev0 = int(psql('SELECT COUNT(*) FROM batch_events '
                        'WHERE id > %d' % max_event_id))
-        write_tags([(B + '/CustomEvent2Enabled', False)])
-        res = probe('stamp_custom:2')
+        # Polish round 6: an unnamed slot cannot be stamped
+        # at all, enabled or not (slot 3 ships unnamed).
+        res = probe('stamp_custom:3')
+        time.sleep(1.2)
+        ev1 = int(psql('SELECT COUNT(*) FROM batch_events '
+                       'WHERE id > %d' % max_event_id))
+        check('unnamed custom stamp refused in the library',
+              res == 'False'
+              and int(tag(B + '/CustomEvent3ElapsedSec')) == -1
+              and ev1 == ev0, (res, ev0, ev1))
+        write_tags([(B + '/CustomEvent1Enabled', False)])
+        res = probe('stamp_custom:1')
         time.sleep(1.2)
         ev1 = int(psql('SELECT COUNT(*) FROM batch_events '
                        'WHERE id > %d' % max_event_id))
         check('disabled custom stamp refused in the library',
               res == 'False'
-              and int(tag(B + '/CustomEvent2ElapsedSec')) == -1
+              and int(tag(B + '/CustomEvent1ElapsedSec')) == -1
               and ev1 == ev0, (res, ev0, ev1))
-        write_tags([(B + '/CustomEvent2Enabled', True)])
-        res = probe('stamp_custom:2')
+        write_tags([(B + '/CustomEvent1Enabled', True)])
+        res = probe('stamp_custom:1')
         time.sleep(1.5)
         ev2 = int(psql('SELECT COUNT(*) FROM batch_events '
                        'WHERE id > %d' % max_event_id))
         check('enabled custom stamps and records one press row',
               res == 'True'
-              and int(tag(B + '/CustomEvent2ElapsedSec')) >= 0
+              and int(tag(B + '/CustomEvent1ElapsedSec')) >= 0
               and ev2 == ev1 + 1, (res, ev1, ev2))
         # 1 minute of sim time at 2x is 30 s of wall time from
         # charge; the stamp work above consumed part of it.

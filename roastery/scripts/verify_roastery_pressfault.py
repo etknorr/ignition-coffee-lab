@@ -57,6 +57,16 @@ from playwright.sync_api import sync_playwright
 BASE = 'http://localhost:8088/data/perspective/client/Roastery'
 SHOTS = '/home/hatch/workspace/ignition-lab/showcase/shots'
 B = '[default]Roastery/CurrentBatch'
+# Polish round 6: the drill's deliberate database stops log
+# gateway WARN/ERROR rows, which the validator's 15 minute
+# window would otherwise count as a failure on a rerun. The
+# drill writes its fault window here (first cluster stop to
+# last gateway recovery); the validator reads it and treats
+# rows inside the window as drill noise, reported separately
+# instead of counted. The window is written in the finally
+# block so a failed drill still records what it faulted.
+DRILL_MARKER = '/home/hatch/workspace/ignition-lab/pressfault-drill.json'
+DRILL_WINDOW = {'stop_ms': None, 'recovered_ms': None}
 B_SCRATCH = 9917
 FAILURES = []
 A_BATCH = [None]
@@ -135,6 +145,8 @@ def stop_cluster():
     ok = wait_until(lambda: not cluster_online(), timeout=30,
                     step=1.0)
     print('cluster stopped:', bool(ok), flush=True)
+    if ok and DRILL_WINDOW['stop_ms'] is None:
+        DRILL_WINDOW['stop_ms'] = int(time.time() * 1000)
     return bool(ok)
 
 
@@ -244,6 +256,8 @@ def wait_db_healthy(timeout=180):
     while time.time() - t0 < timeout:
         try:
             if probe('dbping', timeout=30) == 'ok':
+                DRILL_WINDOW['recovered_ms'] = int(time.time()
+                                                   * 1000)
                 return True
         except Exception:
             pass
@@ -689,6 +703,16 @@ def main():
         except Exception:
             pass
         probe_teardown()
+        # Polish round 6: record the drill's fault window
+        # for the validator, even when the drill failed
+        # partway (stop without a recorded recovery still
+        # counts from the stop to now).
+        if DRILL_WINDOW['stop_ms'] is not None:
+            if DRILL_WINDOW['recovered_ms'] is None:
+                DRILL_WINDOW['recovered_ms'] = int(time.time()
+                                                   * 1000)
+            json.dump(DRILL_WINDOW, open(DRILL_MARKER, 'w'))
+            print('drill window marker:', DRILL_WINDOW, flush=True)
         end_counts = (int(psql('SELECT COUNT(*) FROM batches')),
                       int(psql('SELECT COUNT(*) FROM batch_series')),
                       int(psql('SELECT COUNT(*) FROM batch_events')))

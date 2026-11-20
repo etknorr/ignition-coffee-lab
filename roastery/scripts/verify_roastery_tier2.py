@@ -622,7 +622,7 @@ def main():
             slope = (last[1] - anchor[1]) / span_min if span_min else 0
             ror_now = float(tag(B + '/RateOfRiseF') or 0)
             check('projection extends about two minutes past the last sample',
-                  len(future) >= 5 and 1.5 <= span_min <= 2.5,
+                  len(future) >= 4 and 1.5 <= span_min <= 2.5,
                   (len(future), span_min))
             check('linear projection slope matches the live RoR',
                   approx(slope, ror_now, max(2.5, abs(ror_now) * 0.35)),
@@ -632,18 +632,28 @@ def main():
             raw = tag('[default]Roastery/BackgroundCurveJson')
             pairs = json.loads(raw) if raw else []
             pairs = [(float(a), float(b)) for a, b in pairs]
-            cols, rows = ds_rows(tag('[default]Roastery/LiveCurveDS'))
-            if not pairs or not rows:
+            if not pairs:
                 return None
-            bi = cols.index('bean')
-            bean_rows = [r for r in rows if r[bi] is not None]
-            if not bean_rows:
+            # Polish round 6 (HUNT-51): recompute from the live
+            # BT tag and the current elapsed (from StartTime),
+            # the same inputs the library's update_bg_deviation
+            # uses. The LiveCurveDS last bucket is up to 15 s
+            # stale on the 30 s grid, which reads several F off
+            # on a rising curve.
+            try:
+                from datetime import datetime, timezone
+                st = tag(B + '/StartTime')
+                dt = datetime.strptime(
+                    st, '%Y-%m-%dT%H:%M:%S.%fZ')
+                dt = dt.replace(tzinfo=timezone.utc)
+                elapsed = (datetime.now(timezone.utc)
+                           - dt).total_seconds()
+            except Exception:
                 return None
-            last = bean_rows[-1]
-            bg = interp(pairs, (last[0] - AXIS_BASE_MS) / 1000.0)
+            bg = interp(pairs, elapsed)
             if bg is None:
                 return None
-            return float(last[bi]) - bg
+            return float(tag(B + '/BeanTempF') or 0) - bg
 
         dev_ok = wait_until(lambda: str(
             tag(B + '/BgDeviationText') or '') not in ('', '--'),
@@ -969,14 +979,34 @@ def main():
                tag(B + '/State')))
 
         # ----- item 12: display smoothing ---------------------
+        # Polish round 6 (HUNT-51): the live grid now has one
+        # row per 30 s, so a grid row's bean is the raw sample
+        # that landed in that row's bucket (nearest 30 s step,
+        # last wins), not a sample at the row's exact second.
+        # The overlap below assigns each raw sample to its
+        # bucket the same way the library does and accepts the
+        # live value when it equals any raw sample in that
+        # bucket (a sample can land in a bucket between the
+        # two tag reads, so last-wins alone would flake).
+        def _bucket(sec):
+            return (int(sec) + 15) // 30 * 30
+
+        def _bucket_raw(raw):
+            out = {}
+            for s, v in sorted(raw.items()):
+                out.setdefault(_bucket(s), []).append(v)
+            return out
+
         mob.wait_for_timeout(8000)
         live_off, raw_off = curve_maps()
+        br_off = _bucket_raw(raw_off)
         overlap = [ms for ms in live_off
-                   if ms // 1000 in raw_off
+                   if ms // 1000 in br_off
                    and live_off[ms].get('bean') is not None]
         check('smoothing off: chart bean equals the raw samples',
-              len(overlap) >= 5 and all(
-                  abs(live_off[ms]['bean'] - raw_off[ms // 1000]) < 0.01
+              len(overlap) >= 3 and all(
+                  any(abs(live_off[ms]['bean'] - v) < 0.01
+                      for v in br_off[ms // 1000])
                   for ms in overlap),
               len(overlap))
         write_tags([(B + '/DisplaySmoothing', 3)])
@@ -992,16 +1022,28 @@ def main():
         diffs = [live_on[ms]['bean'] - live_off[ms]['bean']
                  for ms in both]
         check('smoothing changes the displayed BT values',
-              len(both) >= 5 and max(abs(d) for d in diffs) > 0.3,
+              len(both) >= 3 and max(abs(d) for d in diffs) > 0.3,
               (len(both), max(abs(d) for d in diffs) if diffs else 0))
+        # Polish round 6 (HUNT-51): the raw rise is read by
+        # interpolation over the raw samples now, since a grid
+        # row's second is a bucket edge, not a raw sample
+        # second. interp is the suite's own helper.
+        raw_pts = sorted((float(s), float(v))
+                         for s, v in raw_off.items())
         rising = [live_on[ms]['bean'] - live_off[ms]['bean']
                   for ms in both
-                  if (ms // 1000 - 10) in raw_off
-                  and raw_off[ms // 1000] - raw_off[ms // 1000 - 10] > 2.0
-                  and live_on[ms].get('bean') is not None]
+                  if live_on[ms].get('bean') is not None
+                  and interp(raw_pts, ms // 1000) is not None
+                  and interp(raw_pts, ms // 1000 - 10) is not None
+                  and interp(raw_pts, ms // 1000)
+                  - interp(raw_pts, ms // 1000 - 10) > 2.0]
+        # Polish round 6 (HUNT-51): the grid has one row per
+        # 30 s, so only a few buckets qualify as rising at any
+        # moment; two buckets with a clear negative mean still
+        # prove the trailing filter direction.
         check('smoothed BT lags the raw line where the curve is '
               'rising (trailing filter direction)',
-              len(rising) >= 3
+              len(rising) >= 2
               and sum(rising) / len(rising) < -0.05,
               (len(rising),
                sum(rising) / len(rising) if rising else 0))
@@ -1015,12 +1057,20 @@ def main():
             if a is None or b is None:
                 return a is None and b is None
             return abs(a - b) < 0.05
-        ror_same = [ms for ms in both
+        # Polish round 6 (HUNT-51): drop the most recent bucket
+        # from the RoR identity check only. Its RoR is still
+        # being recomputed as new samples arrive, so the two
+        # snapshots (9 s apart) can disagree there while every
+        # settled bucket agrees; smoothing never touches RoR.
+        # The lag check above keeps the full `both` list.
+        ror_both = ([ms for ms in both if ms != max(both)]
+                    if both else [])
+        ror_same = [ms for ms in ror_both
                     if _ror_eq(live_on[ms].get('ror'),
                                live_off[ms].get('ror'))]
         check('RoR column is identical with smoothing on and off',
-              len(both) >= 5 and len(ror_same) == len(both),
-              (len(both), len(ror_same)))
+              len(ror_both) >= 3 and len(ror_same) == len(ror_both),
+              (len(ror_both), len(ror_same)))
         desk.screenshot(path=SHOTS + '/roastery-tier2-smoothing-chart.png')
         write_tags([(B + '/DisplaySmoothing', 0)])
 

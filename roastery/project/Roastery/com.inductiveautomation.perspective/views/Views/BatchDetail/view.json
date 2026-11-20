@@ -741,7 +741,7 @@
                         "position": "middle",
                         "rotation": 0,
                         "text": "Bean Temp (deg F)",
-                        "visible": false
+                        "visible": true
                       },
                       "visible": true
                     },
@@ -794,7 +794,7 @@
                         "position": "middle",
                         "rotation": 0,
                         "text": "Rate of Rise (deg F/min)",
-                        "visible": false
+                        "visible": true
                       },
                       "visible": true,
                       "position": "right"
@@ -1324,8 +1324,8 @@
                         "gap": 15,
                         "position": "middle",
                         "rotation": 0,
-                        "text": "Bean Temp (deg F)",
-                        "visible": false
+                        "text": "Bean Temp (F)",
+                        "visible": true
                       },
                       "visible": true
                     },
@@ -1377,8 +1377,8 @@
                         "gap": 15,
                         "position": "middle",
                         "rotation": 0,
-                        "text": "Rate of Rise (deg F/min)",
-                        "visible": false
+                        "text": "RoR (deg F/min)",
+                        "visible": true
                       },
                       "visible": true,
                       "position": "right"

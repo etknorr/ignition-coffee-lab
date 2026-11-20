@@ -1575,7 +1575,7 @@
                     "position": "middle",
                     "rotation": 0,
                     "text": "Bean Temp (deg F)",
-                    "visible": false
+                    "visible": true
                   },
                   "visible": true
                 },
@@ -1628,7 +1628,7 @@
                     "position": "middle",
                     "rotation": 0,
                     "text": "Rate of Rise (deg F/min)",
-                    "visible": false
+                    "visible": true
                   },
                   "visible": true,
                   "position": "right"

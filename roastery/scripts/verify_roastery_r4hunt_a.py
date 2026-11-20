@@ -138,6 +138,10 @@ def main():
         P.write_tags([(B + '/BatchNumber', FIX),
                       (B + '/FanLevel', 5), (B + '/HeatLevel', 5),
                       (B + '/DispAxisFormat', 'm:ss'),
+                      # Polish round 6: slot 2 ships unnamed,
+                      # so name it explicitly for this close
+                      # events roast, then clear it again below.
+                      (B + '/CustomEvent2Name', 'Drum Note'),
                       ('[default]Roastery/AppSettings/ThemeMode',
                        'System')])
         P.probe('updatedock')
@@ -382,7 +386,8 @@ def main():
                          30)
             P.write_tags([(B + '/BatchNumber', 1042),
                           (B + '/FanLevel', 5),
-                          (B + '/HeatLevel', 5)])
+                          (B + '/HeatLevel', 5),
+                          (B + '/CustomEvent2Name', '')])
         except Exception as e:
             print('cleanup issue', str(e)[:100], flush=True)
         P.probe_teardown()

@@ -770,6 +770,28 @@ def main():
                          BBP + '/SampleCount']) == [False, False, 0],
               read_tags([BBP + '/WindowActive', BBP + '/HasMetrics',
                          BBP + '/SampleCount']))
+        # Polish round 6: the ghost staged earlier in this
+        # suite was never cleared (reset_batch does not clear
+        # the background by design), so the restore section's
+        # 'background cleared at the end' check failed. Clear
+        # it through the app's own button, the way the tier
+        # suites do. HUNT-46: this desk session has already
+        # mounted /settings, so the click runs on a fresh
+        # page (a fresh session, first mount), the way the v4
+        # suite does it.
+        ghost = browser.new_page(viewport={'width': 1600,
+                                           'height': 900},
+                                 timezone_id='America/Denver')
+        ghost.goto(BASE + '/settings', wait_until='networkidle',
+                   timeout=60000)
+        ghost.wait_for_timeout(4000)
+        dismiss(ghost)
+        check('ghost cleared through its button',
+              click_visible(ghost, 'Clear ghost')
+              and wait_until(
+                  lambda: (tag('[default]Roastery/BackgroundLabel')
+                           or '') == '', timeout=20))
+        ghost.close()
         browser.close()
 
     # ---------- restore ------------------------------------------
@@ -796,6 +818,36 @@ def main():
     check('lab back to the seeded log', end == base, end)
     bad = log_check(start_event)
     check('zero Roastery warnings in the window', not bad, bad[:3])
+    # Polish round 6 (HUNT-27 watch): a replayed Charge can
+    # land after the checks above (the platform re-delivers a
+    # dock click seconds late, even after the session closed),
+    # leaving the workspace Roasting for the next suite. The
+    # checks above stay as-is, they caught the phantom in the
+    # rerun; this probe reset runs AFTER them so the lab is
+    # left clean regardless. The reset's own Reset press row
+    # is cleaned the same way (ring slots emptied first, then
+    # the row deleted), and the lab is re-verified clean.
+    import verify_roastery_polish2 as _P
+    try:
+        _P.probe_setup()
+        _P.probe('reset', timeout=30)
+    finally:
+        _P.probe_teardown()
+    time.sleep(5)
+    _slots = ['[default]Roastery/PressSlots/Slot%02d' % i
+              for i in range(16)]
+    write_tags([(s, '') for s in _slots])
+    time.sleep(2)
+    psql('DELETE FROM batch_events WHERE id > %d' % max_event_id)
+    time.sleep(3)
+    _state2 = read_tags([B + '/State', B + '/Mode',
+                         B + '/BatchNumber'])
+    _end2 = (int(psql('SELECT COUNT(*) FROM batches')),
+             int(psql('SELECT COUNT(*) FROM batch_series')),
+             int(psql('SELECT COUNT(*) FROM batch_events')))
+    check('lab left clean after post-check reset',
+          _state2 == ['Idle', 'Off', 1042] and _end2 == base,
+          (_state2, _end2))
     print()
     if FAILURES:
         print('FAILURES:', FAILURES)

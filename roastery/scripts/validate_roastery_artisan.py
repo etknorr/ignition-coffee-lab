@@ -76,6 +76,21 @@ def normalize(x, in_events=False):
         return [normalize(v, in_events) for v in x]
     return x
 
+def drill_window():
+    """Polish round 6: the pressfault drill's fault window
+    (first cluster stop to last gateway recovery), recorded
+    by verify_roastery_pressfault.py. Log rows inside it are
+    deliberate drill noise, not app faults. Returns
+    (start_ms, end_ms) or (None, None) when no drill ran."""
+    try:
+        m = json.load(open(
+            '/home/hatch/workspace/ignition-lab/'
+            'pressfault-drill.json'))
+        return m.get('stop_ms'), m.get('recovered_ms')
+    except Exception:
+        return None, None
+
+
 def main():
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
@@ -217,6 +232,32 @@ def main():
         # roast-hidden, the HUNT-03 pattern). The same class
         # selection pattern as the entries above.
         ('BatchDetail', 'SeedNoteLabel', 'props.style.classes'),
+        # Polish round 6 (HUNT-47): the EventsStrip custom
+        # cells select the hidden class from the slot name's
+        # emptiness (a blank name selects roast-cell-hidden).
+        # A props.visible binding was tried first in two
+        # forms and is not honored on this build, so the
+        # class hide is the shipped form. Same pattern as
+        # SeedNoteLabel above.
+        ('EventsStrip', 'CustomCell1', 'props.style.classes'),
+        ('EventsStrip', 'CustomCell2', 'props.style.classes'),
+        ('EventsStrip', 'CustomCell3', 'props.style.classes'),
+        ('EventsStrip', 'CustomCell4', 'props.style.classes'),
+        # Polish round 6 (HUNT-50): the alarm banner and the
+        # prompt strip on the Roast page collapse to nothing
+        # when they have nothing to show, instead of holding
+        # a permanent 38px / 56px empty band. The alarm
+        # banner selects the hidden class when no alarm is
+        # active; the prompt strip selects it when no prompt
+        # is active and no background is loaded (a prompt can
+        # only fire with a background, so the strip stays
+        # reserved while one is loaded and no roast layout
+        # shifts when a prompt fires). Same class selection
+        # pattern as the Dismiss buttons above.
+        ('RoastPage', 'AlarmBanner', 'props.style.classes'),
+        ('RoastPage', 'AlarmBannerMobile', 'props.style.classes'),
+        ('RoastPage', 'PromptStrip', 'props.style.classes'),
+        ('RoastPage', 'PromptStripMobile', 'props.style.classes'),
     }
     inline_offenders = []
     binding_offenders = []
@@ -326,7 +367,7 @@ def main():
             shutil.copy(src, tmp)
             con = sqlite3.connect(tmp)
             rows = con.execute(
-                "SELECT logger_name, level_string, formatted_message FROM logging_event "
+                "SELECT timestmp, logger_name, level_string, formatted_message FROM logging_event "
                 "WHERE timestmp > ? AND level_string IN ('WARN','ERROR')", (SINCE,)).fetchall()
             con.close()
             break
@@ -335,14 +376,23 @@ def main():
             time.sleep(5)
     if rows is None:
         raise RuntimeError('log database copy kept tearing')
-    hits, bogus = [], 0
-    for logger, level, msg in rows:
+    drill_start, drill_end = drill_window()
+    hits, drill, bogus = [], [], 0
+    for ts, logger, level, msg in rows:
         m = msg or ''
         if 'BogusViewXYZ' in m:
             bogus += 1
         if PROJECT in m or PROJECT in (logger or ''):
-            hits.append(f'{level} {logger}: {m[:240]}')
+            # Polish round 6: rows inside the pressfault
+            # drill's fault window are deliberate drill
+            # noise; they are reported, not counted.
+            if drill_start is not None and drill_end is not None \
+                    and drill_start <= ts <= drill_end:
+                drill.append(f'{level} {logger}: {m[:240]}')
+            else:
+                hits.append(f'{level} {logger}: {m[:240]}')
     report['roastery_warnings'] = hits
+    report['drill_window_warnings'] = drill
     report['bogus_control_warnings'] = bogus
     json.dump(report, open(os.path.join(LAB, 'showcase',
                                         'validation-roastery-artisan.json'),
@@ -360,6 +410,13 @@ def main():
           and report['resources']['style_binding_offenders'] == []
           and report['resources']['classic_chart_offenders'] == [])
     print('VALIDATION', 'PASS' if ok else 'CHECK REPORT')
+    # Polish round 6: exit non-zero on CHECK REPORT so a
+    # battery runner's rc reflects the verdict. The
+    # validator used to exit 0 either way, which let a
+    # CHECK REPORT pass as a green rc in the round 6
+    # battery's first run (a boot-minute PressEvents
+    # startup artifact plus four unlisted style bindings).
+    sys.exit(0 if ok else 1)
 
 if __name__ == '__main__':
     main()

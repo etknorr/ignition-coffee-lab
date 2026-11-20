@@ -78,6 +78,24 @@ DETAIL_SHORT_FLOOR_SEC = 180
 # (the round 3 settlement detail_reference_lines used as a
 # bare 55.0 before HUNT-37).
 DETAIL_REF_GAP_SEC = 55.0
+# Minimum separation between DRAWN reference lines, as a
+# fraction of the staged span (polish round 6, item 3):
+# the label gap drops labels for close events but keeps
+# every dashed line, so on a short batch the six events in
+# the first 10 s of fixture 9919 drew as a solid band at
+# the left edge, lines 1.4 px apart on the roughly 250 px
+# phone plot. 0.03 of span is about 7.5 px on that plot
+# and about 30 px on desktop, enough for 1.5 px dashed
+# lines to read as separate lines. It is deliberately far
+# smaller than the label gap: thinning lines by the label
+# gap would drop real lines on a normal batch (fixture
+# 9920's FC END and SC END sit 30 s from their neighbors,
+# under the 55 s label gap), while 0.03 keeps them (21.6 s
+# at the 720 s span) and keeps the real batches' 9 s
+# CHARGE to DROP gaps (5.4 s at the 180 s floor). The
+# events strip under the chart still names every event,
+# so a dropped line loses no information.
+DETAIL_LINE_GAP_FRAC = 0.03
 
 BACKGROUND_LABEL = '[default]Roastery/BackgroundLabel'
 ROASTLOG_TAG = '[default]Roastery/RoastLog'
@@ -778,8 +796,10 @@ def _compare_points(batch_number):
 
 def build_compare(self):
     """Compare button: build the wide compare dataset on the
-    elapsed category axis (per second grid, nulls elsewhere,
-    the live chart's merge shape; polish round 3, HUNT-23)
+    elapsed category axis (grid rows 30 s apart, nulls
+    elsewhere, the live chart's merge shape; polish round 3,
+    HUNT-23; polish round 6, HUNT-51: the rows are the even
+    grid steps, so the shown labels are even increments)
     and the caption naming each slot."""
     c = self.view.custom
     chosen = [('A', int(c.cmpA or 0)), ('B', int(c.cmpB or 0)),
@@ -797,7 +817,7 @@ def build_compare(self):
                                        offline=True)
         ror_by_t = dict((t, r) for t, r in rors)
         for t, bt in points:
-            s = int(round(float(t)))
+            s = core.grid_bucket(t)
             placed.setdefault('bt' + slot, {})[s] = bt
             placed.setdefault('ror' + slot, {})[s] = \
                 ror_by_t.get(t)
@@ -989,10 +1009,12 @@ def stage_detail(batch_number):
     # bind the axis max from detail_startup; the padded grid
     # now carries the span itself, floored by HUNT-37 for
     # short batches). A stored point at a fractional second
-    # lands on its nearest second.
+    # lands on its nearest grid step (HUNT-51: the grid
+    # rows are 30 s apart, so a stored point buckets to its
+    # nearest row; the stored series keeps true seconds).
     placed = {'bt': {}, 'ror': {}}
     for (t, bt), (_t2, ror) in zip(points, rors):
-        s = int(round(float(t)))
+        s = core.grid_bucket(t)
         placed['bt'][s] = bt
         placed['ror'][s] = ror
     end_sec = int(float(doc.get('totalSec') or 0))
@@ -1046,19 +1068,23 @@ def _detail_analyzer_paths():
 
 
 def _detail_points():
-    ds = system.tag.readBlocking([DETAIL_DS])[0].value
-    points = []
-    rors = []
-    if ds is None:
-        return points, rors
-    for r in range(ds.rowCount):
-        ts = ds.getValueAt(r, 't_stamp')
-        bt = ds.getValueAt(r, 'bt')
-        if ts is None or bt is None:
-            continue
-        t = (ts.getTime() - core.AXIS_BASE_MS) / 1000.0
-        points.append((t, float(bt)))
-        rors.append((t, ds.getValueAt(r, 'ror')))
+    """Points for the BatchDetail analyzer: the staged batch's
+    stored series (true seconds), NOT the DetailDS grid.
+    Polish round 6 (HUNT-51): the DetailDS grid is one row
+    per 30 s for display, so interpolating over it reads up
+    to 7 F off on a steep section; the analyzer is a precision
+    readout and must use the stored samples, the same source
+    stage_detail staged from. RoR is recomputed by the one
+    implementation (offline), as stage_detail does."""
+    try:
+        n = int(system.tag.readBlocking([SELECTED_TAG])[0].value)
+    except Exception:
+        return [], []
+    rows = _series_rows(n)
+    points = [(float(r['t']), float(r['bt'])) for r in rows
+              if r['t'] is not None and r['bt'] is not None]
+    rors = core.compute_ror_series(points, core.ror_params(),
+                                   offline=True)
     return points, rors
 
 
@@ -1105,11 +1131,14 @@ def _detail_reference_lines(gap_fn):
     events, from the DetailDocJson document stage_detail
     wrote (custom event names intact). The label gap comes
     from gap_fn(span): the span is read back from the staged
-    DetailDS grid itself (one row per second, so rowCount
-    minus 1 is the span stage_detail built), which keeps the
-    gap in exact step with the grid; when no grid is staged
-    the span falls back to the document extent through
-    _detail_span."""
+    DetailDS grid itself (one row per grid step, so
+    (rowCount minus 1) times the step is the span
+    stage_detail built), which keeps the gap in exact step
+    with the grid; when no grid is staged the span falls back
+    to the document extent through
+    _detail_span. The same span also sets the line gap
+    (DETAIL_LINE_GAP_FRAC of span), so desktop and phone
+    draw the same lines and differ only in labels."""
     raw = system.tag.readBlocking([DETAIL_JSON])[0].value
     if not raw:
         return []
@@ -1130,13 +1159,14 @@ def _detail_reference_lines(gap_fn):
     span = None
     ds = system.tag.readBlocking([DETAIL_DS])[0].value
     if ds is not None and ds.rowCount > 0:
-        span = ds.rowCount - 1
+        span = (ds.rowCount - 1) * core.AXIS_GRID_STEP_SEC
     if span is None:
         end_sec = int(float(doc.get('totalSec') or 0))
         for _t, _lbl in evs:
             end_sec = max(end_sec, int(_t))
         span = _detail_span(end_sec)
-    return core._ref_items(evs, top_gap=gap_fn(span))
+    return core._ref_items(evs, top_gap=gap_fn(span),
+                           line_gap=DETAIL_LINE_GAP_FRAC * span)
 
 
 def detail_reference_lines():
@@ -1588,7 +1618,7 @@ def detail_startup(self):
     # Detail chart span (polish round 2 item 6, moved in
     # round 3): the span floor at DETAIL_MIN_SPAN_SEC used
     # to bind the axis max through a detailMaxMs custom
-    # prop; on the category axis the padded per second grid
+    # prop; on the category axis the padded grid
     # stage_detail builds carries the span itself, and the
     # view's axis max is simply auto.
     seg_rows, tp_text, extra = _phase_analysis(doc, pts)

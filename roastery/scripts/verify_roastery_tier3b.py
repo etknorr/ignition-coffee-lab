@@ -212,6 +212,16 @@ def band_range(col):
     return (min(ts), max(ts))
 
 
+def snap30(sec):
+    """Nearest 30 s grid step for one elapsed second, the
+    same integer arithmetic the library grid_bucket uses
+    (round half up), so the suite and the gateway agree
+    exactly. Polish round 6 (HUNT-51): band edges are drawn
+    on the 30 s grid, so a stamp at an odd second reads back
+    snapped to its nearest grid row."""
+    return (int(sec) + 15) // 30 * 30
+
+
 def stats_lines(page):
     return page.evaluate("""() => [...document.querySelectorAll(
       '.psc-roast-stats-line')].filter(e => {
@@ -458,13 +468,15 @@ def main():
         check('phase bands present in LiveCurveDS', bool(dev))
         if dev:
             check('dry band runs charge to the dry end stamp',
-                  band_range('bandDry') == (0, dry_s * 1000),
+                  band_range('bandDry') == (0, snap30(dry_s) * 1000),
                   band_range('bandDry'))
             check('maillard band runs dry end to FC start',
-                  band_range('bandMai') == (dry_s * 1000, fc_s * 1000),
+                  band_range('bandMai') == (snap30(dry_s) * 1000,
+                                            snap30(fc_s) * 1000),
                   band_range('bandMai'))
             check('development band runs FC start to the saved target '
-                  'drop boundary (600 s)', dev == (fc_s * 1000, 600000),
+                  'drop boundary (600 s)',
+                  dev == (snap30(fc_s) * 1000, 600000),
                   dev)
             check('no cooling band before drop',
                   band_range('bandCool') is None)
@@ -503,10 +515,11 @@ def main():
         write_tags([(B + '/PhaseFromBg', True)])
         dev_bg = wait_until(
             lambda: band_range('bandDev')
-            if (band_range('bandDev') or (0, 0))[1] == 585000 else None,
-            timeout=60)
+            if (band_range('bandDev') or (0, 0))[1] == snap30(585) * 1000
+            else None, timeout=60)
         check('with the option on, the development band follows the '
-              'ghost drop boundary (585 s)', bool(dev_bg), dev_bg)
+              'ghost drop boundary (585 s, drawn at the 600 s grid '
+              'row)', bool(dev_bg), dev_bg)
         saved = read_tags([B + '/PhaseDryTargetSec',
                            B + '/PhaseMaillardTargetSec',
                            B + '/PhaseDevTargetSec', B + '/DTRTargetPct'])
@@ -553,8 +566,8 @@ def main():
         check('cooling starts', wait_tag(B + '/State', 'Cooling'))
         cool = wait_until(lambda: band_range('bandCool'), timeout=60)
         check('cooling band runs from the drop stamp',
-              bool(cool) and cool[0] == drop_s * 1000 and cool[1] > cool[0],
-              cool)
+              bool(cool) and cool[0] == snap30(drop_s) * 1000
+              and cool[1] > cool[0], cool)
         lines = stats_lines(desk)
         total = drop_s
         want = ('Dry %s %d%%' % (mmss(dry_s),
@@ -619,18 +632,27 @@ def main():
         mob.screenshot(path=SHOTS + '/roastery-tier3b-detail-360.png')
 
         # ---------- clean the workspace through the UI ----------
-        desk.goto(BASE + '/', wait_until='networkidle', timeout=60000)
-        desk.wait_for_timeout(5000)
-        dismiss(desk)
-        desk.goto(BASE + '/settings', wait_until='networkidle',
-                  timeout=60000)
-        desk.wait_for_timeout(4000)
-        dismiss(desk)
+        # Polish round 6, HUNT-46: this desk session has
+        # already mounted /settings once, and a remounted page
+        # intermittently stops writing, so the 'Clear ghost'
+        # click runs on a fresh page (a fresh session, first
+        # mount), the way the v4 suite does it. The click
+        # itself is the app behavior under test; the fresh
+        # page only works around the beta client's remount
+        # staleness.
+        ghost = browser.new_page(viewport={'width': 1600,
+                                           'height': 900},
+                                 timezone_id='America/Denver')
+        ghost.goto(BASE + '/settings', wait_until='networkidle',
+                   timeout=60000)
+        ghost.wait_for_timeout(4000)
+        dismiss(ghost)
         check('ghost cleared through its button',
-              click_visible(desk, 'Clear ghost')
+              click_visible(ghost, 'Clear ghost')
               and wait_until(
                   lambda: (tag('[default]Roastery/BackgroundLabel')
                            or '') == '', timeout=20))
+        ghost.close()
         desk.goto(BASE + '/', wait_until='networkidle', timeout=60000)
         desk.wait_for_timeout(4000)
         dismiss(desk)
