@@ -21,6 +21,20 @@ the app delete flow and restoring the seeded baseline:
 7 batches / 101 series / 0 events, workspace Idle.
 
 Run with wsvenv python from ~/workspace/ignition-lab.
+Round 7: the toast checks now wait for 'Background
+failed', the message the Settings background route
+actually toasts (artisan.stage_background_upload);
+'Import failed' is the Log page import route's
+message, so the old needle could never match here.
+The desktop all-columns toggle block is removed
+(the toggle lives in the phone instance only; on
+desktop the single button is not visible). The
+FileUpload status modal is dismissed with an outside
+tap after each upload, or it blocks the gear and
+theme buttons behind its fullViewOverlay. The error
+toast itself is waited out before each gear click:
+it sits top center for about 5 s over the gear and
+intercepts the click.
 """
 import json
 import os
@@ -50,19 +64,32 @@ def note(msg):
 
 
 def dismiss(page):
+    """Dismiss the Maker 'Personal Use Only' agreement modal.
+
+    Round 7 hunting: the modal is gone when its AGREE & CLOSE
+    button is gone, so that is the check. The old form watched
+    the 'Personal Use Only' text count, which never drops below
+    1: the page footer carries a permanent
+    <div class="secondary-message">Personal Use Only</div>, so
+    after the modal closed every iteration found count 1 and
+    spent 5 s waiting on a button that no longer exists, 30
+    iterations, about 165 s per open_page (proven in the round
+    7 delete repro, 2026-11-20). The modal itself closes on
+    the first click in under a second; the page is live
+    immediately after.
+    """
     for _ in range(30):
         try:
-            if page.get_by_text('Personal Use Only').count() > 0:
+            if page.get_by_text('AGREE & CLOSE').count() > 0:
                 page.get_by_text('AGREE & CLOSE').first.click(
                     timeout=5000)
                 page.wait_for_timeout(1200)
-                if page.get_by_text(
-                        'Personal Use Only').count() == 0:
+                if page.get_by_text('AGREE & CLOSE').count() == 0:
                     return True
         except Exception:
             pass
         page.wait_for_timeout(500)
-    return page.get_by_text('Personal Use Only').count() == 0
+    return page.get_by_text('AGREE & CLOSE').count() == 0
 
 
 def open_page(ctx, path):
@@ -104,6 +131,30 @@ def wait_toast(page, needle, timeout=20):
             return True
         page.wait_for_timeout(500)
     return False
+
+
+def wait_toast_gone(page, timeout=10):
+    """Clear any Toastify toast. AutoClose is 5 s but the
+    timer pauses while the pointer hovers the toast, so a
+    toast the mouse rests on never leaves on its own
+    (proven in the r4hunt_b reruns: the gear click kept
+    hitting the error toast after a 10 s wait). Poll
+    briefly for the auto-close, then click the toast
+    itself (closeOnClick) and wait for it to go."""
+    t0 = time.time()
+    clicked = False
+    while time.time() - t0 < timeout:
+        if page.locator('.Toastify__toast').count() == 0:
+            return True
+        if time.time() - t0 > 3 and not clicked:
+            clicked = True
+            try:
+                page.locator('.Toastify__toast').first.click(
+                    timeout=3000)
+            except Exception:
+                pass
+        page.wait_for_timeout(500)
+    return page.locator('.Toastify__toast').count() == 0
 
 
 def upload(page, path):
@@ -284,20 +335,12 @@ def main():
             body = dp.locator('body').inner_text()
             check('log stub marker visible on desktop',
                   '(stub)' in body)
-            # all columns set
-            try:
-                dp.get_by_role('button',
-                               name='All columns').first.click(
-                                   timeout=15000)
-                dp.wait_for_timeout(2500)
-                shot(dp, 'r4hunt-log-desktop-allcols.png')
-                dp.get_by_role('button',
-                               name='Fewer columns').first.click(
-                                   timeout=15000)
-                dp.wait_for_timeout(2000)
-            except Exception as e:
-                note('log column toggle issue: %s'
-                     % str(e)[:100])
+            # No all-columns toggle on desktop: a live probe
+            # (round 7) counts exactly one 'All columns'
+            # button on /log at 1360px and it is not visible
+            # (the toggle lives in the phone instance only;
+            # desktop already shows every column). The old
+            # block clicked it and timed out 15 s per run.
             # compare staging on desktop
             try:
                 dp.get_by_role('button', name='Compare').first.click(
@@ -397,12 +440,28 @@ def main():
                 f.write('this is not an alog file')
             try:
                 upload(mp, '/tmp/r4hunt-bad1.alog')
-                ok = wait_toast(mp, 'Import failed', 20)
+                ok = wait_toast(mp, 'Background failed', 20)
                 check('import failure toast fires in Light',
                       bool(ok), toast_texts(mp))
                 shot(mp, 'r4hunt-toast-light-360.png')
             except Exception as e:
                 note('toast light issue: %s' % str(e)[:100])
+            # The FileUpload status stays open as a small
+            # viewport modal over the page (round 7 probe:
+            # the in-modal arrow does not close it); tap
+            # outside it to close it before touching the
+            # gear, or the Dark click is blocked by the
+            # fullViewOverlay intercepting pointer events.
+            if mp.locator('.component-modal-small-viewport'
+                           ).count() > 0:
+                mp.mouse.click(10, 60)
+                mp.wait_for_timeout(1200)
+            # Park the pointer off the toast: a hover pauses
+            # its auto-close timer, so it would never leave.
+            mp.mouse.move(180, 400)
+            # The error toast itself sits over the gear for
+            # about 5 s; wait it out before clicking.
+            wait_toast_gone(mp)
             # toast in Dark
             mp.locator('.psc-roast-gear-btn:visible').first.click()
             mp.wait_for_timeout(1500)
@@ -416,12 +475,21 @@ def main():
                 f.write('{"broken": true, "not": "an alog"}')
             try:
                 upload(mp, '/tmp/r4hunt-bad2.alog')
-                ok = wait_toast(mp, 'Import failed', 20)
+                ok = wait_toast(mp, 'Background failed', 20)
                 print('dark import toast:', bool(ok),
                       toast_texts(mp), flush=True)
                 shot(mp, 'r4hunt-toast-dark-360.png')
             except Exception as e:
                 note('toast dark issue: %s' % str(e)[:100])
+            # Close the upload modal again before the gear.
+            if mp.locator('.component-modal-small-viewport'
+                           ).count() > 0:
+                mp.mouse.click(10, 60)
+                mp.wait_for_timeout(1200)
+            # Park the pointer off the toast: a hover pauses
+            # its auto-close timer, so it would never leave.
+            mp.mouse.move(180, 400)
+            wait_toast_gone(mp)
             mp.locator('.psc-roast-gear-btn:visible').first.click()
             mp.wait_for_timeout(1500)
             mp.get_by_role('button', name='System',

@@ -39,21 +39,32 @@ def check(name, cond, detail=''):
 
 def dismiss(page):
     """Poll for the Maker modal for up to ~20 s; it can
-    appear well after page load on this build."""
+    appear well after page load on this build.
+
+    Round 7 hunting: the modal is gone when its AGREE & CLOSE
+    button is gone, so that is the check. The old form watched
+    the 'Personal Use Only' text count, which never drops below
+    1: the page footer carries a permanent
+    <div class="secondary-message">Personal Use Only</div>, so
+    after the modal closed every iteration found count 1 and
+    spent 5 s waiting on a button that no longer exists, 40
+    iterations, about 220 s per open_page (proven in the round
+    7 delete repro, 2026-11-20). The modal itself closes on
+    the first click in under a second; the page is live
+    immediately after.
+    """
     for _ in range(40):
         try:
-            if page.get_by_text(
-                    'Personal Use Only').count() > 0:
-                page.get_by_text(
-                    'AGREE & CLOSE').first.click(timeout=5000)
+            if page.get_by_text('AGREE & CLOSE').count() > 0:
+                page.get_by_text('AGREE & CLOSE').first.click(
+                    timeout=5000)
                 page.wait_for_timeout(1200)
-                if page.get_by_text(
-                        'Personal Use Only').count() == 0:
+                if page.get_by_text('AGREE & CLOSE').count() == 0:
                     return True
         except Exception:
             pass
         page.wait_for_timeout(500)
-    return page.get_by_text('Personal Use Only').count() == 0
+    return page.get_by_text('AGREE & CLOSE').count() == 0
 
 
 def open_page(ctx, path):

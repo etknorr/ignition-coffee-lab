@@ -867,7 +867,8 @@
                 "binding": {
                   "type": "property",
                   "config": {
-                    "path": "view.custom.cmpA"
+                    "path": "view.custom.cmpA",
+                    "bidirectional": true
                   },
                   "bidirectional": true
                 }
@@ -896,7 +897,8 @@
                 "binding": {
                   "type": "property",
                   "config": {
-                    "path": "view.custom.cmpB"
+                    "path": "view.custom.cmpB",
+                    "bidirectional": true
                   },
                   "bidirectional": true
                 }
@@ -925,7 +927,8 @@
                 "binding": {
                   "type": "property",
                   "config": {
-                    "path": "view.custom.cmpC"
+                    "path": "view.custom.cmpC",
+                    "bidirectional": true
                   },
                   "bidirectional": true
                 }
@@ -1645,7 +1648,832 @@
                 "yPosition": "right"
               },
               "style": {
-                "classes": "roast-chart"
+                "classes": "roast-chart roast-cols-full"
+              }
+            },
+            "propConfig": {
+              "props.data": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.compareDs"
+                  }
+                }
+              },
+              "props.xAxis.labels.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.xAxis.advanced.axisPointer.label.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].labels.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].title.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].advanced.axisPointer.label.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].labels.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].title.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].advanced.axisPointer.label.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.xAxis.advanced.axisPointer.label.backgroundColor": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].advanced.axisPointer.label.backgroundColor": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].advanced.axisPointer.label.backgroundColor": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                    }
+                  ]
+                }
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          },
+          {
+            "type": "ia.canvas-charts.line",
+            "meta": {
+              "name": "CompareChartPhone"
+            },
+            "props": {
+              "appearance": {
+                "animation": {
+                  "enabled": true,
+                  "entry": {
+                    "duration": 900,
+                    "easing": "cubicOut",
+                    "delay": 0
+                  },
+                  "transition": {
+                    "duration": 300,
+                    "easing": "cubicOut",
+                    "delay": 0
+                  }
+                },
+                "backgroundColor": "",
+                "colorPalette": [
+                  "#f97316",
+                  "#14b8a6",
+                  "#8b5cf6"
+                ]
+              },
+              "axisPointer": {
+                "enabled": true,
+                "label": {
+                  "backgroundColor": "",
+                  "color": "",
+                  "elementStyle": {},
+                  "fontSize": "",
+                  "visible": false
+                },
+                "type": "line"
+              },
+              "data": [],
+              "legend": {
+                "color": "",
+                "elementStyle": {},
+                "fontSize": 12,
+                "interactive": true,
+                "orientation": "horizontal",
+                "position": "bottom",
+                "visible": true
+              },
+              "liveData": false,
+              "series": [
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 0
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "A BT",
+                  "line": {
+                    "type": "solid",
+                    "width": 2,
+                    "color": "#f97316"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "btA",
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 1
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "A RoR",
+                  "line": {
+                    "type": "dashed",
+                    "width": 1,
+                    "color": "#f97316"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "rorA",
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 0
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "B BT",
+                  "line": {
+                    "type": "solid",
+                    "width": 2,
+                    "color": "#14b8a6"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "btB",
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 1
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "B RoR",
+                  "line": {
+                    "type": "dashed",
+                    "width": 1,
+                    "color": "#14b8a6"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "rorB",
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 0
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "C BT",
+                  "line": {
+                    "type": "solid",
+                    "width": 2,
+                    "color": "#8b5cf6"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "btC",
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 1
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "C RoR",
+                  "line": {
+                    "type": "dashed",
+                    "width": 1,
+                    "color": "#8b5cf6"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "rorC",
+                  "visible": true
+                }
+              ],
+              "stackGroups": [],
+              "title": {
+                "color": "",
+                "elementStyle": {},
+                "fontSize": "",
+                "gap": 5,
+                "position": "top-left",
+                "subtitle": {
+                  "color": "",
+                  "elementStyle": {},
+                  "fontSize": "",
+                  "text": ""
+                },
+                "text": "",
+                "visible": false
+              },
+              "tooltip": {
+                "enabled": true,
+                "formatter": {
+                  "template": "",
+                  "type": "value",
+                  "value": "{value}"
+                },
+                "trigger": "axis"
+              },
+              "visualMap": {
+                "dimension": "y",
+                "enabled": false,
+                "legend": {
+                  "color": "",
+                  "elementStyle": {},
+                  "fontSize": "",
+                  "interactive": true,
+                  "orientation": "horizontal",
+                  "position": "bottom",
+                  "visible": true
+                },
+                "outOfRange": {},
+                "pieces": []
+              },
+              "xAxis": {
+                "advanced": {
+                  "axisPointer": {
+                    "enabled": "auto",
+                    "label": {
+                      "backgroundColor": "",
+                      "color": "",
+                      "elementStyle": {},
+                      "fontSize": "",
+                      "visible": "auto"
+                    },
+                    "type": "auto"
+                  }
+                },
+                "axisLine": {
+                  "color": "",
+                  "visible": true,
+                  "width": 1
+                },
+                "boundaryGap": false,
+                "field": "t_label",
+                "gridLines": {
+                  "color": "",
+                  "visible": false,
+                  "width": 1
+                },
+                "labels": {
+                  "color": "",
+                  "elementStyle": {},
+                  "fontSize": 11,
+                  "overflow": "none",
+                  "position": "bottom",
+                  "rotation": 30,
+                  "visible": true
+                },
+                "max": "auto",
+                "min": "auto",
+                "position": "bottom",
+                "title": {
+                  "color": "",
+                  "elementStyle": {},
+                  "fontSize": "",
+                  "gap": 15,
+                  "position": "middle",
+                  "rotation": 0,
+                  "text": "",
+                  "visible": false
+                },
+                "type": "category",
+                "visible": true
+              },
+              "yAxis": [
+                {
+                  "advanced": {
+                    "axisPointer": {
+                      "enabled": "auto",
+                      "label": {
+                        "backgroundColor": "",
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": "",
+                        "visible": "auto"
+                      },
+                      "type": "auto"
+                    }
+                  },
+                  "axisLine": {
+                    "visible": true
+                  },
+                  "boundaryGap": true,
+                  "gridLines": {
+                    "visible": true,
+                    "color": "",
+                    "width": 1
+                  },
+                  "labels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": 11,
+                    "overflow": "none",
+                    "rotation": 0,
+                    "visible": true,
+                    "width": null,
+                    "gap": 2
+                  },
+                  "max": 460,
+                  "min": 150,
+                  "ticks": {
+                    "displayInside": false,
+                    "majorSplit": 6,
+                    "minorSplit": 0,
+                    "visible": true
+                  },
+                  "title": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": 11,
+                    "gap": 15,
+                    "position": "middle",
+                    "rotation": 0,
+                    "text": "Bean Temp (F)",
+                    "visible": true
+                  },
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "axisPointer": {
+                      "enabled": "auto",
+                      "label": {
+                        "backgroundColor": "",
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": "",
+                        "visible": "auto"
+                      },
+                      "type": "auto"
+                    }
+                  },
+                  "axisLine": {
+                    "visible": true
+                  },
+                  "boundaryGap": true,
+                  "gridLines": {
+                    "visible": false,
+                    "color": "",
+                    "width": 1
+                  },
+                  "labels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": 11,
+                    "overflow": "none",
+                    "rotation": 0,
+                    "visible": true,
+                    "width": null,
+                    "gap": 2
+                  },
+                  "max": 40,
+                  "min": 0,
+                  "ticks": {
+                    "displayInside": false,
+                    "majorSplit": 4,
+                    "minorSplit": 0,
+                    "visible": true
+                  },
+                  "title": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": 11,
+                    "gap": 15,
+                    "position": "middle",
+                    "rotation": 0,
+                    "text": "RoR (deg F/min)",
+                    "visible": true
+                  },
+                  "visible": true,
+                  "position": "right"
+                }
+              ],
+              "zoom": {
+                "axis": "x",
+                "backgroundColor": "",
+                "enabled": false,
+                "height": 30,
+                "type": "slider",
+                "width": 30,
+                "xPosition": "bottom",
+                "yPosition": "right"
+              },
+              "style": {
+                "classes": "roast-chart roast-cols-phone"
               }
             },
             "propConfig": {

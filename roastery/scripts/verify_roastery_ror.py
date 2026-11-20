@@ -117,6 +117,26 @@ def main():
           dev_on < 5.0, 'max deviation %.1f F/min' % dev_on)
 
     # ---- live cross-check --------------------------------------
+    # Round 7 closing battery, first-pass failure: the 40 s
+    # window slope was 10.71 F/min (in band) but the median
+    # live RateOfRiseF was 3.40. The window started at
+    # 343.3 F, within 1.3 F of the simulator program minimum
+    # (342 F at program 785 s), and rose into the reheat
+    # segment: the window straddled the cooling-reheat
+    # corner, where the true slope flips from about -40 to
+    # about +13 F/min. The live RoR is a 20 s delta-span
+    # derivative with decay smoothing over a 300 s buffer,
+    # so for roughly a span after the corner it still sees
+    # the fall and legitimately reads low; the median over
+    # the whole window mixes pre- and post-corner values.
+    # The offline proof above is the authority for the math,
+    # and the live tag runs the same code path, so the check
+    # now compares like with like: the tail RoR (median of
+    # the last 5 samples) against the tail slope (the last
+    # 20 s of temps, the same span the RoR sees). It asserts
+    # only when that tail slope is steady and in band; a
+    # corner inside the tail puts the tail slope out of band
+    # and the check skips, as before.
     from api27m import api
 
     def read(paths):
@@ -134,13 +154,19 @@ def main():
         time.sleep(2)
     (t1, b1, _r1), (t2, b2, _r2) = samples[0], samples[-1]
     slope = (b2 - b1) / (t2 - t1) * 60.0
-    rors = sorted(r for _t, _b, r in samples if r is not None)
-    med = rors[len(rors) // 2] if rors else None
+    tail = samples[-11:]
+    (tt1, tb1, _tr1), (tt2, tb2, _tr2) = tail[0], tail[-1]
+    tail_slope = (tb2 - tb1) / (tt2 - tt1) * 60.0
+    tail_rors = sorted(r for _t, _b, r in samples[-5:]
+                       if r is not None)
+    tail_med = tail_rors[len(tail_rors) // 2] if tail_rors else None
     print('live window: temp %.1f -> %.1f, slope %.2f F/min, '
-          'RateOfRiseF median %s' % (b1, b2, slope, med))
-    if 3.0 < slope < 30.0 and med is not None:
+          'tail slope %.2f F/min, tail RateOfRiseF median %s'
+          % (b1, b2, slope, tail_slope, tail_med))
+    if 3.0 < tail_slope < 30.0 and tail_med is not None:
         check('live RateOfRiseF tracks the window slope',
-              abs(med - slope) < 3.0, (med, slope))
+              abs(tail_med - tail_slope) < 3.0,
+              (tail_med, tail_slope))
     else:
         print('SKIP - live window not on a steady ramp segment '
               '(simulator program discontinuity); the offline proof '

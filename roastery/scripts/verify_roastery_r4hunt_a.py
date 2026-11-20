@@ -17,6 +17,12 @@ it shifts.
 Run with wsvenv python from ~/workspace/ignition-lab.
 Leaves the fixture batch 9919 saved for part B; part B
 deletes it through the app delete flow.
+Round 7: the phone dock close check now accepts a dock
+translated fully off the viewport as closed (a closed
+Perspective dock stays in the DOM at x=420 on a 360px
+screen); the mobile detail open now strips BASE from
+dp.url (open_page prepends it, so the absolute URL made
+a malformed request and the gateway answered 400).
 """
 import json
 import os
@@ -48,19 +54,32 @@ def note(msg):
 
 
 def dismiss(page):
+    """Dismiss the Maker 'Personal Use Only' agreement modal.
+
+    Round 7 hunting: the modal is gone when its AGREE & CLOSE
+    button is gone, so that is the check. The old form watched
+    the 'Personal Use Only' text count, which never drops below
+    1: the page footer carries a permanent
+    <div class="secondary-message">Personal Use Only</div>, so
+    after the modal closed every iteration found count 1 and
+    spent 5 s waiting on a button that no longer exists, 30
+    iterations, about 165 s per open_page (proven in the round
+    7 delete repro, 2026-11-20). The modal itself closes on
+    the first click in under a second; the page is live
+    immediately after.
+    """
     for _ in range(30):
         try:
-            if page.get_by_text('Personal Use Only').count() > 0:
+            if page.get_by_text('AGREE & CLOSE').count() > 0:
                 page.get_by_text('AGREE & CLOSE').first.click(
                     timeout=5000)
                 page.wait_for_timeout(1200)
-                if page.get_by_text(
-                        'Personal Use Only').count() == 0:
+                if page.get_by_text('AGREE & CLOSE').count() == 0:
                     return True
         except Exception:
             pass
         page.wait_for_timeout(500)
-    return page.get_by_text('Personal Use Only').count() == 0
+    return page.get_by_text('AGREE & CLOSE').count() == 0
 
 
 def open_page(ctx, path):
@@ -256,10 +275,16 @@ def main():
             pg.get_by_role('button', name='Close',
                            exact=True).click()
             pg.wait_for_timeout(1500)
+            # A closed Perspective dock stays in the DOM,
+            # translated off the viewport (x=420, w=360 on a
+            # 360px screen); closed is None, zero width, or
+            # fully outside the viewport.
+            _dr = dock_rect(pg)
             check('phone dock closes cleanly',
-                  dock_rect(pg) is None
-                  or (dock_rect(pg) or {}).get('w', 0) == 0,
-                  dock_rect(pg))
+                  _dr is None or _dr.get('w', 0) == 0
+                  or _dr.get('x', 0) >= _dr.get('vw', 360)
+                  or _dr.get('x', 0) + _dr.get('w', 0) <= 0,
+                  _dr)
             dp.get_by_role('button', name='Close',
                            exact=True).click()
             dp.wait_for_timeout(1500)
@@ -346,7 +371,13 @@ def main():
             mob = browser.new_context(
                 viewport={'width': 360, 'height': 740},
                 timezone_id='America/Denver')
-            mp = open_page(mob, dp.url)
+            # open_page prepends BASE, so pass the path part
+            # of dp.url, not the absolute URL (which made a
+            # malformed request and a gateway 400 page).
+            _detail_path = (dp.url[len(P.BASE):]
+                            if dp.url.startswith(P.BASE)
+                            else dp.url)
+            mp = open_page(mob, _detail_path)
             shot(mp, 'r4hunt-detail-close-360-dark.png')
             geo = mp.evaluate("""() => {
               const out = {doc: {

@@ -8027,7 +8027,8 @@ def batches_panel_view():
     cmp_cap = label('CompareCaption', '', 'roast-note',
                     prop_config={'props.text': {'binding': prop_binding(
                         'view.custom.compareCaption')}})
-    cmp_chart_wrap = flex('CompareChartWrap', 'row', [compare_chart()],
+    cmp_chart_wrap = flex('CompareChartWrap', 'row',
+                          [compare_chart(), compare_chart_phone()],
                           position={'grow': 0, 'shrink': 0,
                                     'basis': '300px'})
     root = flex('root', 'column',
@@ -8062,8 +8063,13 @@ def compare_chart():
     """Multi curve comparison chart (Tier 1 item 2): up to
     three saved batches on the elapsed axis, BT solid and RoR
     dashed in one hue per batch (A orange, B teal, C violet).
-    Axis titles stay off, the slimming the detail chart proved
-    at 360px; the legend names every series."""
+    Axis titles are visible (HUNT-52): the full desktop titles
+    live here, and compare_chart_phone() below carries the
+    short titles for the 360px phone instance (HUNT-54).
+    The HUNT-31 per-theme color bindings are applied
+    post-generation, so this builder only emits the data
+    binding; do not run it against the live project tree.
+    The legend names every series."""
     p = _canvas_props()
     p['data'] = []
     p['xAxis'] = _canvas_xaxis(split=11, rotate=30)
@@ -8073,7 +8079,6 @@ def compare_chart():
                                 position='right', grid=False,
                                 split=4)]
     for ax in p['yAxis']:
-        ax['title']['visible'] = False
         ax['labels']['fontSize'] = 11
         ax['labels']['gap'] = 2
     p['xAxis']['labels']['fontSize'] = 11
@@ -8089,13 +8094,30 @@ def compare_chart():
                        dash='dashed')]
     p['appearance']['colorPalette'] = ['#f97316', '#14b8a6',
                                        '#8b5cf6']
-    p['style'] = {'classes': 'roast-chart'}
+    p['style'] = {'classes': 'roast-chart roast-cols-full'}
     return {'type': 'ia.canvas-charts.line',
             'meta': {'name': 'CompareChart'},
             'props': p,
             'propConfig': {'props.data': {'binding': prop_binding(
                 'view.custom.compareDs')}},
             'position': {'grow': 1, 'shrink': 1, 'basis': '0px'}}
+
+
+def compare_chart_phone():
+    """Phone twin of compare_chart() (HUNT-54): identical
+    except the short y-axis titles that fit the 288px chart
+    at a 360px viewport, 'Bean Temp (F)' and
+    'RoR (deg F/min)'. The stylesheet hides this instance at
+    900px and up and hides CompareChart below 900px. The
+    HUNT-31 per-theme color bindings are applied
+    post-generation, same as the desktop instance."""
+    node = copy.deepcopy(compare_chart())
+    node['meta']['name'] = 'CompareChartPhone'
+    node['props']['yAxis'][0]['title']['text'] = 'Bean Temp (F)'
+    node['props']['yAxis'][1]['title']['text'] = 'RoR (deg F/min)'
+    node['props']['style'] = {'classes':
+                              'roast-chart roast-cols-phone'}
+    return node
 
 
 # ================================================================ BatchEdit (slide over dock)

@@ -313,25 +313,25 @@ comparator.py, wheels.py, wsport.py, pid_dialogs.py).
 | Live curve: bean temp plus delta BT (RoR) | Implemented | XY chart on tag history; RoR derived by the tag event script above |
 | Second probe (ET, drum) channels | Excluded | Eric's SR800 has one bean temp probe; there is nothing to bind a second channel to |
 | Standard events: Charge, Dry End, FC Start, FC End, SC Start, SC End, Drop | Implemented | Buttons write time, captured temp, and elapsed shadow; events strip shows all seven plus the customs |
-| Turning point auto detection | Excluded | Artisan detects the post charge temperature minimum automatically; not reproduced. The derived RoR trace makes the turn visible by eye |
+| Turning point auto detection | Implemented | Live detection in roastery.core._track_turning_point (running bean temp minimum after charge, confirmed on a 5 F rise); saved per batch, shown on BatchDetail, and the DRY phase RoR baseline (Artisan RoR()) |
 | Four custom event buttons, user named and typed | Implemented | CustomEvent1..4 name and kind members, edited in the Config popup, stamped like standard events |
 | Phases (drying, maillard, development) with times, ratios, DTR | Implemented | PhasesBar and Summary compute from the elapsed shadows; verified 6 s phases and 33.3% DTR on a click-through roast |
 | AUC statistic | Implemented | Computed by the Save script and stored per log row; values on 18 s test roasts are not meaningful |
 | Roast degree from drop temp | Implemented | Map expression to degree names (292 F read Cinnamon in tests) |
 | Event sliders (fan, heat, air) | Adapted | SR800 levels are 1..9, so steppers replace 0..100 sliders; every change is timestamped into EventsLog and drawn in the Fan / Heat trace strip |
-| Alarms (time, temp, event conditions with actions) | Adapted (lite) | Three alarms as view expressions (high temp with message, drop approach within a delta, first crack watch window) driving a banner; no sounds, no external actions, no alarm driven control moves |
+| Alarms (time, temp, event conditions with actions) | Adapted (lite) | AlarmDefsJson definitions with guard, condition and action (banner or toast via Periscope); no sounds, no external actions, no alarm driven control moves |
 | Background profile | Implemented | Save stores the sampled curve with the log row; View as Background loads it as the Background series with a label chip |
 | Profile designer | Adapted (lite) | Target is four editable points interpolated piecewise linearly, not a freehand curve editor; the deviation tile reads against it |
 | Roast properties metadata | Implemented | 16 Artisan style fields in grams, bidirectional in the Config popup, shown on the MetaCard |
-| Roast log and batch history | Implemented, adapted storage | RoastLog dataset tag plus the /log table page (row select, date rendering); no .alog files and no PDF or HTML report export |
-| Roast comparator (multi roast overlays) | Excluded | The single background overlay covers Eric's comparison use; a multi-roast analysis view is a different tool |
+| Roast log and batch history | Implemented, adapted storage | RoastLog dataset tag plus the /log table page (row select, date rendering); .alog import on the Log page and export from BatchDetail; no PDF or HTML report export |
+| Roast comparator (multi roast overlays) | Implemented | Multi-roast compare (build_compare, up to three batches A/B/C) with a paired phone instance (HUNT-54) and the picker fix (HUNT-55); curves overlay on elapsed time since charge, with the background overlay as the single-roast route |
 | Calculators (loss, blend, moisture) | Adapted | Weight loss percent is computed in the Summary; blend and moisture calculators not reproduced |
 | Flavor wheels and cupping profile | Excluded | Cupping is a post roast workflow, outside a roast time console; the Notes field is the capture point |
 | Green bean stock and inventory | Excluded | Inventory is a separate system from roast time control and logging |
 | Hardware PID output control (pid_dialogs.py) | Excluded | Eric confirmed on 2026-11-11 that his SR800 setup has no PID control and he is glad it is excluded. Manual Fan and Heat levels are his control surface, so the console exposes Fan and Heat steppers only, with no PID anywhere in the design. |
 | Device connections incl. WebSocket (comm.py, wsport.py) | Adapted | Modeled by WsUrl plus the probe tag; the lab feed is the simulator, per the honesty note above |
-| Sampling and RoR smoothing settings | Adapted | RoRSmoothingSec is the smoothing tau; chart history aggregates at 5 s intervals |
-| Artisan simulator mode | Implemented in effect | RoasterSim drives the whole console in the lab, program: charge 200, dry end 300 at 4:00, FC 385 at 8:30, drop 412 at 11:30 on a 690 s cycle |
+| Sampling and RoR smoothing settings | Adapted | Full Artisan 5.0.0 parameterization in core.compute_ror_series: delta span, curve filter, delta filter, spike smoothing, polyfit, optimal smoothing; the v3 RoRSmoothingSec EMA is superseded and no longer read |
+| Artisan simulator mode | Implemented in effect | RoasterSim drives the whole console in the lab, program: charge 392, turning point 184 at about 71 s, dry end zone 300 to 310 at about 4:37 to 5:00, FC 385 at about 8:54, drop 419 at 12:00 on a 1020 s cycle |
 
 ### End state
 
@@ -6147,13 +6147,34 @@ proof.
    after the check.
 5. The stale duplicate ~/workspace/ignition-lab/
    setup_roastery_artisan_tags.py (old 81-member
-   version): delete it or resync it to the live UDT.
+   version): RESOLVED in round 7, file deleted, the
+   live UDT script is the single source.
 6. The Log UI delete of a second fixture in one
    browser session hung for 10-plus minutes in this
    round (9919 deleted fine, 9920 stalled); the
    deletecascade suite covers the delete path, but the
    delete mode's flow in verify_r5_detail_span.py is
    worth a look before the next fixture cleanup.
+   RESOLVED in the round 7 repro (2026-11-20, full
+   notes in ~/workspace/ignition-lab/
+   r7-delete-repro-notes.md): not an app defect and
+   not HUNT-46. Both deletes took under a second once
+   the page loaded; the stall was the harness
+   dismiss() in verify_r5_detail_span.py, which
+   watched the 'Personal Use Only' text count. The
+   page footer carries a permanent
+   secondary-message 'Personal Use Only' div, so the
+   count never dropped below 1 after the modal closed
+   and every open_page burned about 220 s in failed
+   5 s AGREE clicks (227.7 s and 228.1 s in the timed
+   repro, 478 s for the whole delete run). The fix
+   watches the AGREE and CLOSE button count instead;
+   the timed repro after the fix passes in 51 s.
+   pg_stat_activity showed no waiting query in 109
+   snapshots, and the gateway log showed no errors,
+   so no DB lock was involved. No app change, and no
+   fresh-context change to delete_fixtures(), since
+   the second page was alive in every run.
 7. The CompareChart keeps the full y-axis titles
    ("Bean Temp (deg F)", "Rate of Rise (deg F/min)")
    because it is a single instance, not a paired one;
@@ -6161,4 +6182,676 @@ proof.
    them the same way the RoastChart phone instance
    did before HUNT-52's shortening. Either pair it
    (a CompareChartPhone with the short titles) or
-   shorten the single instance's titles.
+   shorten the single instance's titles. RESOLVED
+   by HUNT-54 (Item 1): paired CompareChartPhone
+   with short titles.
+## Polish round 7 (2026-11-20)
+
+### Item 1: HUNT-54, CompareChart paired phone instance
+(round 7 candidate 7)
+
+HUNT-54 (minor, fixed): at 360px the single
+CompareChart (288px wide) clipped the full y-axis
+titles, the same clip the RoastChart phone instance
+had before HUNT-52's shortening. Fix: CompareChart
+keeps the full titles ("Bean Temp (deg F)", "Rate of
+Rise (deg F/min)") with roast-cols-full; a new
+sibling CompareChartPhone carries the short titles
+("Bean Temp (F)", "RoR (deg F/min)") with
+roast-cols-phone, deep copied including the HUNT-31
+per-theme color bindings. The stylesheet 900px
+switch already hides one instance per viewport.
+Builder compare_chart() updated to match plus a
+compare_chart_phone() twin; the builder was not run
+against the live tree. Proof: the HUNT-55 suite
+stages three batches and screenshots the compare at
+360px Light with no horizontal overflow
+(r7-hunt55-compare-9920.png, see Item 2).
+
+### Item 2: HUNT-55, compare picker cannot stage a third
+batch
+
+HUNT-55 (major, fixed): picking C = 1046 showed in
+the picker but the caption after Compare still
+listed only A and B; changing A to 1042 also left
+the caption at A = 1048. Root cause: the CmpA, CmpB,
+CmpC dropdowns in Views/BatchesPanel/view.json bound
+props.value to view.custom.cmpA/B/C with a property
+binding carrying "bidirectional": true only at the
+BINDING level. The property binding schema
+(knowledge/raw/binding-schemas/binding-property.json)
+puts bidirectional inside CONFIG; the binding level
+copy is the tag binding shape. IA's own example
+(knowledge/examples-ia/simple.json) also puts it in
+config. So the binding ran one way (custom to
+dropdown): a pick stuck in the dropdown display but
+never wrote back to view.custom, so build_compare in
+roastery/batches/code.py read cmpC 0 and the caption
+listed only A and B, with no exception in the
+gateway log during the repro window. A project-wide
+scan found these three are the ONLY bindings in the
+project with binding-level bidirectional but no
+config-level copy; every tag binding with
+binding-level true also has config-level true. Fix:
+added "bidirectional": true inside each of the three
+bindings' config (binding level copy kept, matching
+the tag bindings). Proof: new suite
+verify_r7_hunt55.py, run 2026-11-20, ALL HUNT-55
+CHECKS PASSED. The caption follows every pick:
+C = 1046 stages (caption lists A = 1048, B = 1047,
+C = 1046), A = 1042 stages, A = 9920 with B = 1048
+C = 1046 lists all three, and the same three stage
+at 360px Light with no horizontal overflow. Fixtures
+9919/9920 were inserted first and deleted through
+the Log UI afterwards; the lab was restored to (7,
+101, 0) Idle, theme System.
+
+### Item 3: the dismiss() harness loop in the lab suites
+(lead 2)
+
+The looping dismiss() form fixed in
+verify_r5_detail_span.py (round 7, commit 4682e5f)
+existed in 14 lab-only suites and ground the same
+way: the page footer carries a permanent
+secondary-message "Personal Use Only" div, so
+watching the text count never reaches 0 and every
+open_page burned about 220 s in failed 5 s AGREE
+clicks (40 iterations). The fixed form watches the
+AGREE and CLOSE button count instead, keeps the
+40-iteration poll, and returns True when the button
+count hits 0. Applied to verify_r5_hunt.py,
+verify_r6_abc.py, verify_r6_abc2.py,
+verify_roastery_axis.py (kept its docstring note
+about the modal appearing well after page load),
+verify_roastery_dark.py, verify_r6_phone_chart.py,
+verify_r5_hunt2.py, verify_roastery_r4hunt_a.py
+through _e.py (these use 30 iterations, about 165 s
+grind; iteration counts preserved),
+scratch_walk_home.py (dismiss_hard, 40 iterations)
+and scratch_walk_home2.py (inline 30-iteration
+loop). After the edits no looping text-count dismiss
+remains in the lab; all 14 files py-compile. The
+tracked scripts under roastery/scripts/ were not
+touched (single-attempt form, unaffected). Proof:
+the smoke batch over all 12 touched suites is
+green on 2026-11-20: verify_r5_hunt.py and
+verify_r5_hunt2.py pass standalone (see Item 4);
+verify_r6_abc.py, verify_r6_abc2.py,
+verify_roastery_axis.py, verify_roastery_dark.py
+and verify_r6_phone_chart.py pass in the smoke
+batch; verify_roastery_r4hunt_a.py through _e.py
+pass after the further suite fixes in Item 4
+(the batch ran in passes as each fix landed:
+abc2, axis, dark, phone_chart green in run 4;
+A green standalone, then B, C, D, E green in
+run 7). The open_page grind is gone: r6_abc
+finished in about 200 s (was 675 s) and the
+delete repro that motivated the fix runs in 51 s
+(was 478 s).
+
+### Item 4: pre-existing suite bugs found by the smoke
+runs (lead 2)
+
+verify_r5_hunt.py Part B had 5 pre-existing suite
+bugs, all unrelated to the dismiss change (proven
+by a live dock probe: at +8 s into a roast with no
+stamps, Drop buttons: 0, Dry End buttons: 2; the
+phase-aware dock_actions() offers Drop only after
+FC Start is stamped). (1) Drop was clicked with no
+stamps, where no Drop button exists, a 20 s timeout.
+(2) The post-Drop wait list omitted Dropped (drop()
+sets State Dropped, not Cooling/Complete/Idle).
+(3) The button-height cap was 48 vs designed 49 px
+dock buttons and 54 px steppers (v4 52 px targets
+plus borders); a wrapped two-line button measured
+56 px in HUNT-43, so the cap is now 54. (4)
+delete_batch_via_ui(max(batch_number)) would have
+deleted seeded batch 1048, since Finish does not
+save and Save Batch would refuse batch 1042 as
+already logged. (5) The "finish returns to Idle"
+check was wrong because finish() sets State
+Complete, not Idle. Fixed Part B: stamp Dry End,
+wait for DryEndElapsedSec >= 0, stamp FC Start, wait
+for FirstCrackStartElapsedSec >= 0, click Drop, wait
+for Dropped, click Finish, wait for Complete, click
+Reset ("Reset / New Roast", offered only at
+Complete), wait for Idle, then DELETE FROM
+batch_events via psql and assert the (7, 101, 0)
+baseline. Re-ran standalone 2026-11-20: ALL checks
+PASS, HUNT FAILURES: none, lab 7 101 0 Idle.
+verify_r5_hunt2.py failed with TargetClosedError
+opening a second context in the same single-process
+browser, a KNOWN documented round 5 limitation
+(hunt2 was abandoned mid run for this; the pattern
+is one fresh browser per session, never two contexts
+in one browser). Fixed by giving the desktop part a
+fresh browser (the file's own docstring already says
+"One fresh browser per part"). Re-ran standalone
+2026-11-20: ALL checks PASS, HUNT FAILURES: none,
+lab 7 101 0 Idle. New Roast measures 44 px tall,
+97 px wide at both 360 px and desktop. The "custom
+button missing: Drum Note" print in the failed run
+was a transient race (the repeater re-render after
+the Fan Boost click); the probe and the passing
+rerun both show Drum Note present.
+
+verify_r6_abc.py had the same phase-order bug in
+its walk home: the loop clicked FC Start first, but
+the phase-aware dock offers Dry End first while
+Roasting with no stamps, so every step burned a
+15 s click timeout plus a 90 s state wait (about
+8 minutes, ending still Roasting) and the suite
+failed only on "lab back to Idle". Fixed by
+stamping in phase order (Dry End, FC Start, FC End,
+SC Start, SC End, Drop, Cool, Finish, Reset),
+waiting for each event tag or state; a click
+timeout now fails loudly instead of grinding
+silently. Re-ran standalone 2026-11-20 after a VM
+replacement and lab recovery (see the Lab incident
+note): exit 0, 16/16 checks, FAILURES: none, lab
+7 101 0 Idle, in about 200 s (was 675 s).
+
+verify_roastery_r4hunt_a.py had two pre-existing
+suite bugs. (1) "phone dock closes cleanly" failed
+because the closed AppSettings dock stays in the
+DOM translated off the viewport (x = 420, w = 360
+on a 360 px screen); the check expected the element
+gone or zero width. A closed dock is clean when it
+is fully outside the viewport, so the check now
+accepts None, zero width, or a rect outside the
+viewport. The dock is off screen and the roast
+keeps running, proven by the follow-up checks.
+(2) The mobile detail open passed the absolute
+dp.url to open_page, which prepends BASE, so the
+request was malformed and the gateway answered
+400 /badURI (screenshot r4hunt-detail-close-360-
+dark.png shows the 400 page); the gear click then
+timed out after 30 s because the page never
+loaded. Fixed by passing the path part of dp.url.
+Re-ran standalone 2026-11-20: exit 0, FAILS: [],
+PART A DONE.
+
+verify_roastery_r4hunt_b.py had three pre-existing
+suite bugs. (1) The toast checks waited for
+'Import failed', but the Settings background route
+toasts 'Background failed: ...' (artisan.
+stage_background_upload; 'Import failed' is the
+Log page import route's message), so the 20 s wait
+could never match even though the toast fired (the
+page note "Background failed: Not an Artisan .alog
+file: the first character must be an opening
+brace." is visible in r4hunt-toast-light-360.png).
+Fixed the needle in both the Light and Dark
+checks. (2) The desktop all-columns toggle block
+clicked an 'All columns' button that does not
+exist on desktop: a live probe counts exactly one
+such button on /log at 1360 px and it is not
+visible (the toggle lives in the phone instance
+only; desktop already shows every column). The
+block is removed. (3) After each bad .alog upload
+the FileUpload status stays open as a small
+viewport modal over the page; the in-modal arrow
+does not close it, and its fullViewOverlay
+intercepts pointer events, so the gear and Dark
+clicks timed out after 30 s. A live probe shows a
+tap outside the modal closes it, after which the
+gear works and the Dark button is found. The suite
+now taps outside the modal (only when the overlay
+is present) after each upload. (4) The error toast
+itself sits top center over the gear and intercepts
+the click: wait_toast returns the moment the text
+matches, so the gear click lands while the toast is
+still up. The toast's autoClose is 5 s but its
+timer pauses while the pointer hovers it, so a
+toast the mouse rests on never leaves on its own
+(the gear click kept hitting the error toast after
+a 10 s wait). The suite now parks the pointer off
+the toast after the modal tap and wait_toast_gone
+clicks the toast itself (closeOnClick) if it is
+still there after 3 s. A live probe confirms the
+lifecycle: the toast is present 2 to 6 s after the
+upload and gone by 8 s when the pointer is clear
+of it. Re-ran standalone 2026-11-20: exit 0,
+FAILS: [], lab restored to seeded baseline
+(7, 101, 0). The Dark toast also fired
+("Background failed: name 'true' is not defined",
+the bogus JSON's boolean failing in the parser,
+as expected for a non-alog file). The fixture
+delete flow passed, including the HUNT-35 press
+row cascade.
+
+verify_roastery_r4hunt_c.py failed at startup with
+FileNotFoundError for /tmp/r4hunt_fixture_9919.json:
+the snapshot the fixture restore reads lived only
+in /tmp, and the VM replacement wiped it. No suite
+writes the file (only C reads it); it was a one-off
+round 4 snapshot. Fix: part A was re-run to
+re-create fixture 9919, a new snapshot script
+(snapshot_r4hunt_fixture.py) dumped the batch and
+its 42 series rows from the DB into the lab dir
+(persistent) plus /tmp, and C now reads the lab
+dir copy first with /tmp as fallback. The smoke
+run 7 result: B exit 0 (FAILS: []), C exit 0
+(FAILS: [], fixture restored from the new
+snapshot), D exit 0, E exit 0, lab back to
+(7, 101, 0).
+
+### Item 5: cleanup_workspace.py Reset click (lead 3)
+
+The script's Reset click timed out after its Charge
+click started a roast. Root cause, proven
+statically: dock_actions() in
+roastery/core/code.py offers Reset only at Complete
+(alongside Charge); while Roasting it offers only
+phase events plus customs, and at Idle only Charge.
+A grep of all views found the only static "Reset"
+button text in the project is SettingsTargets
+"Reset to Four Points" (a target-profile reset, not
+the batch reset); the batch Reset is rendered by the
+dock repeater from dock_actions(). So the old
+script's get_by_role('button', name='Reset') after
+Charge could never resolve, timing out after 30 s
+and leaving Roasting with 1 Charge press row.
+Fix: the script was rewritten to drive the roast
+through the offered buttons, Charge, Dry End,
+FC Start, Drop, Finish, Reset, waiting for each
+state via the tag API, tolerating a leftover roast
+in any state (Dry End and FC Start clicked only if
+present; Drop only if still Roasting; Finish only
+if Dropped or Cooling); dismiss upgraded to the
+fixed button-count form; press rows cleared
+afterwards with DELETE FROM batch_events; scalar
+restore and verification reads kept, plus a
+batch_events count print. The launch also uses
+R5.launch (no-zygote, single-process) since a bare
+chromium.launch traps on the zygote in this VM.
+Proof: run live 2026-11-20, exit 0 in about 18 s:
+Charge, Dry End, FC Start, Drop, Finish, Reset
+all landed, State Idle, Fan 5, Heat 5, BatchNumber
+1042, ActiveSource Simulated, Mode Off, background
+cleared, BackgroundDS, EventMarksDS and LiveCurveDS
+all 0 rows, batch_events 0, lab (7, 101, 0).
+
+### Item 6: compare plot empty for seeded stub batches
+(lead 4, seed-data artifact, no fix)
+
+Via a gateway snippet mirroring build_compare
+exactly with _compare_points, compute_ror_series,
+grid_bucket, second_grid: batches 1048/1047/1046
+have 10 points each, all bucketed to t = 0, maxSec
+0, 1 grid row each, so no line can draw. Batch
+1042 has 21 points, maxSec 30, 2 rows [0, 30].
+Fixture 9920 (720 s) has 49 points, 25 grid rows,
+t_secs 0 to 720 step 30. Element screenshots viewed:
+r7-hunt55-compare-9920.png shows the A BT solid
+orange curve (392F dip to about 370F, climb to 415F
+across 0:00 to 12:00) and the A RoR dashed curve;
+r7-hunt55-compare-stubs.png (A = 1042, B = 1047,
+C = 1046) shows only a flat two-point segment for A
+at about 250F BT and about 22 F/min RoR across the
+0:00 to 0:30 axis. So a real full-length batch plots
+correctly. The HUNT-54 note that the plot was empty
+holds only when both staged stubs span 9 s (single
+grid row each). Lesson: the chromatic pixel ink
+metric is axis-scale blind for this chart (stub-only
+ink 5196 vs 9920 ink 5173 in the first run, because
+the axis auto-scales so six lines span the full
+width either way). The grid row count from the
+library functions plus element screenshots is the
+discriminator. The suite keeps ink as an
+informational print only.
+
+### Item 7: the fresh hunting pass (lead 5)
+
+New suite verify_r7_freshhunt.py walks Roast (/),
+Log (/log), BatchDetail (/log/detail, batch 1042
+staged) and Settings (/settings) at 1360px and
+360px, light and dark, measuring page-level
+horizontal overflow and clipped leaf text, and
+screenshotting every combo, plus behavioral
+probes (Settings write/read-back, background
+ghost, AppSettings dock at 360px). Run
+2026-11-20: exit 0, PASSES: 41, FAILURES: none,
+lab (7, 101, 0). No horizontal overflow anywhere;
+no clipped app text anywhere once the Perspective
+footer is excluded (see below). Screenshots:
+r7-fresh-roast-1360-light/dark.png,
+r7-fresh-log-1360-light/dark.png,
+r7-fresh-detail-1360-light/dark.png,
+r7-fresh-settings-1360-light/dark.png (plus
+full-page variants), the same eight at 360px,
+r7-fresh-roast-ghost-1360-light.png,
+r7-fresh-appsettings-360-light.png,
+r7-fresh-settings-360-bottom.png and
+r7-fresh-settings-360-mid2.png.
+
+HUNT-53 (major, filed, not fixed in this round):
+the phantom press, reproduced. A ghost overlay
+probe pressed Charge, Dry End, FC Start, Drop,
+Finish and Reset at 19:13:48 to 19:14:33
+(press counters 4608 to 4613); its cleanup
+deleted the rows and verified (7, 101, 0). A VM
+replacement followed at about 19:15; recovery
+created a FRESH database and reseeded batches and
+series (events 0). The gateway came up at
+19:19:54, and at 19:19:59.842 to 19:19:59.860 the
+same six presses reappeared in the new database
+as six rows in an 18 ms burst, with identical
+actions, t_offsets, bean temps and counters
+4608 to 4613. No browser was running (the probe
+had closed its browser before the replacement),
+and the ActionCounter tag still read 4613 with
+LastAction Reset. Root cause: the press-ring
+reconciler, roastery.core.reconcile_press_pending.
+Every press slots its context into the 16-slot
+PressSlots ring (slots are NEVER cleared), and
+reconcile checks each slot against the
+(batch_number, press_counter) row key, inserting
+any press the group missed. The check is
+DB-relative: a fresh database makes every slot
+look unwritten. The presses were 326 to 371 s
+old at the replay, inside the 600 s horizon and
+past the 3 s grace, so the BeanTempF change tail
+reconciled them on gateway start. This also
+explains the round 6 tier3c single Charge phantom
+(same mechanism, only the Charge press inside
+the horizon then) and the round 7 candidate 4
+note. In normal operation with an intact database
+a plain gateway restart does NOT duplicate (the
+rows are already there), so the hazard is
+specifically database loss plus restart, and any
+delete of press rows inside the 10 minute horizon
+(the HUNT-35 cascade, a cleanup DELETE) can be
+resurrected the same way. That also explains two
+earlier mysteries in this round: the 16
+unexplained press rows after the first killed
+smoke batch (a cleanup DELETE removed the
+roast's rows while the ring still held them) and
+the 15 rows that reappeared between two cleanups
+after the r4hunt_a crash (14 suite presses
+re-inserted plus the probe reset's own row). Fix proposal, for
+Eric's direction: the delete and cleanup paths
+must clear the ring slots for the affected batch
+and counters, and the recovery procedure must
+clear PressSlots on a fresh database (the lab
+step this round: the six rows were deleted and
+all 16 slots cleared, stable at 0 events after
+60 s). The app-side fix is NOT implemented in
+this round: the press path is safety-critical
+(exactly-once) and the change needs a battery.
+The lab procedure now includes the slot clear
+after every recovery (see the second Lab incident
+note).
+
+Checked and dismissed, no HUNT item:
+- Detail chart x labels 0:00, 1:30, 3:00 for the
+19 s batch 1042: deliberate. DETAIL_SHORT_FLOOR_
+SEC = 180 (HUNT-37): short batches pad to a
+3:00 axis. The DetailDS rows confirm it (t_sec
+0 to 180, values only at 0 and 30).
+- Ghost empty while Idle: by design. BackgroundDS
+is 0 rows until a roast timeline exists; during
+a roast it populates (5 rows at 40 s) and the
+ghost draws (gray Background and Background RoR
+lines, GHOST BT 232.5, DEV +41.6 in the analyzer,
+r7-fresh-roast-ghost-live.png).
+- One clipped leaf on every page in the first
+fresh-hunt run: the Perspective client footer
+DIV.secondary-message carrying the page URL
+(307 px in a 270 px box, overflow hidden). It is
+platform chrome below the fold, not app content;
+the suite now excludes it.
+- "No Connection to Gateway" in the page body
+text: DIV.connection-message parked off-screen
+at y = -28 while connected; always in the DOM.
+- "Upload Successful!" modal for a failed .alog:
+the FileUpload component's receipt status (the
+file arrived); the app surfaces the failure
+inline ("Background failed: ...") and as an
+error toast. Platform wording, not an app
+defect.
+- "Background .alog" label wraps to two lines at
+360px: a narrow label cell, cosmetic.
+- Log table geometry sw 0 cw 0 in the r4hunt_b
+probe: the selector grabs the hidden desktop
+table instance; the visible phone table renders
+fine.
+- Artisan study: the RoR pipeline
+(compute_ror_series: delta span, curve filter,
+delta filter, spike smoothing, polyfit, optimal
+smoothing), the AUC trapezoid (Artisan calcAUC
+shape, begin at TP/Charge/Dry End/FC Start),
+the turning point detector (Artisan findTPint:
+minimum between charge and first crack) and the
+phase RoR (Artisan RoR(): DRY from the turning
+point or greens temp) were all read against
+~/workspace/artisan-src and match Artisan 5.0.0.
+The Artisan feature mapping table was stale on
+six rows (turning point and comparator marked
+Excluded after they were built, the v3 RoR EMA
+described as current, old simulator numbers,
+.alog import/export missing, alarms described
+as view expressions); corrected in place in
+this round. Round 8 candidate: Artisan's
+comparator alignment (alignEvent: CHARGE, DRY,
+FCs, FCe, SCs, SCe, DROP) for build_compare,
+which aligns on charge only today.
+- The Settings page scrolls an inner container
+(.psc-roast-content, scrollHeight 11129 at
+360px); window.scrollTo is a no-op there, which
+is why the r4hunt_b mid/low Settings shots
+repeat the top. The fresh-hunt probe scrolled
+the container and captured the lower sections
+(Alarms editor, Custom Events, Background
+staging) clean at 360px.
+
+### Lab incident during the round
+
+A VM replacement around 17:15 UTC on 2026-11-20
+killed the gateway mid smoke batch (the r6_abc
+rerun failed with connection refused). Recovery:
+uptime 1 minute, Postgres not installed, workspace
+intact. The OS-intent replay's apt-get update hung
+on mirror.cogentco.com (PID 1099, zero CPU in
+3.5 minutes, curl to the mirror timed out), so it
+was killed by exact PID, per the round 6 pattern;
+the replay retries on its own. A timeout-bounded
+apt-get update then crawled on the same mirror, so
+the sources were pointed at azure.archive.ubuntu.
+com only (fast: InRelease in 0.9 s, Packages files
+in about 1.3 s each) and the update completed in
+9 s; postgresql-16 installed cleanly after, and
+the sources file was restored to the original
+two-mirror form. recover-lab.sh then ran clean:
+cluster online, role and database created, DDL
+applied, gateway RUNNING, and reseed_from_roastlog
+restored 7 batches, 101 series, 0 events. All tag
+defaults verified after recovery. The round 6
+recovery had the same apt lock contention; the
+azure-only update is the faster path if the mirror
+hangs again.
+
+A second VM replacement around 19:15 UTC killed
+the gateway during the fresh-hunt scroll probe.
+Recovery repeated the same pattern: the replay
+apt-get update hung again (PID 1177, zero CPU in
+2:43, no package lists), killed by exact PID,
+azure-only update in 9 s, postgresql-16 installed,
+sources restored, recover-lab.sh clean, gateway
+RUNNING, reseed restored 7 batches and 101
+series. The recovery then surfaced HUNT-53 (see
+Item 7): six phantom press rows from the
+pre-replacement ghost probe reappeared in the
+fresh database at 19:19:59, and were deleted
+with all 16 PressSlots cleared; the lab is
+stable at 0 events after. Lab procedure addition:
+after every recovery and reseed, clear the
+PressSlots tags and delete any batch_events rows,
+or the reconciler resurrects the last presses.
+
+A third VM replacement at about 21:15 UTC killed the
+gateway mid battery, during verify_roastery_r4hunt_b.py
+(the r4hunt_a result was already recorded). Recovery
+repeated the pattern with one difference: the replay
+apt-get update was NOT killed this time. It ran 9-plus
+minutes with near-zero CPU on the main process, but its
+http and store children were still accumulating CPU, so
+it was slow, not hung, and it finished on its own; the
+lists landed (68 ubuntu lists) and the replay installed
+postgresql-16 as recorded intent. recover-lab.sh then
+ran clean: cluster online, DDL applied (tables already
+existed), gateway RUNNING, and the database came back
+at the reseeded baseline, 7 batches, 101 series, 0
+events, with no reseed step needed. Fixture 9919 and
+every press row from part A and the first part B run
+were gone from the database, while the gateway
+PressSlots still held those 16 presses (counters
+4818-4833); the HUNT-53 guard cleared the slots and
+verified 0 events stable after a 60 s idle wait before
+the battery resumed. The resumed battery reran part B,
+which failed on the missing fixture (see Verification);
+the A to B rerun closed it. The runner resume-safe
+results file skipped the 29 DONE suites and reran only
+the remainder.
+
+
+### Verification
+
+Closing battery, run 2026-11-20, 19:48 to 21:45 UTC,
+runner run_r7_battery.sh (r7-battery/results.txt),
+interrupted once by a VM replacement at about 21:15 UTC
+during verify_roastery_r4hunt_b.py and resumed from the
+same results file at 21:34 (the runner skips DONE
+suites). Every suite below passed on the final code;
+the two first-pass failures are recorded after the
+table with their fixes and reruns.
+
+- validate_roastery_artisan.py: VALIDATION PASS.
+- validate_chartlab.py: VALIDATION CHECK REPORT, no
+  chartlab warnings, 0 bogus control warnings.
+- verify_roastery_ror.py: 6 PASS, 1 designed SKIP on
+  rerun (first pass failed the live check, see below).
+- verify_roastery_tier1.py: 42/42, ALL TIER 1 CHECKS
+  PASSED.
+- verify_roastery_tier2.py: 87/87, ALL TIER 2 CHECKS
+  PASSED.
+- verify_roastery_tier3a.py: 40/40, ALL TIER 3A CHECKS
+  PASSED.
+- verify_roastery_tier3b.py: 47/47, ALL TIER 3B CHECKS
+  PASSED.
+- verify_roastery_tier3c.py: 69/69, ALL TIER 3C CHECKS
+  PASSED.
+- verify_roastery_v4.py: 60/60, ALL CHECKS PASSED.
+- verify_roastery_polish1.py: 49/49, ALL POLISH ROUND 1
+  CHECKS PASSED.
+- verify_roastery_polish2.py: 65/65, ALL POLISH2 CHECKS
+  PASSED.
+- verify_roastery_polish3.py: 37/37.
+- verify_r6_customs.py: 17/17, ALL R6 CUSTOMS CHECKS
+  PASSED.
+- verify_roastery_dark.py: 10/10, ALL DARK MODE CHECKS
+  PASSED.
+- verify_r6_hunt.py: 7/7, ALL R6 HUNT CHECKS PASSED.
+- verify_roastery_pressburst.py: ALL PRESS BURST CHECKS
+  PASSED, 11 presses, 11 rows, each exactly once (one
+  pre-existing baseline row counted, not an extra).
+- verify_roastery_pressfault.py: 62/62, ALL PRESS FAULT
+  CHECKS PASSED.
+- verify_roastery_deletecascade.py: 15/15, ALL DELETE
+  CASCADE CHECKS PASSED.
+- verify_r5_hunt3.py: 7/7, HUNT FAILURES: none.
+- verify_roastery_axis.py: 14/14, ALL AXIS CHECKS
+  PASSED.
+- verify_r5_detail_span.py capture: 9920 25 rows, 9919
+  7 rows, 1042 7 rows, every t label an even 30 s step;
+  fixtures removed afterwards (PressSlots cleared first).
+- verify_r7_hunt54.py: 33/33, ALL HUNT-54 CHECKS PASSED.
+- verify_r7_hunt55.py: 17 PASS lines, ALL HUNT-55
+  CHECKS PASSED (three batches stage and compare at
+  desktop and 360px).
+- verify_r7_freshhunt.py: PASSES: 41, FAILURES: none.
+- verify_r5_hunt.py: HUNT FAILURES: none.
+- verify_r5_hunt2.py: HUNT FAILURES: none.
+- verify_r6_abc.py: 16/16, FAILURES: none.
+- verify_r6_abc2.py: 15 PASS lines, FAILURES: none.
+- verify_roastery_r4hunt_a.py: FAILS: [] (rerun green
+  after the VM replacement, see below).
+- verify_roastery_r4hunt_b.py: FAILS: [] on rerun (first
+  resumed run failed, see below).
+- verify_roastery_r4hunt_c.py: FAILS: [], lab (7, 101, 0).
+- verify_roastery_r4hunt_d.py: PART D DONE, no failures.
+- verify_roastery_r4hunt_e.py: PART E DONE, final counts
+  (7, 101, 0), SlotsCleared True.
+- cleanup_workspace.py: exit 0, lab (7, 101, 0).
+- r7_udt_diff.py: UDT DIFF PASS, 0 differences
+  (RoastBatch 203, RoasterSource 7).
+
+First-pass failure 1, verify_roastery_ror.py live check
+(suite bug, not an app bug). First battery pass 19:51:
+the 40 s live window read temp 343.3 to 350.1, slope
+10.71 F/min (in the 3 to 30 assert band), but the median
+live RateOfRiseF was 3.40, outside the 3.0 tolerance.
+Diagnosis: the window started within 1.3 F of the
+simulator program minimum (342 F at program 785 s) and
+rose into the reheat segment, so it straddled the
+cooling-reheat corner where the true slope flips from
+about -40 to about +13 F/min. The live RoR is a 20 s
+delta-span derivative with decay smoothing over a 300 s
+buffer, so for about a span after the corner it still
+sees the fall and legitimately reads low; the median
+over the whole window mixes pre- and post-corner
+values. The six offline checks all passed, and the live
+tag runs the same compute_ror_series code path, so the
+math is not in question. The suite guard only tested
+the endpoint slope band, not steadiness, despite its
+docstring saying the check only asserts on a steady
+ramp. Fix (suite only, mirrored to
+roastery/scripts/verify_roastery_ror.py): the check now
+compares the tail RoR (median of the last 5 samples)
+against the tail slope (the last 20 s of temps, the same
+span the RoR sees), and asserts only when that tail
+slope is in band; a corner inside the tail puts the tail
+slope out of band and the check skips. Rerun 21:55:
+exit 0, ALL ROR CHECKS PASSED, 6 PASS and 1 designed
+SKIP (the window was flat, temp 298.6 to 298.6, slope
+0.00).
+
+First-pass failure 2, verify_roastery_r4hunt_b.py in the
+resumed battery (lab casualty, not an app or suite bug).
+The resumed run 21:42 failed "fixture row selectable
+for delete": no row for batch 9919 existed in the Log
+table, so the row click found nothing and the Delete
+button stayed disabled (the click then timed out after
+25 s). Cause: the VM replacement at about 21:15
+restored the database to the reseeded 7/101/0 baseline,
+wiping fixture 9919 (created by part A at 21:09) and
+every press row from part A and the first part B run,
+while the gateway PressSlots still held those presses
+(16 slots, counters 4818-4833). The battery HUNT-53
+guard cleared the slots and verified 0 events stable
+after a 60 s idle wait before resuming. Fix: rerun the
+A to B chain. Part A rerun 21:57: exit 0, FAILS: [],
+fixture 9919 saved with 42 series rows. Part B rerun
+22:06: exit 0, FAILS: [], fixture row selectable,
+fixture batch deleted through the app, series and press
+rows cascaded, lab restored to (7, 101, 0). Parts C, D
+and E needed no rerun (C restores from the lab-dir
+snapshot, which survived; D and E passed in the resumed
+battery).
+
+HUNT-53 is filed with the reproduction evidence and
+the root cause (Item 7); its app-side fix is open, not
+implemented in this round. The battery itself did not
+trip over it: the guard ran before the battery, after
+the recovery, and before the A to B rerun, and 0 events
+stayed stable after every 60 s idle wait.
+
+Lab left clean at 7 batches (1042-1048), 101 series,
+0 events, defaults restored (Fan 5, Heat 5, BatchNumber
+1042, ActiveSource Simulated, Mode Off, ThemeMode
+System, DispAxisFormat m:ss, PressCaptureMode Group,
+PeriscopeAvailable True, background cleared,
+PhaseFromBg False), PressSlots empty, and 0 events
+still after a 60 s idle wait. The PressEvents group is
+RUNNING by functional proof (every suite press landed
+exactly once in the audits).
