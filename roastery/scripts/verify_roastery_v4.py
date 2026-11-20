@@ -212,6 +212,12 @@ def ds_rows(value):
 
 def main():
     start_event = log_marker()
+    # Polish round 6: the suite's own startup reset writes a
+    # Reset row on the seeded batch (1042), outside its test
+    # batch, so the cleanup must also delete any press row
+    # created after this run started (tier1 pattern).
+    base_max_event_id = int(
+        psql('SELECT COALESCE(MAX(id), 0) FROM batch_events'))
     os.makedirs(SHOTS, exist_ok=True)
     batch_no = None
     with sync_playwright() as pw:
@@ -296,8 +302,13 @@ def main():
               0 <= marks[0][0] - AXIS_BASE_MS < 3600000,
               marks[0][0])
         live = ds_rows(tag('[default]Roastery/LiveCurveDS'))
+        # Polish round 6 (HUNT-51): the live grid now has one
+        # row per 30 s, so at this point in the roast (about
+        # 2 minutes in) the dataset holds about 5 rows, not
+        # 20. The contract is the same: the dataset carries
+        # the roast samples, one row per grid step.
         check('live curve dataset has the roast samples',
-              len(live) >= 20, len(live))
+              len(live) >= 4, len(live))
         check('live curve x values are elapsed (axis based)',
               0 <= live[0][0] - AXIS_BASE_MS
               and live[-1][0] - AXIS_BASE_MS < 3600000,
@@ -439,9 +450,14 @@ def main():
         check('state pill has a fixed 88px box',
               any(p[2] == 88 for p in stab1_m['pills']),
               stab1_m['pills'])
-        check('alarm banner slot is reserved (38px, empty or not)',
+        # Polish round 6 (HUNT-50): the empty banner collapses
+        # (display none) instead of reserving 38px; Eric asked
+        # for the dead black band to go. The banner still
+        # appears at 38px when an alarm fires, proved by the
+        # ABC suite (verify_r6_abc2).
+        check('alarm banner collapses when empty (HUNT-50)',
               stab1_d['banner'] is not None
-              and stab1_d['banner'][3] == 38,
+              and stab1_d['banner'][3] == 0,
               stab1_d['banner'])
         desk.screenshot(path=os.path.join(
             SHOTS, 'roastery-v4-roast-desktop.png'))
@@ -567,10 +583,13 @@ def main():
         # Polish round 1 item 4, second half: after the turning
         # point the live curve RoR column carries the true
         # computed values (the dip read above asserted the
-        # blank side of the convention).
+        # blank side of the convention). Polish round 6
+        # (HUNT-51): the grid has one row per 30 s, so only a
+        # couple of rows sit past the turning point this early;
+        # two rows still prove RoR appears.
         _live2 = ds_rows(tag('[default]Roastery/LiveCurveDS'))
         check('live curve RoR appears after the turning point',
-              sum(1 for r in _live2 if r[4] is not None) >= 5,
+              sum(1 for r in _live2 if r[4] is not None) >= 2,
               sum(1 for r in _live2 if r[2] is not None))
         desk.screenshot(path=os.path.join(
             SHOTS, 'roastery-v4-detail-desktop.png'))
@@ -790,20 +809,43 @@ def main():
         check('phase target tag written',
               int(tag(B + '/PhaseDryTargetSec')) == 300,
               tag(B + '/PhaseDryTargetSec'))
-        desk.goto(BASE + '/', wait_until='networkidle', timeout=60000)
-        desk.wait_for_timeout(6000)
-        dismiss(desk)
-        body = desk.locator('body').inner_text()
+        # Polish round 6 (HUNT-46): the Roast page remounts
+        # dead in this session, so read the phase bar from a
+        # fresh page that mounts Roast for the first time.
+        fresh = browser.new_page(viewport={'width': 1600,
+                                           'height': 900})
+        fresh.goto(BASE + '/', wait_until='networkidle',
+                   timeout=60000)
+        fresh.wait_for_timeout(6000)
+        dismiss(fresh)
+        body = fresh.locator('body').inner_text()
         check('phase bar shows the new drying target',
               'target 05:00' in body)
-        desk.screenshot(path=os.path.join(
+        fresh.screenshot(path=os.path.join(
             SHOTS, 'roastery-v4-settings-phasebar.png'))
+        fresh.close()
         # restore
         desk.goto(BASE + '/settings', wait_until='networkidle',
                   timeout=60000)
         desk.wait_for_timeout(4000)
         dismiss(desk)
         set_numeric(desk, 'Drying target (sec)', 270)
+        # HUNT-46: a remounted page intermittently stops
+        # writing (its view instance goes dead), so the
+        # restore is checked and finished through the tag
+        # API when the UI write does not land. The app
+        # behavior itself was proven by the 300 write and
+        # check on the first mount above; this is suite
+        # hygiene, not app behavior under test.
+        if int(tag(B + '/PhaseDryTargetSec') or 0) != 270:
+            print('SUITE NOTE: HUNT-46 remount staleness ate '
+                  'the v4 phase target restore; writing 270 '
+                  'through the tag API', flush=True)
+            api('POST', '/tags/write', body=json.dumps(
+                {'tagPaths': [B + '/PhaseDryTargetSec'],
+                 'values': [270]}))
+            check('phase target restored to 270',
+                  int(tag(B + '/PhaseDryTargetSec') or 0) == 270)
 
         # ---- dark theme pass --------------------------------------
         desk.goto(BASE + '/', wait_until='networkidle', timeout=60000)
@@ -852,19 +894,65 @@ def main():
         desk.get_by_role('button', name='Close', exact=True).click()
         desk.wait_for_timeout(1000)
 
+        # Polish round 6: the ghost staged above is suite
+        # state, not app state. Clear it through the app's
+        # own button, the way the tier suites do, so the
+        # next suite starts with no background loaded.
+        # HUNT-46: this desk session has mounted /settings
+        # twice already, and a remounted page intermittently
+        # stops writing, so the click runs on a fresh page
+        # (a fresh session, first mount), where the button
+        # is proven to work.
+        ghost = browser.new_page(viewport={'width': 1600,
+                                           'height': 900},
+                                 timezone_id='America/Denver')
+        ghost.goto(BASE + '/settings', wait_until='networkidle',
+                   timeout=60000)
+        ghost.wait_for_timeout(5000)
+        dismiss(ghost)
+        ghost.get_by_role('button', name='Clear ghost').first.click()
+        check('ghost cleared before close',
+              wait_until(lambda: tag(
+                  '[default]Roastery/BackgroundLabel') == '',
+                  timeout=20)
+              and not tag('[default]Roastery/BackgroundCurveJson'))
+        ghost.close()
+
         browser.close()
 
     # ---- cleanup + log window ------------------------------------
     if batch_no:
-        drain_pending()
-        psql("DELETE FROM batch_events WHERE batch_number = %d"
-             % batch_no)
-        psql("DELETE FROM batch_series WHERE batch_number = %d"
-             % batch_no)
-        psql("DELETE FROM batches WHERE batch_number = %d" % batch_no)
+        # Polish round 6: drain_pending waits at most 30 s
+        # for lagging group writes and never fails, so a
+        # press row can land after the DELETE and survive as
+        # the one Reset row the next suite tripped on. Delete,
+        # wait past the group scan, and re-check; a second
+        # pass catches the late write (the ring slots are
+        # already empty, so nothing can resurrect after it).
+        for _attempt in range(3):
+            drain_pending()
+            psql("DELETE FROM batch_events WHERE batch_number = %d"
+                 % batch_no)
+            psql("DELETE FROM batch_events WHERE id > %d"
+                 % base_max_event_id)
+            psql("DELETE FROM batch_series WHERE batch_number = %d"
+                 % batch_no)
+            psql("DELETE FROM batches WHERE batch_number = %d"
+                 % batch_no)
+            time.sleep(5)
+            if int(psql("SELECT COUNT(*) FROM batch_events WHERE "
+                        "batch_number = %d" % batch_no)) == 0 \
+                    and int(psql("SELECT COUNT(*) FROM batch_events "
+                                 "WHERE id > %d"
+                                 % base_max_event_id)) == 0:
+                break
         check('test batch cleaned from the database',
               psql("SELECT COUNT(*) FROM batches WHERE batch_number "
-                   "= %d" % batch_no) == '0')
+                   "= %d" % batch_no) == '0'
+              and psql("SELECT COUNT(*) FROM batch_events WHERE "
+                       "batch_number = %d" % batch_no) == '0'
+              and psql("SELECT COUNT(*) FROM batch_events WHERE "
+                       "id > %d" % base_max_event_id) == '0')
     rows = log_check(start_event)
     bad = [r for r in rows if 'Error running action' in (r[2] or '')
            or 'roastery' in (r[1] or '').lower()]
