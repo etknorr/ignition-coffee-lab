@@ -7432,3 +7432,502 @@ audits).
     wipe simulation, not on a live replacement hitting
     the A-to-B chain; it is exercised only if a
     replacement lands mid-chain in a future battery.
+
+### Polish round 9: ThemeMode startup sync and ALIGN ON spacing (worker A, 2026-11-21)
+
+### Item 5: the ThemeMode Light observation is not a startup sync
+
+Finding: there is no startup sync and no app change was
+needed. The only write path to the ThemeMode tag in the
+app is roastery.core.set_theme_mode, called only by the
+three App Settings buttons (System, Light, Dark). The
+page startup scripts (page_startup, main_startup) only
+read the tag and set session.props.theme; the HudBar
+themeMode binding is one way (bidirectional false) and
+its onChange only re-applies the session theme and
+re-reports brightness; the brightness probe clicks only
+the two HudBar probe buttons, which set the session
+chartDark prop. There is no session event resource, no
+tag event script on ThemeMode (live export: a plain
+memory tag, default System), and no transaction group
+item touching it.
+
+Proof, live: with the tag at System, a fresh
+light-scheme session and a fresh dark-scheme session
+each left it at System over a 20 s poll, while the
+rendered theme still followed the device (container
+#F4F4F4 light, #323232 dark). Two other round 9
+probes found the same (worker B style probe, worker C
+theme_startup_probe). The flips seen mid
+investigation were concurrent suites and probes
+writing the tag through the REST API, not the
+browser: caught in the act, another worker's
+r9_probe_gap.py writes Light as its first step and
+its file timestamp (06:59:57) sits 2 s before a
+flip timestamp (06:59:59); the round 8 chain ran
+while the align and freshhunt suites, which write
+Light and Dark through the API for their walks,
+were also running. A clean watch with no sessions
+open still flipped 61 s after a System write,
+because a concurrent probe wrote Light in that
+window. Lesson for future batteries: a ThemeMode
+value read after a run proves which suite last
+wrote it, not what any session did; the tag is the
+remembered choice and only the App Settings buttons
+write it from the app. Regression suite
+verify_r9_theme_align.py (repo roastery/scripts,
+mirrored to the lab) locks this in: fresh light and
+dark sessions leave the tag at System.
+
+### Item 8: ALIGN ON label crowding the C picker (fixed)
+
+Root cause, two layers. First, structure: the Log
+compare row mixed three bare dropdowns (A, B, C)
+with one labeled column (the Align field), and the
+row centered its children, so the ALIGN ON caption
+protruded 7.5px above the pickers top edge and read
+as a caption for C, tight against it (measured
+desktop Light: label bottom 688, C picker top
+680.5, gap minus 7.5). Second, spacing: the
+caption to control gap the layout relied on was
+never there. The style class compiler in this
+build drops the gap property from style classes:
+every gap rule serves empty in a live session
+(.psc-roast-gap-8, -10, -12, -14 and the gap in
+roast-cell, roast-content, roast-header and the
+rest) while the sibling properties in the same
+files serve, so the field's roast-gap-8 gap was
+0px and the row's roast-gap-12 gaps were 0px too.
+The same compiler behavior is already handled for
+borders, display and min-height, which live in the
+advanced stylesheet keyed to the same class names.
+
+Fix, in Views/BatchesPanel/view.json: the row
+bottom aligns its children (alignItems center to
+flex-end), so the pickers share one baseline and
+the caption sits above its own dropdown; and the
+Align field carries a new hook class
+roast-compare-field. In the advanced stylesheet:
+.psc-roast-compare-field { gap: 8px; }, scoped to
+the compare field only, so no other layout moves;
+restoring gap globally would shift exact fit rows
+elsewhere (HUNT-60 lesson). The builder
+build_roastery_v4.py carries the same change
+(cfg_field takes a classes argument, compare row
+aligns flex-end). Its STYLESHEET_CSS copy is
+already stale for other rules and a sibling is
+resyncing it, so the new rule is not mirrored
+there. The press path is untouched and
+compare_startup is unchanged: the pickers stay
+direct children of CompareRow, so their option
+fill and bindings are exactly as before.
+
+Proof: new suite verify_r9_theme_align.py, run
+2026-11-21, ALL R9 THEME ALIGN CHECKS PASSED
+(exit 0). Desktop Light and Dark: the served
+rule reads gap 8px, the field computes gap 8px,
+the ALIGN ON label clears the C picker top by
+8px and its own dropdown by 8px, all four picker
+tops read 696, no horizontal overflow and no
+clipped leaf text, and Compare still stages A
+1048 and B 1047 with the caption naming CHARGE
+alignment. At 360px Light the row wraps and the
+pickers stack (tops 928, 973, 1018, 1086), the
+label clears its own dropdown by 8px, no
+overflow and no clipped text. Screenshots:
+r9-item8-fixed-desktop.png,
+r9-item8-fixed-360-scrolled.png,
+r9-item5-clean-light.png,
+r9-item5-clean-dark.png (lab showcase/shots
+only; the repo stays config only). Regression:
+validate_roastery_artisan.py VALIDATION PASS and
+verify_r7_hunt55.py ALL HUNT-55 CHECKS PASSED
+(17 checks, fixtures removed after). Lab left
+clean at 7 batches (1042-1048), 101 series, 0
+events, defaults restored (Fan 5, Heat 5,
+BatchNumber 1042, ActiveSource Simulated, Mode
+Off, ThemeMode System, DispAxisFormat m:ss,
+CompareAlignEvent charge, PressCaptureMode Group,
+PeriscopeAvailable True, background cleared,
+PhaseFromBg False), PressSlots empty.
+
+Deliberately left alone: the builder's
+STYLESHEET_CSS copy (stale, sibling resync in
+progress); worker C's align gap check, which
+looks for a leaf with textContent 'ALIGN ON'
+while the label's textContent is 'Align on'
+(the uppercase comes from CSS text-transform),
+so that check reports found false even with the
+geometry fixed; and any suite that writes
+ThemeMode through the API for its own walk,
+which is legitimate harness behavior, not an app
+defect.
+
+### Polish round 9: fresh hunting pass, HUNT-62, HUNT-63, HUNT-65 (worker C, 2026-11-21)
+
+Fresh hunting pass, worker C. New suite
+verify_r9_freshhunt.py (lab, mirrored to the repo
+roastery/scripts/), extending the round 8 suite:
+the four-page walk (Roast, Log, BatchDetail staged
+1042, Settings) at 1360px and 360px, light and
+dark, measuring horizontal overflow and clipped
+leaf text (Perspective footer excluded), the
+Settings scroll sweep at 360px dark (0/25/50/75/
+100%), a live roast at 360px dark measured at
+every stage (Charge, Dry End, FC Start, ghost,
+Drop) with the stats line shares and DTR checked
+after Drop, the saved roast's detail at 360px
+light, compare with three batches (A/B/C) at
+360px dark with the phone All-columns toggle, and
+static Artisan math checks run from the library
+sources. The suite does not retest the timezone
+TIME axis passthrough or HUNT-46 (beta-gated)
+and does not touch the press path (HUNT-53 app
+fix stays out of scope). The ThemeMode startup
+probe from the first version was removed after
+the dedicated probe below closed the question:
+it is racy in the shared lab because other
+suites write the tag through the API for their
+own walks. The ALIGN ON label gap is measured
+informationally only: the Log compare row is
+owned by worker A in this round (see item 8
+above), so the suite records the numbers
+without failing on them.
+
+Suite result (run 2, 2026-11-21, log
+~/workspace/ignition-lab/r9-freshhunt2.log):
+89 PASS, 2 FAIL, exit 1. The two failures are
+both harness, not app: the theme probe flip
+(closed by the dedicated probe below, a
+concurrent suite writing Light in the window)
+and a regex in the HUNT-65 shares check that
+read "00:0526%" as 526 (fixed; the table text
+parses to 26/37/37). Everything else passed,
+including the full walk at all four combos,
+the Settings sweep, the live roast at 360px
+dark (New Roast, Charge, Dry End, FC Start,
+ghost, Drop, Finish, Save Batch as 1049,
+Reset, Idle), detail-1049 delete through the
+Log UI, compare A/B/C at 360px dark, the
+All-columns toggle, and the HUNT-62 and
+HUNT-63 checks below. A third run hit a
+concurrent worker racing the same batch number
+(see the save note below) and died on a Log
+row click timeout; the HUNT-62, HUNT-63 and
+HUNT-65 checks in that run all passed before
+the race, and a focused save probe afterwards
+re-proved the save path end to end on a quiet
+lab.
+
+HUNT-62 (minor, fixed): the live AUC dropped
+the curve segment straddling the AUC begin
+event. core.auc_between kept only points at or
+after begin_sec, so with the default fixed base
+of 212 F it undercounted whenever the begin
+temp was above the base. Quantified against
+the exact from-begin integral on synthetic
+curves (200 F rising 0.4 F/s): with the begin
+between samples at 70.5 s on 1 s samples the
+old form read 283.20 against 283.43 exact,
+and on a 30 s grid with a Dry End begin at
+75 s the old form read 273.00 against 281.25
+exact. On a real roast the loss is the
+straddling segment only, about 0.2 F-min at
+the synthetic slope and about 1.5 F-min with
+a real Dry End begin near 300 F on live 1 s
+sampling, roughly 0.2% of a full roast AUC.
+(Artisan profileAUC counts the segment ending
+at the begin sample and the live updateAUC
+counts the newest segment each tick, so both
+Artisan paths include the straddle segment.)
+Fix, in roastery/core/code.py: auc_between
+now clips segments to begin_sec with an
+interpolated temp, the same shape
+batches._auc_range already uses. The saved
+batch AUC is unaffected (curve_auc
+integrates from charge, and the phase AUCs
+already clip). Proof: the suite's static
+checks compare the fixed function against an
+independently written exact integral,
+283.4325 vs 283.4325 on 1 s samples and
+281.25 vs 281.25 on the 30 s grid.
+
+HUNT-63 (minor, fixed): the phase shares on
+the stats line did not add to 100. A live
+roast (dry 8 s, FCs 12 s, drop 18 s) read Dry
+0:08 44%, Mai 0:04 22%, Dev 0:06 33%, which
+sums to 99: each share was rounded
+independently. Fix: core.shares_100, largest
+remainder rounding (floor every exact share,
+hand the leftover points to the largest
+fractional parts), used by core.stats_line_text
+for the live Roast page line, by
+batches.detail_startup for the BatchDetail
+stats line, and by batches._phase_analysis
+for the Phase Analysis table shares. When the
+shown durations do not cover the total (a
+partial roast with phases still missing) the
+shares cannot sum to 100 by construction, so
+plain rounding is used there instead. Proof,
+live at 360px dark: the same roast shape now
+reads Dry 0:08 45%, Mai 0:04 22%, Dev 0:06
+33%, DTR 33%, and the detail stats line for
+1042 reads 26/37/37. The DTR value itself was
+already right ((drop minus FCs) over drop) and
+is unchanged.
+
+HUNT-65 (minor, fixed): the Phase Analysis
+table on BatchDetail showed only the Cool row
+for every seeded batch, while the stats line
+directly above it showed all three phases.
+Root cause: batches._phase_analysis derives
+phase rows from the batch document's event
+times, and the seeded documents carry stored
+phase splits in doc['phases'] but no dryEnd
+or fcStart events (the migration stored
+durations, not event times). Proven on the
+gateway for 1042 (events: charge and drop
+only; phases: drying 5 s, maillard 7 s,
+development 7 s): the old function returned
+one row, Cool 00:01 5%. Fix, in
+batches/_phase_analysis: for seeded batches
+only (gated on seededFromRoastLog, so a real
+roast with unstamped events still shows no
+phase rather than a fabricated one from the
+0/total sentinel splits), a phase with no
+events still gets a row with its stored
+duration and share and '--' for gain, RoR
+and AUC, so the table agrees with the stats
+line. Proof, live on the gateway: 1042 now
+returns Drying 00:05 26%, Maillard 00:07
+37%, Development 00:07 37%, Cool 00:01 5%,
+and the suite's DOM read of the rendered
+table shows all four rows. A full-events doc
+exercised through the same function on the
+gateway still returns event derived gains
+and RoRs, so the save path (which calls
+phase_analysis) is unaffected.
+
+Checked and dismissed this round: the detail
+'Phase Analysis' and 'Turning Point' suite
+failures in run 1 were a probe artifact:
+innerText returns the rendered uppercase
+form of the section titles (CSS
+textTransform), so the mixed case search
+missed text that is on the page; the checks
+now match lowercase. The ThemeMode Light
+observation (round 8 candidate 5) is closed
+with no app fix: the dedicated probe
+r9_probe_theme.py (lab-only) found a 30 s
+idle window with no session never flips the
+tag, and fresh light and dark sessions
+sampled every 2 s for 30 s never flip it
+either; the flips seen mid investigation were
+concurrent suites writing the tag through the
+API, which worker A's section also caught in
+the act. The Yield and Conversion Calculator
+readouts sit exactly adjacent to the input
+boxes (0px gap, measured: the TEMP (F) input
+ends at x 1002 and the TEMP (C) readout
+starts at x 1002), because the roast-gap-*
+classes serve empty; worker A deliberately
+scoped the gap restore to the compare field
+only, so the calculator spacing stays as is
+for round 10 to judge, not filed here. The
+roast projection, turning point detection,
+AUC guide quadratic, DTR definition, phase
+RoR (Artisan RoR() from the turning point),
+weight loss, and RoR parameter ranges were
+all re-checked against Artisan 5.0.0 source
+(main.py calcAUC, profileAUC, RoR, updateAUC,
+updateAUCguide, canvas.py updateProjection)
+and match; no HUNT filed for them.
+
+Save race note (run 3): the suite's live
+roast saved nothing within 30 s and the
+1049 row never appeared in the Log table,
+then the suite died on the row click timeout.
+The save path itself is proven: the
+_phase_analysis call inside
+save_current_batch returns cleanly on a full
+events doc on the gateway, and a focused
+probe afterwards (r9_probe_save.py, lab-only)
+roasted and saved batch 1051 end to end on a
+quiet lab (saved True, Reset to Idle,
+fixture removed). The run 3 failure lines up
+with a concurrent worker racing the same
+batch number: their BatchNumber read 1050
+afterwards with a 16 row fixture 1050 in the
+database, and the app refuses a save whose
+batch number is already in the log by design.
+That fixture is theirs, not this worker's, so
+it was left in place: the lab ends at 8
+batches (1042-1048 plus 1050), 117 series, 0
+events, defaults restored (Fan 5, Heat 5,
+BatchNumber 1042, ActiveSource Simulated,
+Mode Off, ThemeMode System, DispAxisFormat
+m:ss, CompareAlignEvent charge,
+PressCaptureMode Group, PeriscopeAvailable
+True, background cleared, PhaseFromBg False),
+PressSlots empty.
+
+Files changed (this worker, uncommitted):
+roastery/project/Roastery/ignition/script-python/
+roastery/core/code.py (HUNT-62, HUNT-63),
+roastery/project/Roastery/ignition/script-python/
+roastery/batches/code.py (HUNT-63, HUNT-65),
+roastery/scripts/verify_r9_freshhunt.py (the
+suite, mirrored from the lab),
+roastery/docs/coffee-roaster-app.md (this
+section). The library files were copied to
+the gateway tree and POST /scan/projects
+returned 200; repo and gateway copies are
+identical by md5. No other files touched:
+the compare row, stylesheet, theme and
+startup scripts, setup_roastery_v4_tags.py,
+and the press path were left to their
+owners. Screenshots: r9-fresh-roast-live-
+360-dark.png, r9-fresh-roast-ghost-live-
+360-dark.png, r9-fresh-roast-dropped-
+360-dark.png, r9-fresh-detail-1049-360-
+light.png, r9-fresh-compare-abc-360-dark.png,
+r9-fresh-detail-1042-analysis-1360-light.png
+(lab showcase/shots only; the repo stays
+config only).
+
+Round 10 candidates: the calculator readout
+to input adjacency above (0px gaps from the
+dropped gap classes, pending a decision on
+whether any global gap restore is wanted);
+the HUNT-62 note that Artisan's own live and
+saved AUC paths differ by the same straddle
+segment, so the clipped form is exact from
+the begin second but sits just under
+profileAUC by that segment; the timezone TIME
+axis retest and HUNT-46 on the next Ignition
+beta; HUNT-53 still needs Eric's direction.
+
+### Polish round 9: closing battery, 41 of 41 green
+
+Battery run 2026-11-21, 07:46 to 09:48 MST,
+runner run_r9_battery.sh, results in
+~/workspace/ignition-lab/r9-battery/results.txt.
+No VM replacement and no gateway outage during
+the run. First pass: 39 of 41 suites green.
+Two first-pass failures, both diagnosed and
+rerun green, no genuine app failure
+outstanding. Exact counts: validator
+VALIDATION PASS; ChartLab CHECK REPORT, 0
+warnings; RoR 6 PASS, 1 designed SKIP; tier1
+42/42; tier2 87/87; tier3a 40/40; tier3b 47/47
+on rerun; tier3c 69/69; v4 60/60; polish1
+49/49; polish2 65/65; polish3 37/37;
+r6_customs 17/17; dark 10/10; r6_hunt 7/7;
+pressburst PASS; pressfault 62/62;
+deletecascade 15/15; r5_hunt3 7/7; axis
+14/14; detail span capture 9920 25 rows,
+9919 7 rows, 1042 7 rows, all labels even;
+r7_hunt54 33/33; r7_hunt55 17/17; r7_freshhunt
+41 PASS; r8_align 44 PASS; r8_freshhunt 75
+PASS; r9_style 34/34; r9_v4_udt PASS;
+r9_theme_align PASS; r9_freshhunt 87 PASS, 0
+FAIL; r5_hunt 12 PASS; r5_hunt2 6 PASS;
+r6_abc 16/16; r6_abc2 15 PASS on rerun;
+r4hunt A to E all DONE with no failures;
+cleanup_workspace exit 0; r7_udt_diff PASS,
+0 differences (RoastBatch 204, RoasterSource
+7).
+
+First-pass failure 1, verify_roastery_tier3b
+(rc=1, one check): the phase bar dry segment
+read 33 pct after PhaseFromBg was turned on,
+where the ghost share is 46 pct. Harness
+race, not an app defect: the suite's wait for
+the dev band to reach the ghost drop boundary
+returns at once because the saved targets
+(200/200/200) put the dev band at 600 s too,
+so the read landed milliseconds after the tag
+write, before the page re-rendered. Fix,
+suite only: wait up to 30 s for the dry
+segment itself to reach the ghost share
+before asserting, mirrored to the repo.
+Rerun rc=0, 47 PASS, 0 FAIL, dry segment
+46 pct.
+
+First-pass failure 2, verify_r6_abc2 (rc=1,
+three banner checks): the 2 hour Maker trial
+expired during the suite's 2 minute wait for
+elapsed time to reach 120 s, so the Roast
+page was not rendered at all (the screenshot
+shows the Trial Expired page). Environment
+incident, not an app defect and not a suite
+bug; the lab watch reset the trial right
+after (6954 s left when checked). Rerun with
+no change: rc=0, 15 PASS, 0 FAIL.
+
+Commits, local only, no push: 80e96f3
+(HUNT-62/63/65), 6c7e982 (items 6 and 9),
+2dfd021 (item 8), 9143c9f (builder mirror:
+the compare-field gap rule was missing from
+the builder STYLESHEET_CSS string, so a
+rebuild would have dropped the item 8 fix),
+74e1fab (battery tier3b suite fix). Remote
+head remains 900b2a2b5 (round 7); rounds 8
+and 9 are both local until Eric's word.
+
+Corrections to the worker C section above:
+its round 10 list still carries the v4 tag
+script fork and the stray gateway code.py
+duplicate as held, but both were done in
+this round by worker B (item 6 resync, item
+7 removal), so they are not round 10 items.
+HUNT-64 was never filed by any worker, so
+the next HUNT number is HUNT-66. The
+builder STYLESHEET_CSS staleness worker A
+noted is fixed for the compare-field rule by
+9143c9f, but the string is still stale for
+other rules; a full resync is a round 10
+candidate.
+
+Lab left clean at 7 batches (1042-1048),
+101 series, 0 events, defaults restored
+(Fan 5, Heat 5, BatchNumber 1042,
+ActiveSource Simulated, Mode Off, ThemeMode
+System, DispAxisFormat m:ss,
+CompareAlignEvent charge, PressCaptureMode
+Group, PeriscopeAvailable True, background
+cleared, PhaseFromBg False), PressSlots
+empty, 0 events stable after a 60 s idle
+wait, gateway RUNNING, trial about 5700 s
+at close. The battery agent found stale
+press contexts in slots 08 to 13 after the
+battery (counters 5464 to 5469, 0 events in
+the database) and cleared them per the
+HUNT-53 mitigation before the reruns.
+
+### Round 10 candidates
+
+1. Calculator readout to input adjacency (0px
+   gaps from the dropped gap classes): decide
+   whether any global gap restore is wanted,
+   or scope fixes field by field as item 8 did.
+2. The HUNT-62 note: Artisan's own live and
+   saved AUC paths differ by the straddle
+   segment, so the clipped form is exact from
+   the begin second but sits just under
+   profileAUC by that segment.
+3. The timezone TIME axis retest and HUNT-46
+   on the next Ignition beta (beta-gated).
+4. HUNT-53 app fix (delete and cleanup paths
+   clear the ring slots; recovery clears
+   PressSlots on a fresh database), still
+   needs Eric's direction. The lab mitigation
+   stays in effect.
+5. The packaged Docker boot test on Eric's
+   machine or homelab (Eric-side only).
+6. Builder STYLESHEET_CSS full resync: the
+   string is still stale for rules beyond the
+   compare-field fix in this round.
+7. The HUNT-58 self-heal claim still rests on
+   the wipe simulation, not on a live
+   replacement hitting the A-to-B chain.

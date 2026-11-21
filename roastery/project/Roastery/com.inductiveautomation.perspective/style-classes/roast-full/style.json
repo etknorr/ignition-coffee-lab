@@ -1,7 +1,5 @@
 {
   "base": {
-    "style": {
-      "width": "100%"
-    }
+    "style": {}
   }
 }

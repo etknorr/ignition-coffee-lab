@@ -844,7 +844,7 @@
         },
         "props": {
           "direction": "row",
-          "alignItems": "center",
+          "alignItems": "flex-end",
           "wrap": "wrap",
           "style": {
             "classes": "roast-gap-12"
@@ -949,7 +949,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "classes": "roast-gap-8"
+                "classes": "roast-gap-8 roast-compare-field"
               }
             },
             "children": [

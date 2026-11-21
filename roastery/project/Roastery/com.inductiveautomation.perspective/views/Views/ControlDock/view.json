@@ -140,6 +140,11 @@
                           }
                         }
                       }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "58px"
                     }
                   },
                   {
@@ -200,6 +205,11 @@
                           }
                         }
                       }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "58px"
                     }
                   }
                 ]
@@ -271,6 +281,11 @@
                           }
                         }
                       }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "58px"
                     }
                   },
                   {
@@ -331,6 +346,11 @@
                           }
                         }
                       }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "58px"
                     }
                   }
                 ]

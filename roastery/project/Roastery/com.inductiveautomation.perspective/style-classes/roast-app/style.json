@@ -1,8 +1,7 @@
 {
   "base": {
     "style": {
-      "backgroundColor": "var(--containerRoot)",
-      "minHeight": "100%"
+      "backgroundColor": "var(--containerRoot)"
     }
   }
 }

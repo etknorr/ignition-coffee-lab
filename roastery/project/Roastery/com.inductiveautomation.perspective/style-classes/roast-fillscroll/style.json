@@ -1,7 +1,6 @@
 {
   "base": {
     "style": {
-      "height": "100%",
       "overflowY": "auto"
     }
   }

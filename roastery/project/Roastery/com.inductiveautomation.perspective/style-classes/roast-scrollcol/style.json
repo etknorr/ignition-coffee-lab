@@ -1,8 +1,7 @@
 {
   "base": {
     "style": {
-      "overflowY": "auto",
-      "minHeight": "0px"
+      "overflowY": "auto"
     }
   }
 }

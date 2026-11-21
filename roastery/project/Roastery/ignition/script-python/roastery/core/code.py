@@ -925,6 +925,34 @@ def update_phase_label():
         pass
 
 
+def shares_100(durations, total):
+    """Whole percent shares of durations that always sum to
+    100 (HUNT-63). Largest remainder: floor every exact share,
+    then hand the leftover points to the largest fractional
+    parts (ties go to the longer duration). Independent
+    rounding can sum to 99 or 101: a live roast read Dry 44,
+    Mai 22, Dev 33. Returns ints aligned with durations, or
+    Nones when the total is not positive. When the durations
+    do not cover the total (a partial roast with phases still
+    missing), the shares cannot sum to 100 by construction,
+    so plain rounding is used instead."""
+    if total is None or float(total) <= 0:
+        return [None] * len(durations)
+    total = float(total)
+    if abs(sum(durations) - total) > 1.0:
+        return [int(round(float(d) * 100.0 / total))
+                for d in durations]
+    exact = [float(d) * 100.0 / total for d in durations]
+    floors = [int(math.floor(e)) for e in exact]
+    left = 100 - sum(floors)
+    order = sorted(range(len(exact)),
+                   key=lambda i: (exact[i] - floors[i], exact[i]),
+                   reverse=True)
+    for i in order[:max(0, left)]:
+        floors[i] += 1
+    return floors
+
+
 def _stats_mmss(sec):
     sec = int(max(0, round(float(sec))))
     return '%d:%02d' % (sec // 60, sec % 60)
@@ -958,19 +986,29 @@ def stats_line_text():
     total = drop if drop >= 0 else elapsed
     starts = [0.0, dry, fc]
     ends = [dry, fc, drop]
-    segs = []
+    durs = []
     for i in range(3):
         if ends[i] >= 0 and starts[i] >= 0:
-            dur = ends[i] - starts[i]
-            share = ('%d%%' % int(round(dur * 100.0 / total))
-                     if total > 0 else '--')
-            segs.append((_stats_mmss(dur), share))
+            durs.append(ends[i] - starts[i])
         elif (state == 'Roasting' and starts[i] >= 0
                 and (i == 0 or ends[i - 1] >= 0)):
-            dur = max(0.0, elapsed - starts[i])
-            share = ('%d%%' % int(round(dur * 100.0 / elapsed))
-                     if elapsed > 0 else '--')
-            segs.append((_stats_mmss(dur), share))
+            durs.append(max(0.0, elapsed - starts[i]))
+        else:
+            durs.append(None)
+    shown = [d for d in durs if d is not None]
+    shares = shares_100(shown, total)
+    share_by_idx = {}
+    k = 0
+    for i, d in enumerate(durs):
+        if d is not None:
+            share_by_idx[i] = shares[k]
+            k += 1
+    segs = []
+    for i in range(3):
+        if durs[i] is not None:
+            segs.append((_stats_mmss(durs[i]),
+                         ('%d%%' % share_by_idx[i])
+                         if share_by_idx[i] is not None else '--'))
         else:
             segs.append(('--:--', '--'))
     if drop >= 0:
@@ -1025,20 +1063,35 @@ def _track_turning_point(temp, elapsed):
 
 def auc_between(points, begin_sec, base):
     """Trapezoid area between the bean curve and the base temp,
-    from begin_sec on, in degree minutes. Per segment the
-    average of the two endpoint temps above the base times the
-    segment minutes; segments at or below the base contribute
-    nothing (Artisan calcAUC shape). points: [(t_sec, temp)]
+    from begin_sec on, in degree minutes. Segments are clipped
+    to the range with an interpolated temp at begin_sec (the
+    same shape as batches._auc_range): a segment straddling
+    the begin event contributes only its part after the
+    event, instead of being dropped whole. HUNT-62: the old
+    form kept only points at or after begin_sec, so with the
+    default fixed base of 212 F it undercounted the live AUC
+    by the straddling segment (about 0.5 F-min on 1 s samples
+    with a Dry End begin, about 8 F-min on a 30 s grid; the
+    Artisan profileAUC shape counts the segment ending at
+    the begin sample, the live updateAUC counts the newest
+    segment each tick, and this clipped form is the exact
+    integral from the begin second). Segments at or below
+    the base contribute nothing. points: [(t_sec, temp)]
     oldest first."""
-    pts = [(float(t), float(v)) for t, v in points if t >= begin_sec]
+    if begin_sec is None:
+        return 0.0
+    pts = [(float(t), float(v)) for t, v in points]
     auc = 0.0
     for i in range(len(pts) - 1):
-        dt = (pts[i + 1][0] - pts[i][0]) / 60.0
-        if dt <= 0:
+        t0, v0 = pts[i]
+        t1, v1 = pts[i + 1]
+        if t1 <= begin_sec or t1 <= t0:
             continue
-        avg = (pts[i][1] + pts[i + 1][1]) / 2.0
+        a = max(t0, float(begin_sec))
+        va = v0 + (v1 - v0) * (a - t0) / (t1 - t0)
+        avg = (va + v1) / 2.0
         if avg > base:
-            auc += (avg - base) * dt
+            auc += (avg - base) * (t1 - a) / 60.0
     return auc
 
 

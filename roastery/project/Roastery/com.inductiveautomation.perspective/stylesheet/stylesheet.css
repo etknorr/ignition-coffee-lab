@@ -137,6 +137,14 @@
    rows keep their fixed heights. */
 .psc-roast-btn-compact { min-height: 28px; }
 
+/* Save-note labels reserve their line: the class compiler strips
+   min-height from style classes, so the 18px floor in
+   roast-note-success never applied and an empty note measured 0px
+   tall, shifting the layout when text appeared. A position basis
+   cannot reserve height for the two notes whose parent is a row,
+   so the floor lives here, next to the compact 28px floor. */
+.psc-roast-note-success { min-height: 18px; }
+
 /* Gear buttons keep a square 40px footprint in headers and
    the HUD. */
 .psc-roast-gear-btn { min-height: 40px; }
@@ -148,6 +156,20 @@
    both fit at 360px. */
 .psc-roast-hud { gap: 3px !important; padding: 3px 4px !important; }
 .psc-roast-hud-field { padding-left: 4px !important; }
+
+/* ---- polish round 9: compare row caption gap (item 8) ------------
+   The Log compare row mixes bare batch pickers with one
+   labeled column (the Align picker), and the row bottom
+   aligns its children, so the ALIGN ON caption sits above
+   its own dropdown with clear space instead of crowding the
+   top edge of the C picker. The 8px caption to control gap
+   lives here, not in the roast-gap-8 style class: the class
+   compiler drops gap from style classes (proven live: every
+   gap rule serves empty while the sibling properties in the
+   same files serve). Scoped to the compare field only, so no
+   other layout moves; restoring gap globally would shift
+   exact fit rows elsewhere. */
+.psc-roast-compare-field { gap: 8px; }
 
 
 /* ---- polish round 6: HUD clock clip (HUNT-49) ---------------------

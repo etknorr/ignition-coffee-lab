@@ -6266,8 +6266,7 @@ def write_library():
 # style classes with psc- in the DOM).
 
 STYLE_CLASSES = {
-    'roast-app': {'backgroundColor': 'var(--containerRoot)',
-                  'minHeight': '100%'},
+    'roast-app': {'backgroundColor': 'var(--containerRoot)'},
     'roast-header': {
         'backgroundColor': 'var(--container)',
         'backgroundImage': 'linear-gradient(90deg, var(--container), var(--containerNested))',
@@ -6390,7 +6389,7 @@ STYLE_CLASSES = {
     'roast-section-div': {'paddingTop': '12px', 'gap': '8px'},
     'roast-scroll': {'backgroundColor': 'var(--containerRoot)',
                      'padding': '20px', 'gap': '16px',
-                     'height': '100%', 'overflowY': 'auto'},
+                     'overflowY': 'auto'},
     'roast-content': {'padding': '16px 20px', 'gap': '12px'},
     'roast-status': {'fontSize': '12px', 'fontWeight': '700'},
     'roast-alarm-cap': {'fontSize': '13px', 'fontWeight': '700',
@@ -6404,7 +6403,7 @@ STYLE_CLASSES = {
                    'color': 'var(--neutral-70)'},
     'roast-value-right': {'fontSize': '14px', 'fontWeight': '700',
                           'color': 'var(--label)', 'textAlign': 'right'},
-    'roast-full': {'width': '100%'},
+    'roast-full': {},
     'roast-gap-8': {'gap': '8px'},
     'roast-gap-10': {'gap': '10px'},
     'roast-gap-12': {'gap': '12px'},
@@ -6436,15 +6435,13 @@ STYLE_CLASSES = {
     'roast-controldock': {'backgroundColor': 'var(--container)',
                                'padding': '8px 10px', 'gap': '8px',
                           'boxShadow': '0 -4px 12px rgba(0,0,0,0.12)'},
-    'roast-btn-lg': {'fontSize': '15px', 'padding': '13px 8px',
-                     'minHeight': '52px'},
-    'roast-btn-step-lg': {'fontSize': '21px', 'padding': '8px 16px',
-                          'minWidth': '58px', 'minHeight': '52px'},
-    'roast-fillscroll': {'height': '100%', 'overflowY': 'auto'},
-    'roast-scrollcol': {'overflowY': 'auto', 'minHeight': '0px'},
+    'roast-btn-lg': {'fontSize': '15px', 'padding': '13px 8px'},
+    'roast-btn-step-lg': {'fontSize': '21px', 'padding': '8px 16px'},
+    'roast-fillscroll': {'overflowY': 'auto'},
+    'roast-scrollcol': {'overflowY': 'auto'},
     'roast-dock-editor': {'backgroundColor': 'var(--containerRoot)',
                           'padding': '18px 20px', 'gap': '12px',
-                          'height': '100%', 'overflowY': 'auto'},
+                          'overflowY': 'auto'},
     'roast-section-desc': {'fontSize': '12.5px',
                            'color': 'var(--neutral-70)',
                            'lineHeight': '1.45'},
@@ -6454,7 +6451,7 @@ STYLE_CLASSES = {
                      'letterSpacing': '0.08em'},
     'roast-table-sm': {'fontSize': '12.5px', 'color': 'var(--label)',
                        'backgroundColor': 'var(--container)'},
-    'roast-h100': {'height': '100%'},
+    'roast-h100': {},
     'roast-stats-line': {'fontSize': '11px', 'fontWeight': '600',
                          'color': 'var(--neutral-70)',
                          'whiteSpace': 'nowrap',
@@ -6549,6 +6546,18 @@ STYLESHEET_CSS = """/* Roastery advanced stylesheet.
 /* Touch targets: every roast button is at least 44px tall. */
 .psc-roast-btn { min-height: 44px; }
 .psc-roast-tab-btn { min-height: 48px; }
+
+/* Save-note labels reserve their line: the class compiler strips
+   min-height from style classes, so the 18px floor in
+   roast-note-success never applied and an empty note measured 0px
+   tall, shifting the layout when text appeared. */
+.psc-roast-note-success { min-height: 18px; }
+
+/* Compare field gap: the class compiler drops the gap property
+   from style classes, so the ALIGN ON caption relied on a gap
+   that served 0px. The scoped rule restores the 8px
+   caption-to-control gap on the Log compare row only. */
+.psc-roast-compare-field { gap: 8px; }
 .psc-roast-tab-btn:hover { background: var(--containerNested); }
 
 /* ---- v4.1 declutter (Eric's phone, 360px) ---------------------
@@ -7786,9 +7795,10 @@ def check_in(name, member):
             'propConfig': {'props.selected': {'binding': tag_binding(
                 T(member), bidirectional=True)}}}
 
-def cfg_field(name, caption, comp, basis='180px'):
+def cfg_field(name, caption, comp, basis='180px',
+              classes='roast-gap-8'):
     cap = label(name + 'Cap', caption, 'roast-form-caption')
-    return flex(name, 'column', [cap, comp], classes='roast-gap-8',
+    return flex(name, 'column', [cap, comp], classes=classes,
                 position={'grow': 1, 'shrink': 1, 'basis': basis})
 
 def cfg_row(name, fields):
@@ -8036,9 +8046,11 @@ def batches_panel_view():
                                   tag_dropdown('CmpAlign',
                                                'CompareAlignEvent',
                                                align_opts),
-                                  basis='150px'),
+                                  basis='150px',
+                                  classes='roast-gap-8 '
+                                          'roast-compare-field'),
                         cmp_btn],
-                       align='center', wrap='wrap',
+                       align='flex-end', wrap='wrap',
                        classes='roast-gap-12')
     cmp_cap = label('CompareCaption', '', 'roast-note',
                     prop_config={'props.text': {'binding': prop_binding(

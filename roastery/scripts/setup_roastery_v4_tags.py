@@ -32,6 +32,17 @@ Changes from the v2 (Artisan) setup:
   named queries) and its existing rows are restored from
   roastlog-backup.json when that file is present, so the seed
   migration in roastery.batches can read them from the tag.
+- Round 9 resync (2026-11-21): the UDT list now matches the live
+  gateway exactly (203 members plus the Sources folder, 0
+  differences by member diff against a fresh live export). It
+  had drifted by two members added after v4 (CompareAlignEvent
+  from round 8 HUNT-56, LastActionBatchNumber from round 5
+  HUNT-45) and by the old custom event slot 2 to 4 defaults
+  (now blank, per the round 6 defaults). The stepped simulator
+  program this script generates matches the live RoasterSim
+  instructions.csv exactly. This is the setup script the README
+  and PACKAGING name for a fresh gateway; do not run it against
+  the live lab except for an intended rebuild.
 
 Run with wsvenv python. Destructive to the old Roastery tag tree by
 design (lab): the old UDTs and instance are deleted first.
@@ -575,6 +586,7 @@ MEMBERS += [
         doc='Seconds since charge at the last press.'),
     mem('LastActionAt', 'DateTime', None, omit_value=True,
         doc='Wall clock time of the last press.'),
+    mem('LastActionBatchNumber', 'Int4', 1042, doc='Batch number at the last press, stamped by roastery.core.record_press. The PressEvents group reads this instead of the live BatchNumber, so a press is recorded against the batch it belonged to even when the batch number changes before the group executes (polish round 5, HUNT-45).'),
     mem('PressCaptureMode', 'String', 'Group',
         doc='Who writes batch_events rows: Library (named query) '
             'or Group (SQLBridge transaction group). Default is '
@@ -599,11 +611,15 @@ MEMBERS += [
     mem('SeriesCaptureMode', 'String', 'Library',
         doc='Who writes batch_series rows: Library (CurveSamples '
             'at save) or Group (transaction group, live).'),
+    # Polish round 8 (HUNT-56): compare alignment event, after
+    # Artisan 5.0.0 alignEvent. Added in the round 9 resync; the
+    # live UDT gained it in round 8 and this script had not.
+    mem('CompareAlignEvent', 'String', 'charge', doc='Polish round 8 (HUNT-56): compare alignment event, after Artisan 5.0.0 alignEvent. Stored keys: charge, dryEnd, fcStart, fcEnd, scStart, scEnd, drop (Artisan labels CHARGE, DRY, FCs, FCe, SCs, SCe, DROP). roastery.batches.build_compare shifts every compared curve so the chosen event lands on the same 30 s grid step, slot A as the reference; a batch missing the event falls back to its charge. Bound in Settings Display and on the Log compare row, one tag for both.'),
 ]
 for i, (nm, kind) in enumerate([('Fan Boost', 'Airflow'),
-                                ('Drum Note', 'Note'),
-                                ('Custom 3', 'Info'),
-                                ('Custom 4', 'Info')], start=1):
+                                ('', ''),
+                                ('', ''),
+                                ('', '')], start=1):
     MEMBERS += [
         mem(f'CustomEvent{i}Name', 'String', nm),
         mem(f'CustomEvent{i}Kind', 'String', kind),

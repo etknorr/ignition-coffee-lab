@@ -2111,7 +2111,7 @@
                                 "props": {
                                   "text": "-10s",
                                   "style": {
-                                    "classes": "roast-btn-sm roast-btn-ghost roast-btn-compact"
+                                    "classes": "roast-btn-ghost roast-btn-compact"
                                   }
                                 },
                                 "events": {
@@ -2171,7 +2171,7 @@
                                 "props": {
                                   "text": "+10s",
                                   "style": {
-                                    "classes": "roast-btn-sm roast-btn-ghost roast-btn-compact"
+                                    "classes": "roast-btn-ghost roast-btn-compact"
                                   }
                                 },
                                 "events": {
@@ -2200,7 +2200,7 @@
                                 "props": {
                                   "text": "Latest",
                                   "style": {
-                                    "classes": "roast-btn-sm roast-btn-ghost roast-btn-compact"
+                                    "classes": "roast-btn-ghost roast-btn-compact"
                                   }
                                 },
                                 "events": {
@@ -5195,7 +5195,7 @@
                             "props": {
                               "text": "-10s",
                               "style": {
-                                "classes": "roast-btn-sm roast-btn-ghost roast-btn-compact"
+                                "classes": "roast-btn-ghost roast-btn-compact"
                               }
                             },
                             "events": {
@@ -5255,7 +5255,7 @@
                             "props": {
                               "text": "+10s",
                               "style": {
-                                "classes": "roast-btn-sm roast-btn-ghost roast-btn-compact"
+                                "classes": "roast-btn-ghost roast-btn-compact"
                               }
                             },
                             "events": {
@@ -5284,7 +5284,7 @@
                             "props": {
                               "text": "Latest",
                               "style": {
-                                "classes": "roast-btn-sm roast-btn-ghost roast-btn-compact"
+                                "classes": "roast-btn-ghost roast-btn-compact"
                               }
                             },
                             "events": {

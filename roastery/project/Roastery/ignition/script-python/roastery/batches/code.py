@@ -1581,6 +1581,12 @@ def _phase_analysis(doc, points):
     at the FC sample), the total RoR (TP to drop), and a cool
     phase line (drop to the cool end: the imported Artisan
     COOL time when present, else the last stored sample).
+    Seeded batches (HUNT-65) carry stored phase splits but
+    no event times; for those, and only those, a phase with
+    no events still gets a row with its stored duration and
+    share and '--' for gain, RoR and AUC, so the table
+    agrees with the stats line instead of showing only the
+    Cool row.
     Returns (table rows, turning point text, extra dict)."""
     events = doc.get('events') or {}
     meta = doc.get('metadata') or {}
@@ -1636,10 +1642,33 @@ def _phase_analysis(doc, points):
     bounds = (('Drying', 0, dry_t, dry_gain, dry_ror),
               ('Maillard', dry_t, fc_t, None, None),
               ('Development', fc_t, drop_t, None, None))
+    # Seeded batches (HUNT-65) carry stored phase splits in
+    # doc['phases'] but no event times, so the event derived
+    # rows below vanish while the stats line shows the same
+    # splits. Only the migration source carries event-less
+    # splits: a real roast with unstamped events has no phase
+    # at all, and its stored splits are 0/total sentinels,
+    # so the fallback is gated on seededFromRoastLog.
+    seeded = bool(doc.get('seededFromRoastLog'))
+    stored = doc.get('phases') or {}
+    stored_sec = {'Drying': stored.get('dryingSec'),
+                  'Maillard': stored.get('maillardSec'),
+                  'Development': stored.get('developmentSec')}
     phases = {}
     rows = []
+    entries = []
     for name, ta, tb, gain, ror in bounds:
         if ta is None or tb is None or tb <= ta:
+            if seeded:
+                s = stored_sec.get(name)
+                if s is not None and float(s) > 0:
+                    dur = float(s)
+                    entries.append((name, dur, None, None, None))
+                    phases[name] = {'sec': dur,
+                                    'sharePct': (dur * 100.0 / total)
+                                    if total else None,
+                                    'deltaF': None, 'rorFMin': None,
+                                    'aucFMin': None}
             continue
         dur = tb - ta
         if gain is None:
@@ -1666,9 +1695,16 @@ def _phase_analysis(doc, points):
                         if total else None,
                         'deltaF': gain, 'rorFMin': ror,
                         'aucFMin': auc}
+        entries.append((name, dur, gain, ror, auc))
+    # HUNT-63: the phase shares are largest remainder shares
+    # of the shown durations, so they always sum to 100 on a
+    # complete roast instead of 99 or 101 by independent
+    # rounding.
+    shares = core.shares_100([e[1] for e in entries], total)
+    for (name, dur, gain, ror, auc), share in zip(entries,
+                                                  shares):
         rows.append([name, _mmss(dur),
-                     ('%.0f%%' % (dur * 100.0 / total))
-                     if total else '--',
+                     ('%d%%' % share) if share is not None else '--',
                      ('%+.0f F' % gain) if gain is not None
                      else '--',
                      ('%.1f F/min' % ror) if ror is not None
@@ -1758,11 +1794,19 @@ def detail_startup(self):
     # total roast time. No new math: the phase seconds and the
     # DTR percent come straight from the document phases block.
     _tot = float(doc.get('totalSec') or 0)
+    # HUNT-63: the three shares are largest remainder shares
+    # of the stored phase splits, so they always sum to 100
+    # instead of 99 or 101 by independent rounding.
+    _shares = core.shares_100(
+        [phases.get('dryingSec') or 0.0,
+         phases.get('maillardSec') or 0.0,
+         phases.get('developmentSec') or 0.0], _tot)
 
-    def _share(sec):
+    def _share(idx, sec):
         if not _tot or sec is None:
             return '--'
-        return '%d%%' % int(round(float(sec) * 100.0 / _tot))
+        v = _shares[idx]
+        return ('%d%%' % v) if v is not None else '--'
     def _ms(sec):
         # Polish round 1 item 5: a phase the document does not
         # have reads --:--, matching its -- share, never 0:00.
@@ -1773,11 +1817,11 @@ def detail_startup(self):
     _sep = ' ' + chr(183) + ' '
     self.view.custom.dStatsLine = _sep.join([
         'Dry %s %s' % (_ms(phases.get('dryingSec')),
-                       _share(phases.get('dryingSec'))),
+                       _share(0, phases.get('dryingSec'))),
         'Mai %s %s' % (_ms(phases.get('maillardSec')),
-                       _share(phases.get('maillardSec'))),
+                       _share(1, phases.get('maillardSec'))),
         'Dev %s %s' % (_ms(phases.get('developmentSec')),
-                       _share(phases.get('developmentSec'))),
+                       _share(2, phases.get('developmentSec'))),
         'DTR %s' % (('%.0f%%' % phases['dtrPct'])
                     if phases.get('dtrPct') is not None
                     else '--')])
