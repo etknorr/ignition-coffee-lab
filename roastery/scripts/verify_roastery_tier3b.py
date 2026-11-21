@@ -525,15 +525,28 @@ def main():
                            B + '/PhaseDevTargetSec', B + '/DTRTargetPct'])
         check('saved targets still untouched with the option on',
               saved == [200, 200, 200, 25.0], saved)
-        seg = desk.evaluate("""() => {
-          const els = [...document.querySelectorAll('.psc-roast-seg')]
-            .filter(e => { const r = e.getBoundingClientRect();
-                           return r.width > 0; });
-          if (!els.length) return null;
-          const bar = els.reduce((a, e) => a + e.getBoundingClientRect().width, 0);
-          const dry = els[0].getBoundingClientRect().width;
-          return {share: dry / bar, text: els[0].textContent};
-        }""")
+
+        def dry_seg():
+            return desk.evaluate("""() => {
+              const els = [...document.querySelectorAll('.psc-roast-seg')]
+                .filter(e => { const r = e.getBoundingClientRect();
+                               return r.width > 0; });
+              if (!els.length) return null;
+              const bar = els.reduce((a, e) => a + e.getBoundingClientRect().width, 0);
+              const dry = els[0].getBoundingClientRect().width;
+              return {share: dry / bar, text: els[0].textContent};
+            }""")
+
+        # The dev band wait above cannot sync this read: the
+        # saved targets (200/200/200) put the dev band at 600 s
+        # too, so it returns at once and the page may still show
+        # the pre-write 33 pct. Wait for the bar itself to
+        # follow the ghost before asserting.
+        seg = wait_until(
+            lambda: (lambda s: s if s is not None
+                     and abs(s['share'] - 270.0 / 585.0) < 0.04
+                     else None)(dry_seg()),
+            timeout=30)
         check('phase bar dry segment follows the ghost share '
               '(270 of 585, about 46 pct)',
               seg is not None and abs(seg['share'] - 270.0 / 585.0) < 0.04,
