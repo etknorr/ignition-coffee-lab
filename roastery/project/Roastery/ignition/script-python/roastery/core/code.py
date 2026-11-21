@@ -1222,6 +1222,34 @@ def evaluate_alarms():
             or vals['StartTime'] is None):
         if vals['State'] == 'Idle':
             write_members([('AlarmText', ''), ('AlarmActive', False)])
+        elif vals['State'] == 'Complete':
+            # HUNT-76: a Banner alarm fired during the roast
+            # used to stay on the Complete screen forever (the
+            # roast is over but nothing re-evaluates alarms in
+            # Complete, so the text never cleared even after
+            # the bean cooled below the threshold). The roast
+            # is over, so Banner texts clear at Finish; a
+            # latched Message alarm keeps showing, per its
+            # documented rule (latched until the next charge
+            # or reset). This branch runs on the Finish press
+            # itself (finish records the press after writing
+            # Complete) and on any later press or alarm edit
+            # while Complete.
+            fired = []
+            if vals['_AlarmFiredJson']:
+                try:
+                    fired = system.util.jsonDecode(
+                        vals['_AlarmFiredJson'])
+                except Exception:
+                    fired = []
+            texts = []
+            for i, a in enumerate(alarm_definitions()):
+                if (a.get('action') == 'Message'
+                        and i in fired):
+                    texts.append(a.get('message')
+                                 or a.get('name') or 'Alarm')
+            write_members([('AlarmText', ' | '.join(texts)),
+                           ('AlarmActive', bool(texts))])
         return
     elapsed = elapsed_sec(vals['StartTime'])
     fired = []

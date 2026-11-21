@@ -291,44 +291,22 @@ def editor_save(desk, dry_end):
     """Open the BatchEdit slide over for batch 1042 from the
     Log page, set the Dry End time, save. Returns the dock
     locator. Mirrors the polish1 editor walk."""
-    desk.goto(BASE + '/log', wait_until='networkidle',
-              timeout=60000)
-    desk.wait_for_timeout(5000)
-    dismiss(desk)
-    rows_el = desk.locator('.ia_table__row')
-    picked = False
-    for i in range(rows_el.count()):
-        rows_el.nth(i).click()
-        desk.wait_for_timeout(900)
-        if int(tag('[default]Roastery/SelectedBatchNumber')
-               or 0) == 1042:
-            picked = True
-            break
-    assert picked, 'batch 1042 row not selectable'
-    desk.get_by_role('button', name='Details').first.click()
-    desk.wait_for_timeout(5000)
-    dismiss(desk)
-    desk.get_by_role('button', name='Edit', exact=True).click()
-    desk.wait_for_timeout(4500)
-    dockv = desk.locator('.docked-view-right')
-    assert 'Edit Batch 1042' in dockv.inner_text()
-    # Polish round 2 item 2: wait for the fully mounted form
-    # (59 inputs in the dock DOM) before typing; in a stalled
-    # long lived session the title renders with only a
-    # partial mount and fills land nowhere.
-    mounted = wait_until(
-        lambda: dockv.locator('input').count() >= 59,
-        timeout=120, step=0.5)
-    if not mounted:
-        # Polish round 2 part A: reload recovery. Reload the
-        # page once and reopen the editor on the fresh page
-        # instance (the item 2 recovery: a fresh instance
-        # always renders the form), then poll again; only a
-        # second stall fails the assert below.
-        print('SUITE NOTE: reload recovery fired in polish3 '
-              'editor_save (mount poll timed out); reloading '
-              'the page and reopening the editor once')
-        desk.reload(wait_until='networkidle', timeout=60000)
+    def open_once():
+        desk.goto(BASE + '/log', wait_until='networkidle',
+                  timeout=60000)
+        desk.wait_for_timeout(5000)
+        dismiss(desk)
+        rows_el = desk.locator('.ia_table__row')
+        picked = False
+        for i in range(rows_el.count()):
+            rows_el.nth(i).click()
+            desk.wait_for_timeout(900)
+            if int(tag('[default]Roastery/SelectedBatchNumber')
+                   or 0) == 1042:
+                picked = True
+                break
+        assert picked, 'batch 1042 row not selectable'
+        desk.get_by_role('button', name='Details').first.click()
         desk.wait_for_timeout(5000)
         dismiss(desk)
         desk.get_by_role('button', name='Edit',
@@ -336,63 +314,113 @@ def editor_save(desk, dry_end):
         desk.wait_for_timeout(4500)
         dockv = desk.locator('.docked-view-right')
         assert 'Edit Batch 1042' in dockv.inner_text()
+        # Polish round 2 item 2: wait for the fully mounted
+        # form (59 inputs in the dock DOM) before typing; in
+        # a stalled long lived session the title renders with
+        # only a partial mount and fills land nowhere.
         mounted = wait_until(
             lambda: dockv.locator('input').count() >= 59,
             timeout=120, step=0.5)
-    assert mounted, 'editor form never fully rendered (dock inputs)'
-    inp = dockv.locator(
-        "xpath=//*[contains(text(),'Dry End time')]"
-        "/following::input[1]")
-    save_btn = dockv.get_by_role('button', name='Save Batch')
-    # Polish round 2 closing fix: port the v4 suite's proven
-    # editor typing technique (its prefill wait and its
-    # set_event_time). The old fill() loop raced the editor's
-    # asynchronous prefill in an aged session: fill() sets the
-    # DOM value without the key events the form's change
-    # tracking listens for, and a prefill landing after the
-    # fill stomps the typed value, so the form reads pristine
-    # and Save Batch (autoDisable) never enables; that crash
-    # ended both closing battery runs at the kill switch save,
-    # and the reload recovery above covers only the mount
-    # poll, not this post typing assert.
-    # Step 1, confirm the prefill has settled before typing:
-    # wait until the Dry End field holds the value the saved
-    # batch document says it prefills with (the v4 suite
-    # waits for its FC Start field to show the stamped time
-    # the same way before editing anything).
-    _doc = json.loads(psql(
-        'SELECT data FROM batches WHERE batch_number = 1042'))
-    _dry_t = ((_doc.get('events') or {}).get('dryEnd')
-              or {}).get('t')
-    _prefill = ('%02d:%02d' % (int(_dry_t) // 60,
-                               int(_dry_t) % 60)
-                if _dry_t is not None else '')
-    wait_until(lambda: inp.first.input_value() == _prefill,
-               timeout=30, step=0.5)
-    # Step 2, type like a user and confirm the typed value
-    # stuck (the v4 set_event_time body): click, select all,
-    # press_sequentially so real key events register the
-    # edit, Tab, wait, then read the field back; if a late
-    # prefill refresh stomped it, retype. The Save enable
-    # wait also rechecks the field value, so a stomp during
-    # that wait loops back to retyping instead of asserting
-    # on a pristine form.
-    enabled = None
-    for _try in range(3):
-        for _type_try in range(2):
-            inp.first.click()
-            inp.first.press('Control+a')
-            inp.first.press_sequentially(dry_end, delay=60)
-            inp.first.press('Tab')
-            desk.wait_for_timeout(1200)
-            if inp.first.input_value() == dry_end:
-                break
-        enabled = wait_until(
-            lambda: (not save_btn.first.is_disabled()
-                     and inp.first.input_value() == dry_end),
-            timeout=20, step=0.5)
-        if enabled:
-            break
+        if not mounted:
+            # Polish round 2 part A: reload recovery. Reload
+            # the page once and reopen the editor on the fresh
+            # page instance (the item 2 recovery: a fresh
+            # instance always renders the form), then poll
+            # again; only a second stall fails the assert below.
+            print('SUITE NOTE: reload recovery fired in polish3 '
+                  'editor_save (mount poll timed out); reloading '
+                  'the page and reopening the editor once')
+            desk.reload(wait_until='networkidle', timeout=60000)
+            desk.wait_for_timeout(5000)
+            dismiss(desk)
+            desk.get_by_role('button', name='Edit',
+                             exact=True).click()
+            desk.wait_for_timeout(4500)
+            dockv = desk.locator('.docked-view-right')
+            assert 'Edit Batch 1042' in dockv.inner_text()
+            mounted = wait_until(
+                lambda: dockv.locator('input').count() >= 59,
+                timeout=120, step=0.5)
+        assert mounted, ('editor form never fully rendered '
+                         '(dock inputs)')
+        return dockv
+
+    def try_type(dockv):
+        inp = dockv.locator(
+            "xpath=//*[contains(text(),'Dry End time')]"
+            "/following::input[1]")
+        save_btn = dockv.get_by_role('button',
+                                     name='Save Batch')
+        # Polish round 2 closing fix: port the v4 suite's
+        # proven editor typing technique (its prefill wait and
+        # its set_event_time). The old fill() loop raced the
+        # editor's asynchronous prefill in an aged session:
+        # fill() sets the DOM value without the key events the
+        # form's change tracking listens for, and a prefill
+        # landing after the fill stomps the typed value, so the
+        # form reads pristine and Save Batch (autoDisable)
+        # never enables; that crash ended both closing battery
+        # runs at the kill switch save, and the reload recovery
+        # above covers only the mount poll, not this post
+        # typing assert.
+        # Step 1, confirm the prefill has settled before
+        # typing: wait until the Dry End field holds the value
+        # the saved batch document says it prefills with (the
+        # v4 suite waits for its FC Start field to show the
+        # stamped time the same way before editing anything).
+        _doc = json.loads(psql(
+            'SELECT data FROM batches WHERE batch_number = 1042'))
+        _dry_t = ((_doc.get('events') or {}).get('dryEnd')
+                  or {}).get('t')
+        _prefill = ('%02d:%02d' % (int(_dry_t) // 60,
+                                   int(_dry_t) % 60)
+                    if _dry_t is not None else '')
+        wait_until(lambda: inp.first.input_value() == _prefill,
+                   timeout=30, step=0.5)
+        # Step 2, type like a user and confirm the typed value
+        # stuck (the v4 set_event_time body): click, select all,
+        # press_sequentially so real key events register the
+        # edit, Tab, wait, then read the field back; if a late
+        # prefill refresh stomped it, retype. The Save enable
+        # wait also rechecks the field value, so a stomp during
+        # that wait loops back to retyping instead of asserting
+        # on a pristine form.
+        for _try in range(3):
+            for _type_try in range(2):
+                inp.first.click()
+                inp.first.press('Control+a')
+                inp.first.press_sequentially(dry_end, delay=60)
+                inp.first.press('Tab')
+                desk.wait_for_timeout(1200)
+                if inp.first.input_value() == dry_end:
+                    break
+            enabled = wait_until(
+                lambda: (not save_btn.first.is_disabled()
+                         and inp.first.input_value() == dry_end),
+                timeout=20, step=0.5)
+            if enabled:
+                return dockv, save_btn, True
+        return dockv, save_btn, False
+
+    dockv = open_once()
+    dockv, save_btn, enabled = try_type(dockv)
+    if not enabled:
+        # Round 10: the same kill switch save that the round 2
+        # comment names died twice in a row here (resumed
+        # battery and standalone rerun) with Save Batch never
+        # enabling, while fresh-page probes with the same
+        # prefill and both PeriscopeAvailable values, plain
+        # remounts, and the full roast plus latch plus reset
+        # sequence all pass. The form mounts (59 inputs) but
+        # the aged page instance stops applying the edit, the
+        # HUNT-46 class. One reload recovery on the fresh page
+        # instance, the same remedy the mount poll already
+        # uses; only a second failure asserts.
+        print('SUITE NOTE: reload recovery fired in polish3 '
+              'editor_save (Save never enabled after typing); '
+              'reloading the page and reopening the editor once')
+        dockv = open_once()
+        dockv, save_btn, enabled = try_type(dockv)
     assert enabled, 'editor Save Batch never enabled'
     save_btn.first.click()
     saved = wait_until(

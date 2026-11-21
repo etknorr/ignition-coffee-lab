@@ -214,7 +214,17 @@ def build_document():
     lossd = loss_yield_density(vals)
     loss = lossd.get('weightLossPct')
     if loss is None:
-        loss = ((charge_w - out_w) * 100.0 / charge_w) if out_w > 0 and charge_w > 0 else 0.0
+        # HUNT-74: the old fallback did the raw arithmetic
+        # ((green - roasted) / green), which goes negative
+        # when the roasted weight exceeds the green weight
+        # (a bad scale entry: WeightOutG 250 on a 200 g
+        # charge read -25%). Artisan weight_loss returns 0
+        # in exactly that case, and _weight_loss is that
+        # function, so the fallback uses it. The out_w guard
+        # stays: with no roasted weight recorded the loss is
+        # 0, not 100%.
+        loss = (_weight_loss(charge_w, out_w)
+                if out_w > 0 and charge_w > 0 else 0.0)
     doc = {
         'batchNumber': vals['BatchNumber'],
         'beanName': vals['BeanName'],
@@ -424,6 +434,33 @@ def save_current_batch(self):
 
 # ---------------------------------------------------------------- edit form
 
+def _recompute_loss(doc):
+    """Recompute the weight loss figures from the document's
+    current metadata (HUNT-75): the slide over editor used to
+    save edited weights without touching doc['weightLossPct']
+    or doc['loss'], so the BatchDetail Weight Loss tile kept
+    the save-time value while the Loss section (recomputed
+    live from metadata in detail_startup) showed the new one.
+    Same guarded math as build_document, so an edit that
+    pushes the roasted weight over the green weight reads 0,
+    not a negative loss (HUNT-74)."""
+    meta = doc.get('metadata') or {}
+    lossd = loss_yield_density(meta)
+    doc['loss'] = lossd
+    win = 0.0
+    wout = 0.0
+    try:
+        win = float(meta.get('ChargeWeightG') or 0.0)
+        wout = float(meta.get('WeightOutG') or 0.0)
+    except Exception:
+        pass
+    loss = lossd.get('weightLossPct')
+    if loss is None:
+        loss = (_weight_loss(win, wout)
+                if wout > 0 and win > 0 else 0.0)
+    doc['weightLossPct'] = loss
+
+
 def _apply_form(doc, payload):
     meta = dict(doc.get('metadata') or {})
     for k in core.FORM_MEMBERS:
@@ -539,6 +576,7 @@ def _update_submit(self, event):
         # Reject nonsense with a visible message; nothing is saved.
         self.view.custom.editNote = err
         return
+    _recompute_loss(doc)
     _run(NQ_UPDATE, {
         'batch_number': batch_number,
         'bean_name': doc.get('beanName'),
@@ -568,6 +606,7 @@ def _create_submit(self, event):
            'totalSec': 0, 'phases': {}, 'events': {}, 'metadata': {},
            'manualEntry': True}
     doc = _apply_form(doc, event)
+    _recompute_loss(doc)
     now = system.date.now()
     _run(NQ_INSERT, {
         'batch_number': number, 'roast_start': now, 'roast_end': now,
@@ -1461,10 +1500,22 @@ def loss_yield_density(meta):
         if vg > 0:
             out['volumeGainPct'] = vg
     if gmoist > 0 and rmoist > 0:
+        # HUNT-73: both losses are Artisan dialog shapes, not
+        # raw subtraction. The dialog blanks a moisture loss
+        # at or below zero (roast_properties moisture_percent)
+        # and clamps the organic loss to 0..100
+        # (calc_organic_loss), so inconsistent metadata (a
+        # roasted moisture above the green one, or a moisture
+        # loss bigger than the weight loss) can no longer show
+        # a negative loss on BatchDetail. Artisan's stored
+        # computed block keeps the raw subtraction; the detail
+        # page is the dialog side, so it follows the dialog.
         ml = gmoist - rmoist
-        out['moistureLossPct'] = ml
-        if wl > 0:
-            out['organicLossPct'] = wl - ml
+        if ml > 0:
+            out['moistureLossPct'] = ml
+            if wl > 0:
+                out['organicLossPct'] = max(
+                    0.0, min(100.0, wl - ml))
     if win > 0 and (wout > 0 or defects > 0):
         res = (wout - defects) if wout > 0 else (win - defects)
         if res > 0:
@@ -1710,7 +1761,14 @@ def _phase_analysis(doc, points):
                      ('%.1f F/min' % ror) if ror is not None
                      else '--',
                      ('%.0f' % auc) if auc is not None else '--'])
-    # Cool phase: drop to cool end.
+    # Cool phase: drop to cool end. HUNT-72: the Cool row used
+    # to carry a share on a different basis (cool seconds over
+    # the roast plus cool span), so the Share column summed to
+    # 105 on batch 1042 (26/37/37 plus Cool 5) while the stats
+    # line above it sums to 100. Cool is not a roast phase and
+    # Artisan does not include it in the phase shares, so its
+    # share cell reads '--' like its gain, RoR and AUC cells,
+    # and the column now sums to 100.
     cool_sec = None
     cool_end = None
     sub = (doc.get('artisan') or {}).get('events') or {}
@@ -1720,10 +1778,8 @@ def _phase_analysis(doc, points):
         cool_end = float(points[-1][0])
     if cool_end is not None and drop_t is not None and cool_end > drop_t:
         cool_sec = cool_end - drop_t
-        span = total + cool_sec
         rows.append(['Cool', _mmss(cool_sec),
-                     ('%.0f%%' % (cool_sec * 100.0 / span))
-                     if span else '--', '--', '--', '--'])
+                     '--', '--', '--', '--'])
     # RoR at FC START from the one RoR implementation.
     fcs_ror = None
     if fc_t is not None and points:

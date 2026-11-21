@@ -171,6 +171,28 @@
    exact fit rows elsewhere. */
 .psc-roast-compare-field { gap: 8px; }
 
+/* ---- polish round 10: calculator gaps (worker A) ----------------
+   The Yield and Conversion Calculator card on BatchDetail mixes
+   inputs and readouts in four wrap rows of 150px basis fields,
+   and every field is a caption over a control. The class
+   compiler drops the gap property from style classes, so the
+   rows served 0px between fields (measured: the TEMP (F) input
+   ends at x 1002 and the TEMP (C) readout starts at x 1002)
+   and 0px between each caption and its control. The scoped
+   rules below restore the intended gaps on the calculator card
+   only: 12px between fields in a row, 8px caption to control
+   inside a field, 10px between the card head, note and rows.
+   Scoped, not global, for the same reason as the compare field
+   above: restoring gap on all 288 roast-gap-* uses would shift
+   exact fit rows elsewhere (the Mode pill row in Controls, the
+   space-between Summary rows, the compare row pickers). The
+   calculator fields are flexible (grow 1, shrink 1, basis
+   150px) inside wrap rows, so the restored gaps only shrink
+   the fields, never overflow the card. */
+.psc-roast-calc-row { gap: 12px; }
+.psc-roast-calc-field { gap: 8px; }
+.psc-roast-calc-card { gap: 10px; }
+
 
 /* ---- polish round 6: HUD clock clip (HUNT-49) ---------------------
    The roast clock value ("00:00", 16px monospace) needs 48px

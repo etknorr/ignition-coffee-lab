@@ -7931,3 +7931,927 @@ HUNT-53 mitigation before the reruns.
 7. The HUNT-58 self-heal claim still rests on
    the wipe simulation, not on a live
    replacement hitting the A-to-B chain.
+
+### Polish round 10: builder STYLESHEET_CSS resync (worker C, 2026-11-21)
+
+Candidate 6 from the round 10 list above, done. The
+builder's STYLESHEET_CSS string in
+roastery/scripts/build_roastery_v4.py now matches the
+live advanced stylesheet byte for byte. The live
+stylesheet was not changed by this worker, nothing
+was rebuilt, and no HUNT number was needed: this
+was staleness in a record copy, not an app defect,
+so the reserved HUNT-70 and HUNT-71 numbers stay
+unused. (A sibling worker did change the live
+stylesheet mid-task; see the race note below.)
+
+Canonical source. The repo project tree copy is
+canonical, per the standing rule that the repo
+project tree is the source of truth and the v4
+builder is a snapshot that must never be run
+against the live tree. Repo copy:
+roastery/project/Roastery/com.inductiveautomation.
+perspective/stylesheet/stylesheet.css, 14,222 bytes,
+294 lines, md5 c0dcd1dfc93d9d0e9ab10bd8ffcb4d14 at
+the time of the first sync below.
+The gateway tree copy
+(gateway-2027-maker/data/projects/Roastery/.../
+stylesheet/stylesheet.css) is identical by md5, so
+the two copies agree and there was no conflict to
+resolve. The gateway tree was not touched.
+
+Before. The builder string held 7,378 bytes and
+160 lines against the live 14,222 bytes and 294
+lines. Unified diff, builder to live: 195 lines,
+16 rule blocks missing from the builder, 3 stale
+rules present only in the builder, and 3 rules
+moved or reworded. Rule by rule:
+
+Missing from the builder (all present in live,
+none in the builder string):
+
+1. HUNT-31 brightness probe:
+   .psc-roast-brightness-probe, opacity 0.01 with
+   overflow hidden and pointer events none.
+2. Polish phase 2 tab menu: .psc-roast-tabbar
+   padding 6px 10px !important, the standalone
+   .psc-roast-tabbar > * min-width 0 rule, and the
+   560px media block with padding-right 60px and
+   .psc-roast-tab-item padding 8px 6px at 13px.
+3. .psc-roast-unit white-space nowrap.
+4. .psc-roast-btn-compact min-height 28px.
+5. .psc-roast-gear-btn min-height 40px.
+6. HUD tightening (polish phase 2 item 7):
+   .psc-roast-hud gap 3px and padding 3px 4px, and
+   .psc-roast-hud-field padding-left 4px.
+7. Round 6 HUD clock clip (HUNT-49): the 560px
+   media block setting .psc-roast-hud-value to
+   15px.
+8. Polish round 3 (HUNT-25): the detail head
+   stacking rules inside the phone headers 560px
+   block, .psc-roast-detail-head flex-wrap wrap
+   and .psc-roast-detail-titlecol flex 1 1 100%
+   with order 3.
+9. Polish round 5 dock buttons (HUNT-39):
+   .psc-roast-btn-dock and
+   .psc-roast-btn-dock-lead, nowrap with ellipsis
+   and min-width 0.
+10. HUNT-43: .psc-roast-btn-nowrap white-space
+    nowrap.
+11. HUNT-44: the 560px media block setting
+    .psc-roast-seg-detail to 9px.
+12. Round 6 mode pill: .psc-roast-mode-pill
+    white-space nowrap.
+13. HUNT-47: .psc-roast-cell-hidden display none
+    !important.
+14. The 560px declutter block under v4.1 holding
+    only .psc-roast-tabbar > * min-width 0: the
+    builder had that rule text only inside the
+    stale compaction block below, never as the
+    live standalone block.
+15. The round 9 compare-field rule in its live
+    position with the full round 9 comment (the
+    builder carried the short 9143c9f version in
+    an earlier position; the rule body, gap 8px,
+    is the same).
+16. The save-note rule .psc-roast-note-success
+    min-height 18px in its live position with the
+    longer comment (same body as the builder's
+    early copy, plus the sentence about the
+    position basis limit).
+
+Stale in the builder, removed from live (the
+v4.1 tab bar compaction block for the old button
+tabs, superseded by the phase 2 menu):
+
+- .psc-roast-tabbar padding 6px 60px 6px 6px with
+  gap 6px.
+- .psc-roast-tabbar > *:first-child flex 0 0
+  46px. This rule is the one the live comment
+  calls out: applied to the menu it collapsed
+  the whole tab bar to 46px wide at phone
+  widths.
+- .psc-roast-tab-btn font-size 12px, padding 8px
+  1px, nowrap with overflow hidden.
+
+Moved or reworded, same rule body:
+.psc-roast-note-success and
+.psc-roast-compare-field moved to their live
+positions with longer comments, and
+.psc-roast-tab-btn:hover moved from after the
+compare-field rule into the touch-targets block.
+25 of the builder's 29 top-level units were
+already identical to live.
+
+Fix. The whole STYLESHEET_CSS literal was
+replaced with the live file content, and nothing
+else in the builder changed. Normalization: none
+is needed and none is applied. write_styles
+writes the string verbatim with f.write, so the
+target is byte-identical, and it is: at the
+first sync the AST-extracted builder string was
+14,222 bytes with md5
+c0dcd1dfc93d9d0e9ab10bd8ffcb4d14, the same hash
+as the live file then. The git diff is confined
+to the string (4 hunks, 182 insertions, 26
+deletions, in build_roastery_v4.py only, after
+the re-sync below).
+
+Resync race, same morning. While this section
+was being written, worker A's round 10
+calculator-gap work (candidate 1) landed in the
+live stylesheet: 22 added lines after the
+compare-field rule, three scoped rules
+.psc-roast-calc-row gap 12px,
+.psc-roast-calc-field gap 8px, and
+.psc-roast-calc-card gap 10px, with a comment
+block (the BatchDetail view changed in the same
+pass). The live stylesheet moved to 15,437
+bytes and 316 lines, md5
+4952c4beb425ab49d7ea05d3aaf1b0f9, and the
+gateway tree copy matches that hash too. The
+builder string was re-synced to the new live
+content at 10:52 UTC, so it now matches the
+new file byte for byte: AST-extracted string
+15,437 bytes, md5 4952c4beb425ab49d7ea05d3aaf1b0f9.
+The extraction proof was re-run after the
+re-sync and is zero diff again (see below).
+Lesson for the next resync: the builder string
+goes stale again the moment any worker edits
+the live stylesheet, so check the live md5 last
+before calling a resync done.
+
+Extraction proof. The builder module cannot be
+imported from the repo copy: the module-level
+FORM_SCHEMA load needs
+scripts/knowledge/schemas-2027, which is not in
+the repo, and main() must never run against the
+live tree (its PROJ points at a gateway path
+under the scripts directory, and a rebuild
+would revert the app). So the proof ran the
+builder's own write_styles() in isolation:
+STYLE_CLASSES, STYLESHEET_CSS, and the
+write_styles function were AST-extracted and
+executed with PROJ pointed at the scratch dir
+/tmp/r10c-scratch/proj, never at the gateway
+tree. The emitted stylesheet.css diffs zero
+against the live file, and the emitted
+stylesheet resource.json diffs zero too, and
+the whole proof was re-run after the race
+re-sync above with the same zero-diff result.
+The builder file compiles (py_compile passes).
+The live stylesheet, the gateway tree, and the
+lab database were not touched by this worker.
+
+Validator not run. validate_roastery_artisan.py
+needs a live gateway and a seeded database, and
+its precondition was not met at the time of
+this work: the 10:49 UTC recovery log shows the
+gateway poll at RUNNING but batches=0, with the
+reseed still pending, against the required
+baseline of 7 batches (1042-1048), 101 series,
+0 events, and the trial health was not
+confirmed. Another round 10 worker was also
+active in the lab (r10_probe_gap.py, 10:50).
+Once the recovery confirms the baseline, run
+the validator from the lab copy
+(python3 validate_roastery_artisan.py in
+~/workspace/ignition-lab) or the repo copy with
+the gateway path as its argument. Note the
+validator does not read the builder, so it can
+only confirm the live tree is unmoved; git
+status already shows that, with only the two
+files below modified.
+
+Other stale builder output found, out of scope,
+reported not fixed. The same isolated
+write_styles run also emits the style classes,
+and the builder's STYLE_CLASSES is stale in the
+same way: it writes 84 classes while the live
+tree holds 92. The 8 live-only classes are
+roast-btn-compact, roast-btn-dock,
+roast-btn-dock-lead, roast-btn-nowrap,
+roast-gap-14, roast-gear-btn, roast-tab-active,
+and roast-tab-item. The 84 shared classes are
+JSON-identical to live (the emitted files differ
+only by a trailing newline). A STYLE_CLASSES
+resync is a separate candidate, not done here,
+because this item is scoped to the stylesheet
+string only. The lab builder copy
+(~/workspace/ignition-lab/build_roastery_v4.py)
+is even staler, its string is 6,813 bytes and
+misses even the note-success and compare-field
+rules, and it was left alone. Two task-note
+corrections: the lab scripts path named in the
+brief (~/workspace/ignition-lab/roastery/
+scripts/) does not exist; the lab builder lives
+at ~/workspace/ignition-lab/
+build_roastery_v4.py. And the builder ends with
+a duplicated `if __name__ == '__main__':
+main()` guard (two identical blocks); it is
+pre-existing, harmless, and left as is.
+
+Files changed (this worker, uncommitted):
+roastery/scripts/build_roastery_v4.py (the
+resync), roastery/docs/coffee-roaster-app.md
+(this section). Lab left untouched: gateway
+RUNNING per the 10:49 recovery poll, Postgres
+16 online, database at 0 batches pending
+reseed, no scan, no sessions, no tag or
+database writes from this worker.
+
+### Polish round 10: HUNT-62 note, Artisan live vs saved AUC (worker B, 2026-11-21)
+
+Investigated, no code change, no HUNT filed. The round 9 note and
+the Round 10 candidate 2 text say both Artisan paths include the
+curve segment straddling the AUC begin event. That is wrong for
+the live path, and the correction matters more than the number:
+Artisan's live and saved AUCs disagree with each other by
+construction, so there is no single Artisan number for our app to
+match. Our clipped form is the exact integral from the begin
+second, our saved phase AUCs are exact integrals over the event
+seconds, and the saved headline AUC differs from Artisan's saved
+AUC almost entirely by its base definition, not by any straddle
+segment. The differences are immaterial on 1 s sampling (at most
+0.30 F-min live, 3.45 F-min saved, against a full roast AUC near
+1171 F-min), and changing any of our three numbers to mimic one
+Artisan path would make it disagree with the other path and with
+itself.
+
+Artisan 5.0.0, read precisely (~/workspace/artisan-src,
+src/artisanlib). Units first: Artisan computes AUC in C
+(calcAUC converts temps with convertTemp(mode, 'C'), and the
+statistics label reads C*min, canvas.py:11640), so Artisan C-min
+values are F-min values times 5/9. Our AucTargetFMin default
+1152.0 is 640 x 9/5, Artisan's AUCtarget 640 C-min, so the shapes
+below are compared in F units with the same segment sets. The
+defaults match on both sides: Artisan AUCbegin 1 (TP),
+AUCbase 212 F, AUCbaseFlag False (canvas.py:657-659); our
+AucBegin 'TP', AucBaseTempF 212.0, AucBaseFromEvent False
+(setup_roastery_v4_tags.py:363-368).
+
+Live path. calcAUC (main.py:24513) is the trapezoid of ONE
+segment, the segment ending at index i (default i=-1, the newest
+segment), with a guard that needs 0 < i, so i=0 contributes 0.
+thisAUC (main.py:24479) takes the base from temp[idx] if
+AUCbaseFlag else AUCbase, then calls calcAUC with i=-1 and
+divides by 60: the begin index is used ONLY for the base, the
+area is always the newest segment. updateAUC (main.py:24493)
+runs once per sample tick, called from canvas.py:4969 in
+sample_processing after the new sample is appended
+(canvas.py:4711-4713): if the begin event is known, AUCvalue
+adds thisAUC (the newest segment); else AUCvalue is reset to 0.
+AUCvalue is written nowhere else (only reset, canvas.py:7920),
+so there is no backfill and no recompute. Event stamps are
+sample indices: markDryEnd sets timeindex[1] = len(timex)-1
+(canvas.py:14404), the last sample at press time, and the other
+marks use the same shape (markCharge canvas.py:14215/14229).
+
+Saved path. profileAUC (main.py:24554) loops i in range(st, ed)
+and adds calcAUC(i), with st = AUCbegin_idx (or the start arg)
+and ed = min(len(timex), end or timeindex[6]). It counts the
+segments ENDING at i for i in [st, ed). The saved AUC is
+computedProfileInformation (main.py:16686) calling self.ts()
+with no args (main.py:16808), so st = AUCbegin_idx and ed = the
+DROP index; the phase AUCs are ts(charge, dry), ts(dry, fcs),
+ts(fcs, drop) (main.py:16832-16843). The computed block is
+rebuilt on load (main.py:17225), so an imported cached AUC is
+recomputed from the curve.
+
+What profileAUC includes that updateAUC does not, for the AUC
+begin event: the full segment ENDING at the begin sample. The
+segment was the newest segment on the tick BEFORE the event was
+stamped, when updateAUC still held AUCvalue at 0, so the live
+accumulation never adds it. With the default TP begin it is
+worse: TP is detected inside sample_processing
+(checkTPalarmtime, canvas.py:4415, needs more than 20 s since
+charge and the sample 5 ticks back a local minimum below the
+latest; findTPint, util.py:974, returns the index of the lowest
+BT), TPalarmtimeindex is set to that past index on the detection
+tick (canvas.py:4917), and updateAUC on the same tick adds only
+the newest segment, so the live total misses the whole stretch
+from TP to detection.
+
+What updateAUC includes that profileAUC does not: the full
+segment ENDING at drop (added on the drop tick, when the begin
+was long known), and any segments after drop while recording
+continues. profileAUC stops its loop at i = ed-1, so the
+segment ending at drop is never counted. Both paths count every
+middle segment exactly once.
+
+Quantified (base 212 F throughout; ours is core.auc_between,
+core/code.py:1064; exact is an independently written integral;
+profile and live are faithful transcriptions of the Artisan
+shapes above; the suite asserts each decomposition to 0.001):
+
+- A, HUNT-62 synthetic 200 + 0.4t, 1 s samples, Dry End at
+  70.5 s, drop 300 s: ours 237.5325, exact 237.5325, profile
+  236.1333, live 237.6667. profile minus live is -1.5333, which
+  is exactly the begin-end segment (69 to 70 s, 0.2633) minus
+  the drop-end segment (299 to 300 s, 1.7967). live minus ours
+  is +0.1342, exactly the pre-begin part of the straddling
+  segment (70 to 71 s).
+- B, same curve on a 30 s grid, Dry End at 75 s: ours 236.25,
+  profile 192.00, live 240.00. profile minus live is -48.00,
+  the begin-end segment (30 to 60 s, 3.00) minus the drop-end
+  segment (270 to 300 s, 51.00). On a coarse grid the dropped
+  final segment dominates, and profileAUC sits far BELOW ours.
+- C, real seeded batch 1042 (21 samples, 243.9 to 251.8 F),
+  counterfactual Dry End at 10.5 s, drop 20 s: ours 6.0444,
+  exact 6.0444, profile 6.2808, live 6.3458. live minus ours is
+  +0.3015, profile minus ours is +0.2365. The recomputed doc
+  auc above the first temp is 1.3725 against the stored 1.3576,
+  a 0.0149 gap from the migration having used its RoastLog
+  curve rather than the stored series, not a defect.
+- D, RoasterSim shape (200 to 385 F in 150 s, then to 435 F,
+  1 s samples; Dry End 81.08 s, FCs 150 s, Drop 456 s; full
+  roast AUC above 212 F is 1171.22 F-min). Dry End begin: ours
+  1118.8986, profile 1117.0231, live 1119.0175. FCs begin: ours
+  969.0000, profile 968.4240, live 969.0000 (the begin falls
+  exactly on a sample, so live minus ours is 0). TP begin
+  (the default): ours 1171.2222, profile 1167.7731, Artisan
+  live with detection at 21 s 1170.1389, so Artisan live misses
+  1.0833 F-min of the TP to detection stretch. For the default
+  begin our clipped form sits ABOVE profileAUC by 3.4491,
+  exactly the dropped last segment, which is the reverse of the
+  note's framing.
+- The begin-end segment alone, above base 212 F, is worth
+  0.26 F-min at a 228 F Dry End (case A), 0.60 at a 248 F Dry
+  End (case C), 1.45 at a 300 F Dry End (case D), and 2.88 at
+  a 385 F FCs (case D). The pre-begin part of the straddling
+  segment is at most 0.30 F-min on 1 s sampling.
+- Phase AUCs on the sim curve, base 212 F, ours
+  (batches._auc_range, batches/code.py:1534, clipped to the
+  event seconds) vs Artisan ts() ranges: Drying 52.3236 vs
+  50.7500, Maillard 149.8986 vs 148.5992, Development 969.0000
+  vs 968.4240. Each differs by at most 1.57 F-min, and
+  Artisan is lower in each case because its ranges drop the
+  segment ending at the phase end.
+- Saved headline AUC on the sim curve: ours curve_auc
+  (batches/code.py:149, base charge temp 200 F, from charge,
+  all segments) is 1261.45; Artisan ts() with the default TP
+  begin and base 212 F is 1167.77; the gap is 93.68 F-min
+  (7.4 percent). The base part of that gap is 91.20 F-min
+  (12 F times 456 s over 60), over 97 percent of it. The
+  straddle contributes nothing here (the TP index is 0, and
+  the i=0 term of calcAUC is 0). The headline gap is a base
+  definition, settled in v2 as the v2 roast log save
+  definition, not a straddle error, and changing it would
+  break comparability with every saved batch.
+
+Decision, per number. Live AUC (AucLiveFMin, core
+update_live_auc, core/code.py:1124, via auc_between): stays
+clipped. It is the exact integral from the begin second, which
+is what the label states, and it matches Artisan's live to
+within 0.30 F-min while avoiding Artisan's TP detection miss.
+Phase AUCs (batches._phase_analysis, batches/code.py:1621,
+via _auc_range): stay clipped. They are exact integrals over
+[begin second, end second], they tile the roast exactly, and
+Artisan's index shifted ranges are the less precise statement
+of the same phases. Saved headline AUC (doc['auc'],
+batches.build_document, batches/code.py:187, via curve_auc):
+unchanged; it has no begin event to straddle, and its gap to
+Artisan ts() is the base definition. Stored aucDetail
+(doc['aucDetail'].valueFMin, the live value at save time):
+unchanged; recomputing it in profileAUC shape would make the
+saved detail disagree with the live readout the user watched
+and with the phase AUCs, and would embed Artisan's dropped
+last segment. The .alog export is unaffected: artisan
+_computed_for already writes AUC as the exact integral from
+the TP sample to drop (artisan/code.py:1013-1025), and
+Artisan recomputes it on import (main.py:17225).
+
+Proof: new suite verify_r10_auc.py (lab, mirrored to the repo
+roastery/scripts/), static checks against an independently
+written exact integral plus read only live verification.
+Result 43 PASS, 0 FAIL: the HUNT-62 regression numbers
+(283.4325 and 281.25), ours equals exact on all five cases,
+both end effect decompositions exact to 0.001, the TP
+detection miss 1.0833, the saved headline gap 93.68 with the
+base part 91.20, the three phase AUCs within 2.0 F-min of
+Artisan ts(), the 1042 recomputation within 0.05 of stored,
+trial healthy (6525 s left at the run), tags Idle, batch 1042,
+System theme, AucBegin TP, AucBaseTempF 212.0, database 7
+batches, 101 series, 0 events, and the three AUC functions
+source identical between repo and gateway. One note from the
+run: the repo batches/code.py differs from the gateway copy by
+a parallel worker's HUNT-72/73 change (moisture and organic
+loss clamping, Cool share), which does not touch any AUC
+function; the suite checks the AUC function sources, not the
+whole file md5, for exactly that reason.
+
+Files changed (this worker, uncommitted):
+roastery/scripts/verify_r10_auc.py (the suite, mirrored from
+the lab), roastery/docs/coffee-roaster-app.md (this section).
+No library code changed, so no copy to the gateway tree and no
+POST /scan/projects was needed. No fixtures created, no
+fixtures to delete, the press path untouched. Lab left clean:
+gateway RUNNING with a healthy trial, database at 7 batches
+(1042-1048), 101 series, 0 events, defaults restored (Fan 5,
+Heat 5, BatchNumber 1042, ActiveSource Simulated, Mode Off,
+ThemeMode System, DispAxisFormat m:ss, CompareAlignEvent
+charge, PressCaptureMode Group, PeriscopeAvailable True,
+background cleared, PhaseFromBg False).
+
+### Polish round 10: calculator gaps (worker A, 2026-11-21)
+
+Round 10 candidate 1. The Yield and Conversion Calculator
+readouts sat exactly adjacent to the input boxes (round 9
+measured the TEMP (F) input ending at x 1002 and the TEMP (C)
+readout starting at x 1002), because the style class compiler
+drops the gap property from style classes.
+
+Audit, live (lab-only probe r10_probe_gap.py, 16 combos: Roast,
+Log, BatchDetail staged 1042, Settings, at 1360px and 360px,
+light and dark, ThemeMode System with the device color scheme).
+Every gap-defining container was measured for computed gap,
+minimum box gap between children, and free space. The
+compiler drop is confirmed still in effect: every roast-gap-*
+container computes gap normal (0px), 88 of 91 containers on
+the Roast page touch at 0px box gap, 122 of 122 on Settings,
+34 of 54 on BatchDetail, 7 of 8 on Log, with zero clipped leaf
+text and no horizontal overflow anywhere. The 0px box gaps are
+mostly benign: children carry their own padding and borders
+(cards, bordered inputs and dropdowns) or the row justifies
+space-between, so the glyphs clear each other. The calculator
+was the one true content adjacency: a bordered input and a
+readout on the same row with 0px between the input border and
+the readout digits.
+
+Decision: scoped fix, as round 9 item 8 did, not a global gap
+restore. A global restore of the four roast-gap-* helpers
+would move all 288 uses at once, and the probe found
+exact-fit rows it would shift. The Fan and Heat stepper rows
+are exactly 160px wide with fixed children that cannot shrink
+(minus 58px, value 44px, plus 58px, all grow 0 shrink 0, gaps
+0px), so restoring 8px gaps would force them 16px over. The
+compare row is exactly full at 1286px (four 299.5px pickers
+plus the 88px Compare button). The HUNT-60 Mode pill HeadRow
+is exactly full at 360px (286px of children), and the HUD is
+already a fixed 3px gap from its own stylesheet rule. Restoring
+gap on the roughly 100 column stacks would also lengthen every
+page at once, an unreviewed global visual change for no
+measured benefit anywhere except the calculator.
+
+Fix, scoped to the calculator card only. In
+Views/BatchDetail/view.json: CalcCard carries roast-calc-card,
+CalcRow1 through CalcRow4 carry roast-calc-row, and all
+fourteen Calc*Field columns carry roast-calc-field. In the
+advanced stylesheet: .psc-roast-calc-row { gap: 12px; },
+.psc-roast-calc-field { gap: 8px; },
+.psc-roast-calc-card { gap: 10px; }. The fields are flexible
+(grow 1, shrink 1, basis 150px) inside wrap rows, so the
+restored gaps only shrink the fields, never overflow the card.
+The builder carries the same change: _calc_field, _calc_row
+and _calc_card emit the hook classes, and the candidate 6
+worker resynced the builder STYLESHEET_CSS string from the
+live stylesheet during this round, so it already contains the
+three calc rules (verified byte identical to the live
+stylesheet after my builder edit). The lab copy of the builder
+still differs from the repo copy in a few style entries, as it
+did before this round; the repo copy is authoritative.
+
+Proof: new suite verify_r10_calc_gap.py (repo
+roastery/scripts, mirrored to the lab). Run 2026-11-21:
+74 PASS, 3 FAIL, exit 1, and the 3 failures are all in the
+final restore block, caused by a parallel worker, not this
+fix (see the lab note below). The fix itself passed at all
+four combos: the calc rules serve 10/12/8px, the card
+computes 10px with child gaps [10, 10, 10, 10, 10], all four
+rows compute 12px with every line gap 12px (at 360px the
+fields stack one per line and the 12px is the row gap between
+lines), all fourteen fields compute 8px, the TEMP (F) input
+clears the TEMP (C) readout by 12px at desktop (glyph to
+glyph, was 0px) and the fields clear by 12px wrapped at
+360px, the TEMP (F) caption clears its input by 8px, no
+horizontal overflow and no clipped leaf text anywhere. The
+calculator math still works through the real inputs: 212 F
+drives TempC to 100.0 in the tag and the readout renders
+100.0, then TempF restores to 415.0 through the input. The
+App Settings UI flow was exercised once (gear, Light pins
+light and writes the tag, System restores it). Rows
+deliberately left alone did not move: compare picker tops
+still 696, align field still 8px, picker to picker box gaps
+still 0px; stepper rows still exactly 160px, 58/44/58, 0px
+gaps; Tile value/unit box gaps still 0px. Screenshots:
+r10-calc-gap-desktop-light.png, r10-calc-gap-desktop-dark.png,
+r10-calc-gap-360-light.png, r10-calc-gap-360-dark.png, plus
+probe shots r10-tiles-1360-light.png, r10-calc-1360-light.png,
+r10-calc-360-light.png, r10-settings-1360-light.png (lab
+showcase/shots only; the repo stays config only).
+
+Checked and dismissed, no HUNT filed: the Tile value/unit
+row (Range rects read 0px line-box gap, but the screenshot
+reads "363.7 deg F" with a clear space; the digit side
+bearings clear the unit, so it is not a defect); the
+Analyzer caption to value columns (line-box gap 0px, one
+-2.5px Range overlap at 360px, but the screenshot shows the
+values sitting clear under their captions with no ink
+collision); the Settings caption-over-control fields (122
+containers at 0px box gap, glyphs clear by a few px in the
+screenshot, the app standard form density, reviewed and
+accepted across many rounds); the compare picker to picker
+and align-field to Compare button 0px box gaps (bordered
+controls touching read as a joined group, explicitly left
+alone by round 9 item 8); the mobile HUD "BEAN F" caption
+wrapping to two lines at 360px (pre-existing, reads fully,
+nothing clipped, the HUD is exactly full by design). No new
+HUNT numbers were needed, so HUNT-66 and HUNT-67 remain
+unused; parallel workers in this round have filed up to
+HUNT-75, so the next free number after this round is HUNT-76
+with 66 and 67 still open as gaps.
+
+Lab note (read this before trusting the suite tail): the
+suite ran while the alarm worker's r10_probe_alarm2.py was
+roasting in the same lab. Its roast of batch 1049 finished
+(State Complete, Mode Cool) during my run, which is why the
+final restore checks read (7, 101, 6), ThemeMode Light and
+BatchNumber 1049. The 6 press rows are its roast (Reset for
+1042, then Charge, Dry End, First Crack Start, Drop, Finish
+for 1049); my suite presses no roast buttons and creates no
+press rows. I deliberately did not reset the lab while its
+probe was still running (PID 11079, started 11:03), so the
+lab is left at its values: 7 batches (1042-1048), 101 series,
+6 events, BatchNumber 1049, Mode Cool, State Complete,
+ThemeMode Light, Fan 5, Heat 5, ActiveSource Simulated. My
+calculator tags are back at the seeded values (ChargeG 200.0,
+OutG 172.0, TempF 415.0, TempC 212.7778). The lab needs one
+reset and a press-row clear by whoever finishes last. The
+press path is untouched and no fixtures were created.
+
+Files changed (this worker, uncommitted):
+roastery/project/Roastery/com.inductiveautomation.perspective/
+views/Views/BatchDetail/view.json (19 hook-class lines),
+roastery/project/Roastery/com.inductiveautomation.perspective/
+stylesheet/stylesheet.css (3 calc rules plus the comment),
+roastery/scripts/build_roastery_v4.py (_calc_field, _calc_row,
+_calc_card hook classes; the STYLESHEET_CSS resync in this
+file came from the candidate 6 worker),
+roastery/scripts/verify_r10_calc_gap.py (the suite, mirrored
+from the lab), roastery/docs/coffee-roaster-app.md (this
+section). The view and stylesheet were copied to the gateway
+tree (repo and gateway copies identical by diff) and POST
+/scan/projects returned 200. No other files touched: the
+compare row, theme and startup scripts, Settings views, Tile,
+Analyzer, stepper rows, and the press path were left to
+their owners or deliberately left alone.
+
+### Polish round 10: fresh hunting pass (worker D, 2026-11-21)
+
+Suite: `roastery/scripts/verify_r10_freshhunt.py` (lab copy `~/workspace/ignition-lab/verify_r10_freshhunt.py`), run 2026-11-21. Final run (run 3): 134 PASS, 0 FAIL, exit 0. Coverage: static Artisan math checks run from the library sources; the four-page walk (Roast, Log, BatchDetail staged 1042, Settings) at 1360px and 360px, light and dark, measuring horizontal overflow and clipped leaf text (Perspective footer excluded); the Settings scroll sweep at 360px dark (0, 25, 50, 75, 100 percent); a live roast at 360px dark measured at every stage (Charge, Dry End, FC Start, ghost, Drop) with the stats line shares and DTR checked after Drop; the saved roast detail at 360px light; compare with three batches (A/B/C) at 360px dark with the phone All-columns toggle; the HUNT-65 regression (seeded 1042 Phase Analysis table) plus the HUNT-72 DOM check. Runs 1 and 2 died on suite bugs before the tail (see lab incidents); the HUNT proofs in them already passed and were re-proven in run 3. Log: `~/workspace/ignition-lab/r10-freshhunt3.log`. Screenshots: `~/workspace/ignition-lab/showcase/shots/r10-fresh-*.png`.
+
+Informational measurements for other workers, not re-filed: the ALIGN ON label gap at 1360 light (label bottom 688, picker top 696, 8 px vertical separation, 0 horizontal gap) and the calculator labels with their page positions, both in the run 3 log. Worker A owns the calculator gap item and workers B/C own theirs.
+
+#### HUNT-72 (minor, fixed): Phase Analysis Share column summed to 105 on batch 1042
+
+Root cause: the Cool row carried a share on a different basis (cool seconds over the roast plus cool span) while the three phases share the drop total, so the column read 26/37/37 plus Cool 5 percent. Cool is not a roast phase and Artisan does not include it in phase shares. Fix: in `roastery/project/Roastery/ignition/script-python/roastery/batches/code.py`, `_phase_analysis` now writes '--' in the Cool share cell, like its gain, RoR and AUC cells. Proof: static check on the real 1042 document and series (Drying 00:05 26 percent, Maillard 00:07 37 percent, Development 00:07 37 percent, Cool 00:01 --) and the live table on the detail page, which reads the same rows and sums to 100.
+
+#### HUNT-73 (minor, fixed): loss figures could go negative on inconsistent metadata
+
+Root cause: with a 200 g charge, 184 g out (8 percent weight loss) and green moisture 12 percent against roasted 2 percent (10 percent moisture loss), organic loss read -2.0 percent. Artisan's dialog clamps organic loss to 0..100 (`calc_organic_loss` in `roast_properties.py`) and blanks a moisture loss at or below zero (`moisture_percent`). Fix: in `loss_yield_density`, `moistureLossPct` is stored only when greater than 0 and `organicLossPct` is clamped to [0, 100]. Proof: static checks (8.0/10.0/0.0; the ordinary case still reads organic 5.0) and the saved live roast document (batch 1049, crafted weights 200/184 and moistures 12/2: `weightLossPct` 8.0, `moistureLossPct` 10.0, `organicLossPct` 0.0).
+
+#### HUNT-74 (minor, fixed): weight loss fallback did raw arithmetic, so a roasted weight over the green weight read -25 percent
+
+Root cause: `build_document` computed the fallback loss as `(charge - out) / charge` directly, so WeightOutG 250 on a 200 g charge read -25 percent. Artisan `weight_loss` returns 0 in exactly that case. Fix: the fallback now uses `_weight_loss`, keeping the `out_w` greater than 0 guard (with no roasted weight recorded the loss is 0, not 100 percent). Proof: static (`_weight_loss(200, 250)` is 0.0, `_weight_loss(200, 184)` is 8.0) and a live edit through the slide over editor (WeightOutG 184 to 250, saved document `weightLossPct` 0.0).
+
+#### HUNT-75 (minor, fixed): the slide over editor saved edited weights without recomputing the stored loss
+
+Root cause: `_update_submit` wrote the edited metadata into the document but never recomputed `doc['weightLossPct']` or `doc['loss']`, so the BatchDetail Weight Loss tile kept the save-time value while the Loss section (recomputed live from metadata in `detail_startup`) showed the new one. Fix: new `_recompute_loss(doc)` helper in `batches/code.py`, called in `_update_submit` and `_create_submit`; the ModeNote text in BatchEdit now says saving also recomputes weight loss from the weights. Proof: static recompute (8.0, then 0.0 on edit to 250, loss weight key dropped) and the live edit (document `weightLossPct` 8.0 before the edit, 0.0 after, loss block recomputed with `moistureLossPct` 10.0).
+
+#### HUNT-76 (minor, fixed): a Banner alarm fired during the roast stayed on the Complete screen after Finish
+
+Root cause: `evaluate_alarms` only runs while the state is Roasting, Dropped or Cooling (`_live_analytics` returns before it in Complete), so nothing ever cleared the text even after the bean cooled below the threshold. Alarm probe 2 confirmed it live: a temporary Banner def (BT >= 210, 'R10 probe alarm') fired at Charge, and after Drop, Finish and 240 s the banner text was still on the Complete screen with AlarmActive True (the bean had returned to the 392 plateau, so the condition still held, but the mechanism was proven: no re-evaluation happens in Complete at all). Fix: in `roastery/project/Roastery/ignition/script-python/roastery/core/code.py`, `evaluate_alarms`, the Complete branch now publishes only latched Message alarm texts and clears Banner texts; latched Messages keep showing per their documented rule (latched until the next charge or reset). The branch runs on the Finish press itself (finish records the press after writing Complete) and on any later press or alarm edit while Complete. Proof: a live roast with the same temporary Banner def fires mid-roast ('R10 probe alarm') and reads AlarmActive False, AlarmText '' after Finish. Existing alarm assertions (tier1, polish3) are all in Roasting or Idle states and are unaffected.
+
+#### Live roast measurements (run 3, batch 1049, 360px dark)
+
+Charge, Dry End, FC Start, ghost and Drop each measured with no horizontal overflow and no clipped leaf text. Stats line after Drop: 0:08 45 percent, 0:04 22 percent, 0:06 33 percent, DTR 33 percent, which equals (drop minus FCs) over drop (dry 8, FC 12, drop 18). The ghost background ('Ethiopia Guji (test)') was set mid-roast and its label showed on the roast page. The saved roast detail at 360px light shows the Weight Loss tile at 8.0 percent with no negative organic loss, and the roast deletes through the Log UI. Compare A/B/C at 360px dark captions 'A = Batch 1048 Ethiopia Guji - B = Batch 1047 Ethiopia Guji - C = Batch 1046 Ethiopia Guji - Aligned on CHARGE', and the All-columns toggle measures clean.
+
+#### Items checked and dismissed
+
+- Roast degree boundaries have no Artisan 5.0.0 source for the names, so the mapping is Roastery's own; no HUNT.
+- `_pct_from_internal` and `_internal_from_pct` agree with Artisan's event value conversions on every value Artisan itself stores; divergences only exist for internal values between -1 and 1 and negative percents, which Artisan never writes (the negative branch of `_internal_from_pct` is dead in practice since fan and heat percents are 0 to 100).
+- The `_phase_analysis` offline turning point scan stopping at 50 percent of total when no Dry End is stamped only matters for pathological curves; the live detected turning point wins when present.
+- DTR reading 0 percent when Drop is stamped without FC Start is consistent within the app (`build_document` does the same); Artisan has no FCs so development time is undefined, but the app treats it as zero.
+- Detail `dLoss` showing '--' for a 0.0 loss is load-bearing for seeded stubs (WeightOutG 0 means not recorded), so the truthiness check stays.
+- Total yield over 100 percent (125 percent on the edited 250 g document) follows the inputs arithmetically; Artisan's computed block does not clamp yield either, so only the loss percents are guarded (HUNT-73, HUNT-74).
+- The editor dock's Close button works: the dock container (`.docked-view-right`) stays in the DOM when closed (empty, off screen at x 480 on a 360px viewport), so a count-based check wrongly fails; the close is proven by the editor content leaving the dock. No HUNT.
+- The 'No Connection to Gateway' string in the body text read on detail pages is a `connection-message` div positioned off screen (y -28); it is captured by the body inner_text read but is not visible and the pages measure clean. No HUNT.
+
+#### Builder staleness flag (round 10 candidate 6)
+
+The sibling STYLESHEET_CSS resync landed in `roastery/scripts/build_roastery_v4.py`, and the ModeNote line from HUNT-75 survived it, but the embedded library strings still lack the HUNT-72 through HUNT-76 fixes: embedded `BATCHES_CODE` has no `_recompute_loss` and no HUNT-72 or HUNT-73 markers (78,268 chars versus 102,293 live), embedded `CORE_CODE` has no HUNT-76 marker (107,285 chars versus 176,491 live). The embedded strings still need the HUNT-72 through HUNT-76 fixes when the library resync lands. Do not rebuild the project from the builder until then, or the fixes will be lost.
+
+#### Lab incidents during the round
+
+- Alarm probe 1: the roast was too short, the bean only reached 218 F, so the 410 alarm never fired. It left BatchNumber 1049; cleaned up with a manual Dry End, FC Start, Drop, Finish, Reset browser sequence and restored BatchNumber 1042, 7 batches, 0 events. Lesson: the phone dock is phase-aware, Drop only surfaces after FC Start, FC Start only after Dry End, and there is no Reset button while Roasting at 360px.
+- Alarm probe 2: temporary Banner def BT >= 210 fired at once (bean 392 at Charge); sequence corrected (Dry End, FC Start, Drop at bean 363.7, Finish to Complete). It confirmed the HUNT-76 mechanism and was cleaned up by its own finally (original AlarmDefsJson and BatchNumber 1042 restored, 0 events).
+- Suite run 1: died at the delete step. After Save Batch, the unscoped Close click hit the wrong Close (most likely a toast close) and the editor dock stayed open over the Log page, so the click on '1,049' was intercepted by the dock's form widgets for 25 s. All checks up to the edit had passed, including the HUNT-73, HUNT-74, HUNT-75 and HUNT-76 live proofs.
+- Suite run 2: died on a `TypeError` (`BASE + '/log'`, where BASE is the baseline-counts dict, not the base URL) right after the dock-close check failed on the container count. Both were suite bugs, not app bugs: the dock container persists in the DOM when closed, and the goto used the wrong variable. Fixed by checking the editor content leaving the dock and using `P.BASE` for the goto.
+- Suite run 3: 134 PASS, 0 FAIL. Lab restored by the suite finally and the UI theme restore flow: Idle, BatchNumber 1042, Fan 5, Heat 5, ActiveSource Simulated, Mode Off, ThemeMode System, DispAxisFormat m:ss, CompareAlignEvent charge, PressCaptureMode Group, PeriscopeAvailable True, background cleared, PhaseFromBg False, MoisturePct 10.5, RoastedMoisturePct 0.0, 7 batches (1042-1048), 101 series, 0 events. Note: worker A's round 10 section records the lab left at Complete, BatchNumber 1049, 6 events and ThemeMode Light while this worker's probe 2 was still running; the runs since have restored it to the values above.
+
+Files changed (this worker, uncommitted): `roastery/project/Roastery/ignition/script-python/roastery/batches/code.py` (HUNT-72, 73, 74, 75), `roastery/project/Roastery/ignition/script-python/roastery/core/code.py` (HUNT-76), `roastery/project/Roastery/com.inductiveautomation.perspective/views/Views/BatchEdit/view.json` (ModeNote text), `roastery/scripts/build_roastery_v4.py` (ModeNote line only, inside the sibling resync), `roastery/scripts/verify_r10_freshhunt.py` (the suite, mirrored from the lab), `roastery/docs/coffee-roaster-app.md` (this section). The library and view files were copied to the gateway tree (repo and gateway copies identical by md5) and POST /scan/projects returned 200. No other files touched: the press path, the timezone TIME axis, HUNT-46 and HUNT-53 were left alone per the brief.
+### Polish round 10: builder library and style-class resync (worker E, 2026-11-21)
+
+The sibling STYLESHEET_CSS resync (worker C) is done, and this
+item closes the flag worker D left: the builder's embedded
+library strings and STYLE_CLASSES in
+roastery/scripts/build_roastery_v4.py are now resynced to the
+live repo project tree. The live library files, the live
+stylesheet, and the live style classes were not changed by
+this worker, nothing was rebuilt, and no HUNT number was
+needed: this was staleness in a record copy, not an app
+defect.
+
+Canonical source. The repo project tree is canonical, and the
+gateway tree copies agree, so there was no conflict to
+resolve. batches/code.py md5
+1504c244d7a890b5f9130f579f0a9713 and core/code.py md5
+376ad2620fac84295a79521c091c5233, identical in the repo and
+gateway trees. The 92 live style classes are identical
+between the repo and gateway trees by recursive diff. The
+gateway tree was not touched.
+
+Before. BATCHES_CODE held 78,266 chars against 102,293 live,
+CORE_CODE held 107,279 chars against 176,491 live, with zero
+occurrences of _recompute_loss, HUNT-72, HUNT-73, or HUNT-76
+in the builder strings. STYLE_CLASSES held 84 classes against
+92 live; the 84 shared ones were verified JSON-identical to
+live before the change.
+
+Fix. Both library literals were replaced with the live file
+contents by AST span, and the 8 live-only classes were added
+to STYLE_CLASSES: roast-btn-compact, roast-btn-dock,
+roast-btn-dock-lead, roast-btn-nowrap, roast-gap-14,
+roast-gear-btn, roast-tab-active, and roast-tab-item. The new
+entries sit with their groups in the dict (the four dock and
+compact buttons after roast-btn-step, roast-gap-14 after
+roast-gap-12, the two tab classes after roast-tab-btn) and
+keep the live style.json key order, so the emitted style.json
+files match live apart from the trailing newline noted below.
+One deliberate change of form: both literals switched from
+plain ''' to raw r''' (the ARTISAN_CODE precedent in the same
+file), because live core/code.py holds 4 line-continuation
+backslashes, and a plain triple-quoted literal would swallow
+each backslash and its newline when the builder is parsed.
+Live batches/code.py holds no backslashes. Neither live file
+contains ''' or a carriage return, and both end with a
+newline, so the raw literal parses to exactly the live bytes.
+The HUNT-75 ModeNote line in the builder's BatchEdit view
+code was untouched and still carries the recompute wording.
+
+After. BATCHES_CODE is 102,293 chars and carries _recompute_loss
+plus the HUNT-72, HUNT-73, HUNT-74 (twice), and HUNT-75
+markers; CORE_CODE is 176,491 chars and carries the HUNT-76
+marker. STYLE_CLASSES holds 92 keys and equals the live set
+exactly, parsed JSON for JSON. STYLESHEET_CSS was re-verified
+after the edits and is still byte-identical to the live
+stylesheet, md5 4952c4beb425ab49d7ea05d3aaf1b0f9, so the
+mid-round stale overwrite worker A flagged has not recurred.
+The builder file compiles (py_compile passes).
+
+Extraction proof. The same method worker C used: the builder
+module cannot be imported (the module-level FORM_SCHEMA load
+needs scripts/knowledge/schemas-2027, which is not in the
+repo), and main() must never run against the live tree, so
+CORE_CODE, BATCHES_CODE, ARTISAN_CODE, STYLE_CLASSES,
+STYLESHEET_CSS, write_library, and write_styles were
+AST-extracted and executed with PROJ pointed at the scratch
+dir /tmp/r10e-scratch/proj, never at the gateway tree. The
+emitted core/code.py and batches/code.py diff zero against
+live (md5 376ad2620fac84295a79521c091c5233 and
+1504c244d7a890b5f9130f579f0a9713), the emitted stylesheet.css
+diffs zero, all 92 emitted style.json files are parsed-JSON
+identical to live with the byte diff a trailing newline only
+(the builder's json.dump writes no trailing newline, the
+live files end with one), and the library and stylesheet
+resource.json files diff zero. The style-class resource.json
+files differ in 4 of 92 (roast-btn-compact, roast-gear-btn,
+roast-tab-active, roast-tab-item) only by the live attributes
+carrying a gateway-stamped lastModificationSignature of ""
+where the builder emits attributes {}; that is a
+gateway-managed field the builder has never written, not
+style content, and the other 88 match byte for byte. The
+scratch dir was removed after the run.
+
+Still stale, out of scope, reported not fixed. ARTISAN_CODE
+is stale the same way: the builder holds 47,240 chars
+against 48,038 live, a 64-line diff carrying the toast
+additions to import_upload and the stage_background_upload
+docstring move. Do not rebuild the project from the builder
+until ARTISAN_CODE is resynced too, or those changes will be
+lost. The lab builder copy (~/workspace/ignition-lab/
+build_roastery_v4.py) is even staler and was left alone, as
+was the builder's duplicated `if __name__ == '__main__':
+main()` guard at the end of the file, pre-existing and
+harmless. The lab was not touched by this worker.
+
+Files changed (this worker, uncommitted):
+roastery/scripts/build_roastery_v4.py (the resync),
+roastery/docs/coffee-roaster-app.md (this section). The live
+tree, the gateway tree, and the lab database were not touched.
+
+### Polish round 10: closing battery, 44 of 44 green
+
+Battery run 2026-11-21, runner run_r10_battery.sh, results
+in ~/workspace/ignition-lab/r10-battery/results.txt. First
+pass 11:55 to 13:02 UTC: 19 of 23 suites green, then the VM
+write lock landed at 13:02 UTC (the gateway JVM died on
+SQLite errors) and the run stopped at 23 of 44. Resume
+16:35 to 17:49 UTC after the 09:30 MST recovery (write lock
+lifted, gateway RUNNING, reseed 7 batches and 101 series):
+the 4 environment failures reran green and 20 more suites
+went green, leaving 5 failures, all diagnosed to two root
+causes below, fixed, and rerun green 18:36 to 19:05 UTC.
+Exact counts: validator VALIDATION PASS; ChartLab CHECK
+REPORT, 0 warnings; RoR 6 PASS, 1 designed SKIP; tier1
+42/42; tier2 87/87; tier3a 40/40; tier3b 47/47; tier3c
+69/69; v4 60/60; polish1 49/49; polish2 65/65; polish3
+37/37; r6_customs 17/17; dark 10/10; r6_hunt 7/7;
+pressburst PASS; pressfault 62/62; deletecascade 15/15;
+r5_hunt3 7/7; axis 14/14; detail span capture 9920 25
+rows, 9919 7 rows, 1042 7 rows, all labels even; r7_hunt54
+33/33; r7_hunt55 17/17; r7_freshhunt 41 PASS; r8_align 44
+PASS; r8_freshhunt 75 PASS; r9_style 34/34; r9_v4_udt
+PASS; r9_theme_align PASS; r9_freshhunt 88 PASS, 0 FAIL;
+r5_hunt 12 PASS; r5_hunt2 6 PASS; r6_abc 16/16; r6_abc2
+15 PASS; r4hunt A to E all DONE rc=0 (one FAILS artifact
+in B, see below); cleanup_workspace exit 0; r7_udt_diff
+PASS, 0 differences (RoastBatch 204, RoasterSource 7);
+r10_calc_gap 76 PASS, 0 FAIL; r10_auc 43 PASS, 0 FAIL;
+r10_freshhunt 134 PASS, 0 FAIL.
+
+First-pass failures, all environment incidents, no app
+defect: polish3 died waiting for the editor dock when the
+Maker trial expired mid-suite; r6_customs pressed Charge
+then the trial expired, leaving 1 stray Charge event row;
+dark failed its clean-lab check on that stray row;
+pressburst failed only its baseline check from the same
+row (its own checks all passed, 11 presses, 11 rows,
+exactly once) and restored the lab to 7/101/0. The watch
+reset the trial to about 7176 s right after. All four
+reran green with no change.
+
+Root cause 1, the polish3 kill-switch save and the r9,
+r10 suite failures (HUNT-77 filed for the tracking, no
+app change): polish3 snapshots batch 1042's document at
+start and restores it at the end via psql UPDATE. Its
+editor_save rewrites the doc phases from the event times
+on every save (batches/code.py _apply_events: dryingSec is
+the dryEnd t, maillardSec is fcStart minus dryEnd,
+developmentSec is drop minus fcStart, all 0 with no FC
+event). The first editor_save('00:10') succeeded and
+mutated the doc from the seeded phases (drying 5,
+maillard 7, development 7, dtrPct 36.84) to drying 10,
+maillard 0, development 0, dtrPct 0, adding a dryEnd event
+at t=10. The kill-switch editor_save then asserted, so the
+restore block never ran. The seeded doc's events block has
+only charge and drop (the reseed writes no dryEnd event).
+The HUNT-65 fallback in _phase_analysis only adds a row
+for a phase with no valid event bounds when the seeded
+batch's stored seconds are over 0, so with maillardSec=0
+and developmentSec=0 those rows vanished and shares_100
+over [Drying 10] with total 19 gave [53]. That is what
+r9_freshhunt (shares sum to 100, Maillard and Development
+rows), r10_freshhunt (KeyError 'Maillard' in
+static_cool_share), and the stats line check all tripped
+on. In round 9 the same saves happened but polish3
+completed, so its restore put the seeded doc back before
+r9_freshhunt ran, which is why round 9 passed the same
+check with [26, 37, 37].
+
+Root cause 2, BatchNumber 1049: r9_freshhunt's live roast
+section saves as the next batch number (1049), deletes the
+batch row in its finally, but never wrote the BatchNumber
+tag back to 1042. Its finally restores theme, drains
+pending, deletes batch_events, deletes the NEXT_BATCH row,
+but had no BatchNumber write. In round 9 nothing after it
+checked BatchNumber, so the gap was latent. The new round
+10 suites calc_gap and auc check the lab is back at
+BatchNumber 1042, so they failed. r7_freshhunt and
+r8_freshhunt have the same latent gap (they also never
+write BatchNumber back); only r9 was fixed, since it is
+the last freshhunt in battery order.
+
+Remediation, all verified in place. New lab script
+~/workspace/ignition-lab/restore_1042_seed.py rebuilds batch
+1042's document exactly the way reseed_from_roastlog.py
+builds it for the first RoastLog row and UPDATEs only the
+data column; it ran clean (phases 5/7/7, events charge and
+drop). PeriscopeAvailable was found at False after the
+aborted polish3 run (the kill-switch pass sets it False
+before the editor save that asserted, and the restore never
+ran) and was set back to True. verify_r9_freshhunt.py was
+fixed in both copies (lab and repo, verified identical by
+diff): the finally now writes BatchNumber 1042 after
+deleting the NEXT_BATCH row, with a comment explaining the
+round 10 suites depend on it, and a new check 'batch number
+restored to 1042' was added after the 'theme restored'
+check. The press guard ran after the battery (drain pending,
+clear all 16 PressSlots) and the baseline re-verified at
+7/101/0 with 0 events stable after a 60 s idle wait.
+
+The kill-switch save itself (HUNT-77, harness fix, no app
+change): polish3 failed twice in a row at the kill-switch
+editor_save('00:12') with 'editor Save Batch never
+enabled', while the earlier editor_save('00:10') in the
+same run passed, and the failure is the exact one the
+round 2 closing fix comment names (it ended both closing
+battery runs then, and the reload recovery it added covers
+only the mount poll, not the post-typing assert). Diagnosis
+by probe, all on the live gateway: fresh-page saves pass
+with the same prefill and both PeriscopeAvailable values
+(save enabled at once); six plain remounts pass; the full
+middle sequence (save 00:10, Charge press from the phone
+dock, alarm Message latch, restore alarms, probe reset,
+PeriscopeAvailable False, save 00:12) passes on a fresh
+browser. The form mounts (59 inputs) but the aged page
+instance stops applying the edit, the HUNT-46 class. Fix,
+suite only, in verify_roastery_polish3.py (mirrored to the
+repo): editor_save was refactored into open_once plus
+try_type, and if Save still is not enabled after the typing
+loop it does one reload recovery (reload, reopen the editor,
+retry the typing loop once) before asserting. Standalone
+rerun with the fix: 37 PASS, 0 FAIL, POLISH3 RESULT: ALL
+CHECKS PASSED (the recovery did not need to fire on that
+run). The app code path is proven working by the probes and
+by the first save in every run; no app change was made.
+
+r4hunt_b FAILS artifact: the battery run printed one FAIL
+line ('import failure toast fires in Light') in its FAILS
+list but exited rc=0. Standalone rerun with no change: 17
+PASS, FAILS empty. Flake under battery-run load, not an
+app defect; no change made.
+
+VM replacement during the close: the VM was replaced at
+about 18:17 UTC, between the battery rerun and the docs
+work (uptime 7 minutes at 18:24, gateway down, Postgres
+fresh and empty). The watch flow recovered it by 18:29
+(gateway RUNNING, database already reseeded to 7/101/0,
+trial 6942 s). The lab was re-verified from the clean
+baseline before the polish3 standalone rerun, and the
+battery rerun ran on the recovered lab.
+
+Stylesheet and library md5 check at close: live advanced
+stylesheet, repo copy, and builder STYLESHEET_CSS are all
+md5 4952c4beb425ab49d7ea05d3aaf1b0f9, 15,436 chars,
+byte-identical. CORE_CODE 176,491 chars, md5
+376ad2620fac84295a79521c091c5233, byte-identical to live.
+BATCHES_CODE 102,293 chars, md5
+1504c244d7a890b5f9130f579f0a9713, byte-identical to live.
+ARTISAN_CODE is still stale as worker E reported (47,240
+chars in the builder against 48,038 live, a 64-line diff
+carrying the toast additions to import_upload); do not
+rebuild from the builder until it is resynced the same
+way.
+
+Commits, local only, no push: c7247bb (calculator gaps,
+HUNT-62 note, new calc_gap and auc suites, docs), af6ee5b
+(HUNT-72 through HUNT-76, new freshhunt suite), 0721bea
+(builder STYLESHEET_CSS, library and style-class resync),
+05fb2aa (closing battery suite fixes, HUNT-77), plus the
+docs hash update in this commit. Remote head was 4cae20b37
+(round 8) when round 10 closed; the round 9 push was in
+flight separately and round 10 stays local until Eric's
+word.
+
+Held for round 11: ARTISAN_CODE resync in the builder
+(47,240 vs 48,038 chars, 64-line diff); HUNT-53 app fix
+still needs Eric's direction, lab mitigation stays in
+effect; timezone TIME axis and HUNT-46 retest are
+beta-gated on the next Ignition beta; Docker boot test is
+Eric-side only; HUNT-58 live proof is still simulation
+only (no VM replacement hit the r4hunt A-to-B chain during
+this battery); r7_freshhunt and r8_freshhunt still carry
+the latent BatchNumber gap (only r9 was fixed); next HUNT
+number is HUNT-78.
+
+#### HUNT-77 (harness, no app change): polish3 kill-switch save and the unrestored 1042 document
+
+Two linked suite findings from the closing battery, one
+incident chain. First, polish3 failed twice at the
+kill-switch editor_save('00:12') with 'editor Save Batch
+never enabled' while the earlier editor_save('00:10') in
+the same run passed; probes showed the form mounts (59
+inputs) but the aged page instance stops applying the edit,
+the HUNT-46 class, and the same failure ended both closing
+battery runs in the round 2 era. Second, the assert skipped
+polish3's restore block, leaving batch 1042 mutated (drying
+10, maillard 0, development 0, dryEnd event at t=10), which
+broke the r9 and r10 freshhunt phase checks, and
+r9_freshhunt never wrote BatchNumber back to 1042 after its
+live roast section saved as batch 1049. Fixes, all suite
+or lab only: editor_save gained a one-shot reload recovery
+on the post-typing assert; new lab script
+restore_1042_seed.py rebuilds the seeded 1042 document;
+r9_freshhunt's finally now writes BatchNumber 1042 and
+checks it. Proven: standalone polish3 37/37, closing
+battery 44/44.
+
+Lab left clean at 7 batches (1042-1048), 101 series, 0
+events, defaults restored (FanLevel 5, HeatLevel 5,
+BatchNumber 1042, ActiveSource Simulated, Mode Off,
+ThemeMode System, DispAxisFormat m:ss, CompareAlignEvent
+charge, PressCaptureMode Group, PeriscopeAvailable True,
+background cleared, PhaseFromBg False), PressSlots empty,
+0 events stable after a 60 s idle wait, gateway RUNNING,
+trial about 4347 s at close.

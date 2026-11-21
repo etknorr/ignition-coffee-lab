@@ -209,7 +209,7 @@ POPUP_CLOSE = {
 # indentation. A script package folder carries no code.py of its own;
 # modules are subfolders (verified on this gateway).
 
-CORE_CODE = '''# Roastery core library: roast flow control, RoR derivation, curve
+CORE_CODE = r'''# Roastery core library: roast flow control, RoR derivation, curve
 # sampling, event stamping, overlay building, and form handling.
 #
 # Every Perspective component handler, view startup script and tag
@@ -220,6 +220,8 @@ CORE_CODE = '''# Roastery core library: roast flow control, RoR derivation, curv
 #
 # B is the one CurrentBatch UDT instance; tag paths are built from it
 # in exactly one place.
+
+LOG = system.util.getLogger('roastery.core')
 
 B = '[default]Roastery/CurrentBatch'
 EVENTS_LOG = '[default]Roastery/EventsLog'
@@ -236,11 +238,181 @@ LIVE_DS = '[default]Roastery/LiveCurveDS'
 # fan and heat are Double in the chart dataset, matching the
 # EventsLog doubles the v4 strip chart read; the stored
 # CurveSamples keep Integer levels.
-LIVE_COLS = ['t_stamp', 'bean', 'ror', 'fan', 'heat',
-             'bg', 'bgRor', 'plan', 'proj',
+LIVE_COLS = ['t_stamp', 't_label', 't_sec', 'bean', 'ror',
+             'fan', 'heat', 'bg', 'bgRor', 'plan', 'proj',
              'bandDry', 'bandMai', 'bandDev', 'bandCool']
 SELECTED_TAG = '[default]Roastery/SelectedBatchNumber'
 NQ_EVENTS_INSERT = 'Roastery/Events/InsertPress'
+NQ_EVENTS_SELECT_BY_COUNTER = 'Roastery/Events/SelectByCounter'
+APP_SETTINGS = '[default]Roastery/AppSettings'
+PERISCOPE_AVAILABLE_TAG = APP_SETTINGS + '/PeriscopeAvailable'
+# ------------------------------------------------------- elapsed axis
+# Polish round 1, item 2: every chart dataset anchors its x
+# values to this fixed instant instead of the Unix epoch. It is
+# midnight in America/Denver (Eric's timezone) on 2000-01-01:
+# 946710000000 ms (2000-01-01 07:00 UTC). A canvas time axis
+# formats its tick labels in the BROWSER's timezone, so epoch
+# anchored elapsed values (Date(0) + elapsed) read 17:02, 17:03
+# on a Denver phone (epoch midnight UTC is 17:00 in Denver),
+# which looks like a wall clock under the Elapsed (mm:ss)
+# title. Anchored to a Denver local midnight instead, the same
+# ticks read 00:00, 00:15 through the first hour of elapsed
+# time, exactly the mm:ss reading the title promises. The
+# anchor is a constant, never derived from the gateway clock,
+# so every gateway and every dataset agrees on it. Datasets
+# carry Date(AXIS_BASE_MS + elapsed); readers that need elapsed
+# seconds back subtract AXIS_BASE_MS (roastery.batches
+# _detail_points does).
+AXIS_BASE_MS = 946710000000
+
+
+def elapsed_ms(sec):
+    """Elapsed seconds since charge as chart x milliseconds."""
+    return AXIS_BASE_MS + long(float(sec) * 1000)
+
+
+def elapsed_date(sec):
+    """Elapsed seconds since charge as a chart x Date."""
+    from java.util import Date
+    return Date(elapsed_ms(sec))
+
+
+# ------------------------------------------------- elapsed labels
+# Polish round 3 (HUNT-23, reopened by Eric 2026-11-18: the
+# axis "says 7:01 7:02... isn't it just 1:00 2:00?"). The
+# canvas TIME axis formats dates in the browser's timezone
+# and no configuration passthrough changes that on this
+# build (round 2 probe, knowledge/notes/
+# canvas-chart-timezone-axis.md), so the Denver anchor only
+# ever read true in Denver. The charts now run on a
+# CATEGORY axis whose category names are elapsed strings
+# this library formats: the browser never formats a date,
+# so the labels read true elapsed in every timezone
+# (proven at Denver, Pacific and UTC in the round 3 axis
+# probe and the timezone verification shots).
+#
+# Consequences, all worked through in the probe:
+# - Categories are one per grid step (second_grid below),
+#   so the axis stays time proportional and the auto label
+#   interval thins the text to whatever fits the width,
+#   which is the no overlap rule. Fixed tick steps are NOT
+#   exposed by the component on this build (axisLabel
+#   interval keys in both advanced and labels are silently
+#   dropped, proven with a freshness control), so spacing
+#   is Auto only, like Artisan's auto grid.
+# - Polish round 6 (HUNT-51, Eric 2026-11-19: the axis must
+#   read even increments like 15 30 45 1:00 1:15 1:30, and
+#   30 s resolution is fine). The auto interval alone cannot
+#   promise that: it samples every Nth category for N from
+#   label width and plot width, and N lands on 51 s steps
+#   on a full roast. The fix is in the category set itself:
+#   second_grid now emits one row per AXIS_GRID_STEP_SEC
+#   (30 s), so every category name is an even step and any
+#   auto interval stride over them stays even (30, 60, 90,
+#   120 s). The blanking shortcut was NOT used: the round 3
+#   probe proved blank names merge into a single category
+#   and scramble the line, so categories must stay unique
+#   and non blank. The cost is quantization: samples,
+#   overlays, bands and markers land on the nearest 30 s
+#   bucket (at most 15 s off their true second), which Eric
+#   accepted as 30 s resolution. Reference lines snap to
+#   the same grid in _ref_items, because a line can only
+#   draw on a category that exists.
+# - Category names must be unique per second or ECharts
+#   collapses the duplicates into one slot (proven: blank
+#   names merged into a single category and scrambled the
+#   line). That rules out blanking non tick seconds and
+#   rules out a decimal minutes format (several seconds
+#   round onto one name). The formats are m:ss (Artisan's
+#   own) and mm:ss.
+# - Reference lines take the category NAME as their value
+#   (a numeric value is looked up as a name and draws
+#   nothing, proven), so _ref_items emits label strings
+#   from this same formatter and the two can never drift.
+
+
+def axis_format():
+    """The Display setting for the time axis labels:
+    'm:ss' (Artisan style, the default) or 'mm:ss'."""
+    try:
+        fmt = read_members(['DispAxisFormat'])['DispAxisFormat']
+    except Exception:
+        fmt = None
+    return fmt if fmt in ('m:ss', 'mm:ss') else 'm:ss'
+
+
+def axis_label(sec, fmt=None):
+    """Elapsed seconds since charge as a category name."""
+    if fmt is None:
+        fmt = axis_format()
+    s = int(round(float(sec)))
+    if s < 0:
+        s = 0
+    m, ss = divmod(s, 60)
+    if fmt == 'mm:ss':
+        return '%02d:%02d' % (m, ss)
+    return '%d:%02d' % (m, ss)
+
+
+# Polish round 6 (HUNT-51): the elapsed axis grid step in
+# seconds. Every chart category is a multiple of this step,
+# so every label the auto interval can show is an even
+# increment (30, 60, 90, 120 s) at any width. 30 s is the
+# step Eric named as fine; the grid is the same for the
+# phone and desktop instances (they share one dataset tag),
+# and the auto interval thins it per instance.
+AXIS_GRID_STEP_SEC = 30
+
+
+def grid_bucket(sec, step=AXIS_GRID_STEP_SEC):
+    """Nearest grid step multiple for one elapsed second.
+    Integer arithmetic (round half up) so the Jython library
+    and the CPython suites agree exactly, including at half
+    step boundaries where round() differs between the two.
+    A value lands at most step / 2 from its true second."""
+    s = int(round(float(sec)))
+    return (s + step // 2) // step * step
+
+
+def second_grid(placed, cols, max_sec, fmt=None,
+                fill_cols=()):
+    """Dataset rows for a category axis chart: one row per
+    AXIS_GRID_STEP_SEC seconds, 0..max_sec, [Date, t_label,
+    t_sec] plus one value per column in cols. Callers bucket
+    their placed seconds to the grid step first (see
+    grid_bucket), so a value lands on its nearest grid row
+    and is null elsewhere (the series run connectNulls, so a
+    gap of a few buckets bridges without warping the time
+    scale), except the cols in fill_cols, which forward fill:
+    fan and heat levels are constant between changes, so
+    their fill is exact, and their step series need a value
+    at every grid row to draw the steps. The grid extends
+    past max_sec when a bucketed value lands beyond it, so
+    no sample is ever dropped. Every t_label is a multiple
+    of the grid step (HUNT-51), so the auto interval can
+    only ever show even increments.
+    """
+    from java.util import Date
+    if fmt is None:
+        fmt = axis_format()
+    rows = []
+    last = dict((c, None) for c in fill_cols)
+    top = int(max_sec)
+    for c in cols:
+        keys = placed.get(c, {})
+        if keys:
+            top = max(top, max(keys))
+    for s in range(0, top + 1, AXIS_GRID_STEP_SEC):
+        row = [Date(elapsed_ms(s)), axis_label(s, fmt), s]
+        for c in cols:
+            v = placed.get(c, {}).get(s)
+            if c in last:
+                if v is not None:
+                    last[c] = v
+                v = last[c]
+            row.append(v)
+        rows.append(row)
+    return rows
 # Tier 3 item 17: the target plan list lives in the TargetPlanJson
 # member (JSON list of [sec, tempF] pairs); the editor staging
 # tags follow the AlarmEditor precedent.
@@ -303,6 +475,82 @@ def write_members(pairs):
                              [v for _m, v in pairs])
 
 
+# ------------------------------------------------------- toasts
+# Polish round 1 phase 3: one shot user feedback through the
+# Embr Periscope module's native toasts (react-toastify on the
+# client). Periscope toasts are NOT a component: Periscope
+# injects its own toast container and exposes a client side JS
+# global, fired through its scripting function
+# system.perspective.runJavaScriptAsync with arguments passed
+# as data (never string built, per the maintainer's guidance).
+# This wrapper no-ops silently when the PeriscopeAvailable tag
+# is False or anything throws, so a gateway without the module
+# behaves exactly as before. The JS side guards on the global
+# existing, so a missing module can never surface a client
+# error either. Toasts fire only in the session that caused
+# them (the default runJavaScriptAsync targeting): the phone
+# is the remote control and the desktop is a separate session,
+# and a toast is feedback for the person who acted.
+
+TOAST_KINDS = ('success', 'info', 'warning', 'error')
+TOAST_JS = ("(content, options) => { "
+            "if (typeof periscope !== 'undefined' && periscope "
+            "&& periscope.toast) { "
+            "if (options && options.theme === 'system') { "
+            "options.theme = (typeof window !== 'undefined' "
+            "&& window.matchMedia && window.matchMedia("
+            "'(prefers-color-scheme: dark)').matches) "
+            "? 'dark' : 'light' } "
+            "periscope.toast(content, options) } }")
+
+
+def _toast_theme(self):
+    """The react-toastify theme for this session (polish
+    phase 4, HUNT-17). A session pinned to the built in dark
+    or light theme passes that name straight through. Any
+    other session theme (the roastsystem theme in System
+    mode) resolves on the client: 'system' is handed to the
+    JS side, which maps it through the device's
+    prefers-color-scheme media query, the same query the
+    roastsystem theme itself resolves with."""
+    try:
+        t = str(self.session.props.theme)
+    except Exception:
+        return 'system'
+    if t in ('dark', 'light'):
+        return t
+    return 'system'
+
+
+def show_toast(self, message, kind='info'):
+    """Fire one Periscope toast in the caller's session. kind
+    is success, info, warning or error. Never raises."""
+    try:
+        if not message:
+            return
+        qv = system.tag.readBlocking([PERISCOPE_AVAILABLE_TAG])[0]
+        if not qv.value:
+            return
+        if kind not in TOAST_KINDS:
+            kind = 'info'
+        system.perspective.runJavaScriptAsync(
+            TOAST_JS,
+            {'content': str(message),
+             'options': {'type': kind, 'autoClose': 5000,
+                         'position': 'top-center',
+                         'theme': _toast_theme(self),
+                         'closeOnClick': True}})
+    except:
+        # Polish round 6, HUNT-48: runJavaScriptAsync goes
+        # through Periscope to a page that may be closing,
+        # and a Java throwable is not a Python Exception in
+        # Jython (round 4, HUNT-36), so except Exception
+        # does not catch it. Bare except keeps the Never
+        # raises promise; a toast to a gone page is nothing
+        # to log.
+        pass
+
+
 def elapsed_sec(start, now=None):
     if start is None:
         return -1
@@ -342,8 +590,8 @@ def empty_live_dataset():
     # value per LIVE_COLS entry (growing the columns without
     # growing the seed made charge() abort here, v4.4).
     return typed_empty_dataset(
-        LIVE_COLS, [None, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                    0.0, 0.0, 0.0, 0.0])
+        LIVE_COLS, [None, '', 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
 
 def empty_log_dataset():
@@ -739,6 +987,20 @@ def on_bean_temp(tag_path, current_value, initial_change):
     if initial_change:
         _ror_buffer(temp, now_ms)
         return
+    if _sim_seeking(now_ms):
+        # Cooling seek fast forward in progress (Simulated
+        # source only): the device is racing through program
+        # rows, so this change is a fast forward artifact, not
+        # a roast sample. Advance the seek one step (its
+        # landing reseeds the RoR buffer and opens the
+        # deferred between batch window) and keep the live
+        # pipeline muted until then, so sessions are not
+        # flooded with chart rebuilds at the seek's tick rate
+        # (polish round 3, HUNT-22: that flood, plus the old
+        # blocking seek loop inside drop(), is the window in
+        # which dock clicks were swallowed whole).
+        sim_seek_advance()
+        return
     ror = _live_ror(temp, now_ms)
     if ror is not None:
         write_members([('RateOfRiseF', ror)])
@@ -763,6 +1025,217 @@ def on_bean_temp(tag_path, current_value, initial_change):
     except Exception:
         # Turning point, AUC and alarms ride on the temp change;
         # a failure here must never break RoR or sampling.
+        pass
+    try:
+        # Press capture tail (polish round 3, HUNT-22): the
+        # last presses of a burst leave ring slots no later
+        # press will reconcile, and invokeLater does not
+        # fire in any scope on this build (proven in the round
+        # 3 audit). The temp change path is the one always on
+        # gateway rhythm, so it carries the tail; reconcile
+        # self limits to slots past the grace age.
+        reconcile_press_pending()
+    except Exception:
+        pass
+
+
+# ------------------------------------------------------- display texts
+# Polish round 1, items 4, 5 and 6: the HUD and the Roast page
+# read three library published texts instead of computing
+# their own values in view expression bindings (the pattern
+# AnalyzerRorText and BgDeviationText already established).
+# Each publisher writes only on change, so a steady roast does
+# not churn the tags.
+
+_SEP = ' ' + chr(183) + ' '
+STATS_IDLE_TEXT = _SEP.join(['Dry --:-- --', 'Mai --:-- --',
+                             'Dev --:-- --', 'DTR --'])
+
+
+def _publish(member, text):
+    cur = read_members([member])[member]
+    if cur != text:
+        write_members([(member, text)])
+
+
+def ror_display_text(ror):
+    """The HUD RoR reading under Artisan's live display
+    convention (polish round 1 item 4; the Artisan source
+    evidence is written up in docs/coffee-roaster-app.md).
+    Artisan's delta LCD shows its '--' placeholder whenever
+    the delta value is None or outside the RoR limits, and
+    its plotted RoR holds no values before the roast's
+    turning point region. So: before the turning point
+    confirms, and whenever the true value falls outside
+    [RoRClipLowF, RoRClipHighF], the HUD reads '--'. After
+    the turning point it reads the true computed value. The
+    RateOfRiseF tag and the stored samples always keep the
+    true value; only this display text is gated."""
+    vals = read_members(['State', 'TurningPointElapsedSec',
+                         'RoRClipLowF', 'RoRClipHighF'])
+    if vals['State'] not in ('Roasting', 'Dropped', 'Cooling',
+                             'Complete'):
+        return '--'
+    tp = vals['TurningPointElapsedSec']
+    if tp is None or tp < 0 or ror is None:
+        return '--'
+    lo = vals['RoRClipLowF']
+    lo = float(lo) if lo is not None else -18.0
+    hi = vals['RoRClipHighF']
+    hi = float(hi) if hi is not None else 81.0
+    if ror < lo or ror > hi:
+        return '--'
+    return '%d' % int(round(float(ror)))
+
+
+def update_ror_display(ror):
+    try:
+        _publish('RateOfRiseDisplayText', ror_display_text(ror))
+    except Exception:
+        pass
+
+
+def phase_label():
+    """The roast phase for the HUD (polish round 1 item 6),
+    computed in roast order from State plus the stamped event
+    elapsed tags. Second Crack is a sub state of Development:
+    it shows only once FC Start is stamped too, so an early
+    or stray SC stamp can never relabel a young roast. The
+    old view expression checked the SC tag first and showed
+    'Second Crack' at 03:08 of a roast with no first crack."""
+    vals = read_members(['State', 'DryEndElapsedSec',
+                         'FirstCrackStartElapsedSec',
+                         'SecondCrackStartElapsedSec'])
+    state = vals['State']
+    if state == 'Idle':
+        return 'Pre-charge'
+    if state == 'Complete':
+        return 'Complete'
+    if state == 'Cooling':
+        return 'Cooling'
+    if state == 'Dropped':
+        return 'Dropped'
+    fc = vals['FirstCrackStartElapsedSec']
+    fc = fc if fc is not None else -1
+    sc = vals['SecondCrackStartElapsedSec']
+    sc = sc if sc is not None else -1
+    if sc >= 0 and fc >= 0:
+        return 'Second Crack'
+    if fc >= 0:
+        return 'Development'
+    dry = vals['DryEndElapsedSec']
+    if dry is not None and dry >= 0:
+        return 'Maillard'
+    return 'Drying'
+
+
+def update_phase_label():
+    try:
+        _publish('PhaseLabel', phase_label())
+    except Exception:
+        pass
+
+
+def shares_100(durations, total):
+    """Whole percent shares of durations that always sum to
+    100 (HUNT-63). Largest remainder: floor every exact share,
+    then hand the leftover points to the largest fractional
+    parts (ties go to the longer duration). Independent
+    rounding can sum to 99 or 101: a live roast read Dry 44,
+    Mai 22, Dev 33. Returns ints aligned with durations, or
+    Nones when the total is not positive. When the durations
+    do not cover the total (a partial roast with phases still
+    missing), the shares cannot sum to 100 by construction,
+    so plain rounding is used instead."""
+    if total is None or float(total) <= 0:
+        return [None] * len(durations)
+    total = float(total)
+    if abs(sum(durations) - total) > 1.0:
+        return [int(round(float(d) * 100.0 / total))
+                for d in durations]
+    exact = [float(d) * 100.0 / total for d in durations]
+    floors = [int(math.floor(e)) for e in exact]
+    left = 100 - sum(floors)
+    order = sorted(range(len(exact)),
+                   key=lambda i: (exact[i] - floors[i], exact[i]),
+                   reverse=True)
+    for i in order[:max(0, left)]:
+        floors[i] += 1
+    return floors
+
+
+def _stats_mmss(sec):
+    sec = int(max(0, round(float(sec))))
+    return '%d:%02d' % (sec // 60, sec % 60)
+
+
+def stats_line_text():
+    """The Roast page stats line (polish round 1 item 5),
+    computed in the library so the durations and the
+    percentages always describe the same phases. The old
+    view expression took durations from the stamped events
+    but percentages from the target plan splits, so an
+    unstamped phase read '--:-- 43%'. Now: a completed phase
+    shows its actual duration and its actual share of the
+    total (the drop total once dropped, elapsed so far
+    before that); the current phase shows its live duration
+    and live share; future phases show -- for both; DTR
+    shows -- until Drop, then the actual value."""
+    vals = read_members(['State', 'StartTime', 'DryEndElapsedSec',
+                         'FirstCrackStartElapsedSec',
+                         'DropElapsedSec'])
+    state = vals['State']
+    if state == 'Idle' or vals['StartTime'] is None:
+        return STATS_IDLE_TEXT
+    elapsed = float(elapsed_sec(vals['StartTime']))
+    dry = vals['DryEndElapsedSec']
+    dry = float(dry) if dry is not None else -1.0
+    fc = vals['FirstCrackStartElapsedSec']
+    fc = float(fc) if fc is not None else -1.0
+    drop = vals['DropElapsedSec']
+    drop = float(drop) if drop is not None else -1.0
+    total = drop if drop >= 0 else elapsed
+    starts = [0.0, dry, fc]
+    ends = [dry, fc, drop]
+    durs = []
+    for i in range(3):
+        if ends[i] >= 0 and starts[i] >= 0:
+            durs.append(ends[i] - starts[i])
+        elif (state == 'Roasting' and starts[i] >= 0
+                and (i == 0 or ends[i - 1] >= 0)):
+            durs.append(max(0.0, elapsed - starts[i]))
+        else:
+            durs.append(None)
+    shown = [d for d in durs if d is not None]
+    shares = shares_100(shown, total)
+    share_by_idx = {}
+    k = 0
+    for i, d in enumerate(durs):
+        if d is not None:
+            share_by_idx[i] = shares[k]
+            k += 1
+    segs = []
+    for i in range(3):
+        if durs[i] is not None:
+            segs.append((_stats_mmss(durs[i]),
+                         ('%d%%' % share_by_idx[i])
+                         if share_by_idx[i] is not None else '--'))
+        else:
+            segs.append(('--:--', '--'))
+    if drop >= 0:
+        dev_dur = drop - fc if fc >= 0 else 0.0
+        dtr = ('%.0f%%' % (dev_dur * 100.0 / drop)) if drop > 0 \
+            else '--'
+    else:
+        dtr = '--'
+    return _SEP.join(['Dry %s %s' % segs[0], 'Mai %s %s' % segs[1],
+                      'Dev %s %s' % segs[2], 'DTR %s' % dtr])
+
+
+def update_stats_line():
+    try:
+        _publish('StatsLineText', stats_line_text())
+    except Exception:
         pass
 
 
@@ -801,20 +1274,35 @@ def _track_turning_point(temp, elapsed):
 
 def auc_between(points, begin_sec, base):
     """Trapezoid area between the bean curve and the base temp,
-    from begin_sec on, in degree minutes. Per segment the
-    average of the two endpoint temps above the base times the
-    segment minutes; segments at or below the base contribute
-    nothing (Artisan calcAUC shape). points: [(t_sec, temp)]
+    from begin_sec on, in degree minutes. Segments are clipped
+    to the range with an interpolated temp at begin_sec (the
+    same shape as batches._auc_range): a segment straddling
+    the begin event contributes only its part after the
+    event, instead of being dropped whole. HUNT-62: the old
+    form kept only points at or after begin_sec, so with the
+    default fixed base of 212 F it undercounted the live AUC
+    by the straddling segment (about 0.5 F-min on 1 s samples
+    with a Dry End begin, about 8 F-min on a 30 s grid; the
+    Artisan profileAUC shape counts the segment ending at
+    the begin sample, the live updateAUC counts the newest
+    segment each tick, and this clipped form is the exact
+    integral from the begin second). Segments at or below
+    the base contribute nothing. points: [(t_sec, temp)]
     oldest first."""
-    pts = [(float(t), float(v)) for t, v in points if t >= begin_sec]
+    if begin_sec is None:
+        return 0.0
+    pts = [(float(t), float(v)) for t, v in points]
     auc = 0.0
     for i in range(len(pts) - 1):
-        dt = (pts[i + 1][0] - pts[i][0]) / 60.0
-        if dt <= 0:
+        t0, v0 = pts[i]
+        t1, v1 = pts[i + 1]
+        if t1 <= begin_sec or t1 <= t0:
             continue
-        avg = (pts[i][1] + pts[i + 1][1]) / 2.0
+        a = max(t0, float(begin_sec))
+        va = v0 + (v1 - v0) * (a - t0) / (t1 - t0)
+        avg = (va + v1) / 2.0
         if avg > base:
-            auc += (avg - base) * dt
+            auc += (avg - base) * (t1 - a) / 60.0
     return auc
 
 
@@ -937,13 +1425,42 @@ def evaluate_alarms():
     An alarm arms only once its guard event has happened plus
     its offset seconds."""
     members = ['State', 'StartTime', 'BeanTempF', 'RateOfRiseF',
-               '_AlarmFiredJson', 'TurningPointElapsedSec']
+               '_AlarmFiredJson', 'TurningPointElapsedSec',
+               'AlarmMessageSeq']
     members += list(ALARM_GUARD_MEMBERS.values())
     vals = read_members(members)
     if (vals['State'] not in ('Roasting', 'Dropped', 'Cooling')
             or vals['StartTime'] is None):
         if vals['State'] == 'Idle':
             write_members([('AlarmText', ''), ('AlarmActive', False)])
+        elif vals['State'] == 'Complete':
+            # HUNT-76: a Banner alarm fired during the roast
+            # used to stay on the Complete screen forever (the
+            # roast is over but nothing re-evaluates alarms in
+            # Complete, so the text never cleared even after
+            # the bean cooled below the threshold). The roast
+            # is over, so Banner texts clear at Finish; a
+            # latched Message alarm keeps showing, per its
+            # documented rule (latched until the next charge
+            # or reset). This branch runs on the Finish press
+            # itself (finish records the press after writing
+            # Complete) and on any later press or alarm edit
+            # while Complete.
+            fired = []
+            if vals['_AlarmFiredJson']:
+                try:
+                    fired = system.util.jsonDecode(
+                        vals['_AlarmFiredJson'])
+                except Exception:
+                    fired = []
+            texts = []
+            for i, a in enumerate(alarm_definitions()):
+                if (a.get('action') == 'Message'
+                        and i in fired):
+                    texts.append(a.get('message')
+                                 or a.get('name') or 'Alarm')
+            write_members([('AlarmText', ' | '.join(texts)),
+                           ('AlarmActive', bool(texts))])
         return
     elapsed = elapsed_sec(vals['StartTime'])
     fired = []
@@ -953,6 +1470,7 @@ def evaluate_alarms():
         except Exception:
             fired = []
     texts = []
+    new_msgs = []
     fired_changed = False
     for i, a in enumerate(alarm_definitions()):
         if not a.get('enabled', True):
@@ -978,6 +1496,7 @@ def evaluate_alarms():
             if hit and i not in fired:
                 fired.append(i)
                 fired_changed = True
+                new_msgs.append(msg)
             if i in fired:
                 texts.append(msg)
         elif hit:
@@ -987,6 +1506,21 @@ def evaluate_alarms():
     if fired_changed:
         pairs.append(('_AlarmFiredJson',
                       system.util.jsonEncode(fired)))
+    if new_msgs:
+        # Polish phase 3: the latched Message value the Roast
+        # page watches to fire a one shot Periscope toast. Only
+        # NEW latches write it, so the page's property change
+        # script toasts once per latch, not per evaluation.
+        # Polish phase 4 (HUNT-19): AlarmMessageSeq increments
+        # on every new latch batch, and the page's toast
+        # trigger watches the SEQUENCE, not the text: two
+        # latches carrying identical message text write the
+        # same AlarmMessageText twice (no value change, no
+        # property change, a missed toast), while the
+        # sequence always changes.
+        pairs.append(('AlarmMessageText', ' | '.join(new_msgs)))
+        pairs.append(('AlarmMessageSeq',
+                      int(vals['AlarmMessageSeq'] or 0) + 1))
     write_members(pairs)
 
 
@@ -1024,6 +1558,13 @@ def _live_analytics(temp, now_ms, ror):
         update_analyzer()
     except Exception:
         pass
+    # Polish round 1 display texts ride the same path, after
+    # the turning point tracking above so a TP confirmed by
+    # this very sample is already visible to the RoR gate.
+    update_ror_display(ror)
+    update_phase_label()
+    update_dock_actions()
+    update_stats_line()
 
 
 def _reset_live_analytics():
@@ -1033,6 +1574,7 @@ def _reset_live_analytics():
                    ('AucLiveFMin', 0.0), ('AucSinceFcFMin', 0.0),
                    ('AucGuideElapsedSec', -1),
                    ('AlarmText', ''), ('AlarmActive', False),
+                   ('AlarmMessageText', ''),
                    ('_AlarmFiredJson', ''),
                    ('BgDeviationText', '--'),
                    ('PlaybackText', ''), ('PlaybackActive', False),
@@ -1048,12 +1590,15 @@ def _reset_live_analytics():
                    ('AnalyzerRorText', '--'),
                    ('AnalyzerBgText', '--'),
                    ('AnalyzerDevText', '--'),
-                   ('AnalyzerHasBg', False)])
+                   ('AnalyzerHasBg', False),
+                   ('RateOfRiseDisplayText', '--'),
+                   ('PhaseLabel', 'Pre-charge'),
+                   ('StatsLineText', STATS_IDLE_TEXT)])
 
 
-def clear_background():
-    """Clear the staged background ghost (Roast page chart
-    card Clear button): drop the staged points and label and
+def clear_background(self=None):
+    """Clear the staged background ghost (Settings Background
+    Clear button): drop the staged points and label and
     rebuild the overlays. Pending playback prompts die with
     the ghost (Tier 2 item 11)."""
     system.tag.writeBlocking(
@@ -1066,6 +1611,8 @@ def clear_background():
                    ('PlaybackText', ''), ('PlaybackActive', False),
                    ('_PlaybackFiredJson', '')])
     build_overlays()
+    if self is not None:
+        show_toast(self, 'Background cleared', 'success')
 
 
 # ------------------------------------------------------- alarm editor
@@ -1092,8 +1639,20 @@ def alarms_table_dataset():
                      int(a.get('offsetSec') or 0),
                      a.get('source') or 'BT',
                      a.get('cond') or '>=',
-                     a.get('value') if a.get('value') is not None
-                     else '',
+                     # The value column must be one type:
+                     # seeded definitions carry JSON ints
+                     # (430) while the editor always writes
+                     # floats (430.0), and toDataSet refuses
+                     # the mix, throwing inside
+                     # _save_alarm_defs AFTER the definitions
+                     # were written, which silently ate the
+                     # table refresh, the note and the toast
+                     # on every Add and on any Save past the
+                     # first row (polish round 3, HUNT-30).
+                     # Uniform Double here; the definitions
+                     # themselves keep their stored shape.
+                     float(a.get('value'))
+                     if a.get('value') is not None else None,
                      a.get('message') or '',
                      a.get('action') or 'Banner'])
     return system.dataset.toDataSet(ALARM_EDITOR_COLS, rows)
@@ -1190,6 +1749,7 @@ def alarm_editor_save(self):
     self.view.custom.alarmIdx = idx
     self.view.custom.alarmNote = ('Saved alarm %d: %s'
                                   % (idx + 1, entry['name']))
+    show_toast(self, 'Alarm saved: %s' % entry['name'], 'success')
 
 
 def alarm_editor_add(self):
@@ -1200,6 +1760,11 @@ def alarm_editor_add(self):
     alarm_editor_load(self, len(defs) - 1)
     self.view.custom.alarmNote = ('Added alarm %d: %s'
                                   % (len(defs), entry['name']))
+    # Polish round 3 (HUNT-28): Save toasted but Add and
+    # Delete only wrote the note line; the editor's feedback
+    # now goes through the toast choke point on all three.
+    show_toast(self, 'Alarm added: %s' % entry['name'],
+               'success')
 
 
 def alarm_editor_delete(self):
@@ -1210,27 +1775,238 @@ def alarm_editor_delete(self):
         _save_alarm_defs(self, defs)
         self.view.custom.alarmNote = ('Deleted alarm: %s'
                                       % (gone.get('name') or ''))
+        show_toast(self, 'Alarm deleted: %s'
+                   % (gone.get('name') or ''), 'success')
         if defs:
             alarm_editor_load(self, min(idx, len(defs) - 1))
 
 
 # ---------------------------------------------------------------- press capture
 
+# Polish round 3 (HUNT-22): exactly one batch_events row per
+# press, guaranteed. The PressEvents group stays the writer in
+# Group mode, but the group's design has a structural loss
+# window: it reads the LastAction context tags at execution
+# time, so when its execution lags behind a press (proven in
+# the Tier 3 era at a 1 s scan, and again under the Drop
+# cooling seek's render load), two counter edges collapse into
+# one execution carrying only the latest action, and the
+# earlier press's row is never written. The counter keyed
+# reconcile below closes that window.
+#
+# Every press writes its own context into its own slot of a
+# 16 slot ring (the PressSlots tags, slot = counter mod 16):
+# one tag write, no read, so concurrent press handlers cannot
+# overwrite each other's context. (The audit's first design
+# kept the contexts in one shared JSON list, and a four click
+# cluster landing inside 0.5 s lost exactly one entry to the
+# list's read modify write race, the same press the group
+# then collapsed. The ring removes the shared write.) The
+# group now stores press_counter on every row it writes, and
+# reconcile checks each slotted press against the row key
+# (batch_number, press_counter): a press the group missed is
+# inserted from its slot with its original context; a press
+# the group wrote needs nothing. The unique index on
+# (batch_number, press_counter) plus the named query's ON
+# CONFLICT DO NOTHING make a double write impossible, whoever
+# gets there first. Slots are never cleared; a slot is simply
+# overwritten 16 presses later, long after the reconcile
+# passes (the next press, the BeanTempF change tail, Charge,
+# and Save Batch all run it) have verified it. The horizon
+# below bounds the net: a press still missing ten minutes
+# later belongs to a workspace the gateway lost anyway.
+PRESS_RECONCILE_GRACE_SEC = 3.0
+PRESS_RECONCILE_HORIZON_SEC = 600.0
+PRESS_SLOT_COUNT = 16
+PRESS_SLOTS = '[default]Roastery/PressSlots'
+# Polish round 4 (HUNT-36): failure isolation. A named query
+# call against a faulted database connection can block for a
+# long timeout before it throws, so a reconcile pass that kept
+# trying slot after slot could stall a press handler for many
+# timeouts in a row, and a fault escaping record_press could
+# abort the caller's state transition entirely (the round 3
+# wedge: a Reset pressed into a faulted connection left
+# LastAction 'Reset' with State still Roasting). Two bounds:
+# a pass stops at its first database exception, and that
+# exception arms a module level backoff deadline; passes that
+# start before the deadline return at once with no database
+# calls at all. Together they bound the cost of a faulted
+# database to roughly one blocking call per backoff window
+# across every caller (record_press, the BeanTempF tick tail,
+# charge, and Save Batch), while the press ring keeps every
+# press's context in tags, so healing is just the next
+# successful pass inserting whatever the group missed.
+PRESS_DB_BACKOFF_SEC = 15.0
+_PRESS_DB_BACKOFF = {'until_ms': 0}
+
+
+def _press_db_backoff_active(now_ms):
+    return now_ms < _PRESS_DB_BACKOFF['until_ms']
+
+
+def _press_db_backoff_arm():
+    try:
+        now_ms = system.date.toMillis(system.date.now())
+    except Exception:
+        return
+    _PRESS_DB_BACKOFF['until_ms'] = (
+        now_ms + long(PRESS_DB_BACKOFF_SEC * 1000))
+
+
+def _press_slot_path(counter):
+    return '%s/Slot%02d' % (PRESS_SLOTS,
+                            int(counter) % PRESS_SLOT_COUNT)
+
+
+def _press_slot_write(counter, entry):
+    try:
+        system.tag.writeBlocking(
+            [_press_slot_path(counter)],
+            [system.util.jsonEncode(entry)])
+    except:
+        # A missing tag tree (an older install) must not break
+        # the press; the group path still applies there.
+        pass
+
+
+def _press_slot_contexts():
+    """All ring contexts currently held, as entry dicts."""
+    try:
+        paths = ['%s/Slot%02d' % (PRESS_SLOTS, i)
+                 for i in range(PRESS_SLOT_COUNT)]
+        qvs = system.tag.readBlocking(paths)
+    except Exception:
+        return []
+    out = []
+    for qv in qvs:
+        raw = qv.value
+        if not raw:
+            continue
+        try:
+            e = system.util.jsonDecode(raw)
+        except Exception:
+            continue
+        if isinstance(e, dict) and 'c' in e and 'a' in e:
+            out.append(e)
+    return out
+
+
+def reconcile_press_pending(min_age_sec=None):
+    """Verify every slotted press landed in batch_events and
+    insert any the transaction group missed (see the section
+    note). Entries younger than the grace age are skipped,
+    because the group normally writes within a scan or two;
+    entries older than the horizon are out of the net.
+    Returns the number of rows inserted. Never raises:
+    capture bookkeeping must not break a control.
+
+    Failure isolation (polish round 4, HUNT-36): the pass
+    fails fast. The first named query exception ends the
+    pass (no further database calls in it) and arms the
+    module level backoff; a pass that starts inside the
+    backoff window returns 0 at once with no database calls.
+    A pass that completes with no database exception clears
+    the backoff."""
+    if min_age_sec is None:
+        min_age_sec = PRESS_RECONCILE_GRACE_SEC
+    try:
+        now_ms = system.date.toMillis(system.date.now())
+        if _press_db_backoff_active(now_ms):
+            return 0
+        inserted = 0
+        db_failed = False
+        for e in _press_slot_contexts():
+            age = (now_ms - long(e.get('at') or 0)) / 1000.0
+            if age < min_age_sec or age > PRESS_RECONCILE_HORIZON_SEC:
+                continue
+            try:
+                rows = system.db.runNamedQuery(
+                    NQ_EVENTS_SELECT_BY_COUNTER, {
+                        'batch_number': int(e['b']),
+                        'press_counter': long(e['c'])})
+                if rows is not None and rows.getRowCount() > 0:
+                    continue
+            except:
+                _press_db_backoff_arm()
+                db_failed = True
+                break
+            try:
+                system.db.runNamedQuery(NQ_EVENTS_INSERT, {
+                    'batch_number': int(e['b']),
+                    'action': e['a'],
+                    't_offset_sec': e['t'],
+                    'bean_temp_f': e['bt'],
+                    'rate_of_rise_f': e['ror'],
+                    'fan_level': int(e['f'] or 0),
+                    'heat_level': int(e['h'] or 0),
+                    'press_counter': long(e['c'])})
+                inserted += 1
+            except:
+                _press_db_backoff_arm()
+                db_failed = True
+                break
+        if not db_failed:
+            _PRESS_DB_BACKOFF['until_ms'] = 0
+        return inserted
+    except:
+        return 0
+
+
 def record_press(action):
-    """Capture one control button press (Eric, 2026-11-12: the
-    button presses are the trigger). Every press bumps the
+    """Capture one control button press. Never raises (polish
+    round 4, HUNT-36): the state functions (charge, drop,
+    cool, finish, reset_batch, the steppers, the stamps) call
+    this in the middle of their transitions, and no capture
+    failure may abort or skip a state write again. A failure
+    is logged and the counter is returned when it is already
+    known (the bump landed), else 0.
+
+    The catch is a BARE except on purpose, here and in the
+    other press path catches below: runNamedQuery throws a
+    Java exception (FaultedDatabaseConnectionException) when
+    the connection is faulted, and a Java throwable is not a
+    Python Exception in Jython, so except Exception does not
+    catch it. That is exactly how the round 3 wedge escaped
+    the old code, proven by the gateway log tracebacks in
+    the round 4 fault drill: the fault tore through every
+    except Exception on the path and aborted the callers."""
+    known = [0]
+    try:
+        return _record_press_impl(action, known)
+    except:
+        try:
+            import sys as _sys
+            LOG.error('record_press failed for action %s: %s'
+                      % (action, _sys.exc_info()[1]))
+        except:
+            pass
+        return known[0]
+
+
+def _record_press_impl(action, known):
+    """The record_press body (Eric, 2026-11-12: the button
+    presses are the trigger). Every press bumps the
     ActionCounter trigger surface and stamps LastAction tags; in
     PressCaptureMode 'Library' the press row is also written to
     batch_events through the Events/InsertPress named query. In
     'Group' mode a SQLBridge transaction group bound to
-    ActionCounter writes the row instead. Returns the counter."""
+    ActionCounter writes the row instead; the press also slots
+    its context into the press ring for the reconcile net, so
+    a group execution that lagged past the press cannot lose
+    its row (polish round 3, HUNT-22; see the section note).
+    Returns the counter. known is a one element holder the
+    wrapper reads on failure: it is set the moment the counter
+    is computed, before any write that could throw."""
     vals = read_members(['ActionCounter', 'BatchNumber', 'StartTime',
                          'BeanTempF', 'RateOfRiseF', 'FanLevel',
                          'HeatLevel', 'PressCaptureMode'])
     elapsed = elapsed_sec(vals['StartTime'])
     counter = int(vals['ActionCounter'] or 0) + 1
+    known[0] = counter
     write_members([('ActionCounter', counter), ('LastAction', action),
                    ('LastActionElapsedSec', elapsed),
+                   ('LastActionBatchNumber',
+                    int(vals['BatchNumber'] or 0)),
                    ('LastActionAt', system.date.now())])
     if vals['PressCaptureMode'] != 'Group':
         try:
@@ -1241,10 +2017,32 @@ def record_press(action):
                 'bean_temp_f': vals['BeanTempF'],
                 'rate_of_rise_f': vals['RateOfRiseF'],
                 'fan_level': int(vals['FanLevel'] or 0),
-                'heat_level': int(vals['HeatLevel'] or 0)})
-        except Exception:
+                'heat_level': int(vals['HeatLevel'] or 0),
+                'press_counter': counter})
+        except:
             # Capture must never break the control it rides on.
             pass
+    else:
+        # Slot this press's own context into its ring slot
+        # BEFORE any database touch (polish round 4, HUNT-36):
+        # the slot write is a tag write and cannot block on
+        # the database, so the press's context is safe in the
+        # ring even if the reconcile below stalls or fails on
+        # a faulted connection. Then reconcile older slotted
+        # presses (the BeanTempF tail, Charge and Save Batch
+        # run it too); this press is inside the grace age, so
+        # the pass leaves it for the group as usual.
+        _press_slot_write(counter, {
+            'c': counter,
+            'b': int(vals['BatchNumber'] or 0),
+            'a': action,
+            't': elapsed,
+            'bt': vals['BeanTempF'],
+            'ror': vals['RateOfRiseF'],
+            'f': int(vals['FanLevel'] or 0),
+            'h': int(vals['HeatLevel'] or 0),
+            'at': system.date.toMillis(system.date.now())})
+        reconcile_press_pending()
     try:
         # A press can move fan or heat between temperature
         # changes; refresh the chart dataset so the levels strip
@@ -1293,15 +2091,15 @@ def marks_dataset(evs):
     point (455 F), a bottom point (152 F) and an all null gap row
     in its column so consecutive events never connect.
 
-    X values are ELAPSED dates (epoch + elapsed seconds), the
-    v4.1 axis: every chart dataset is anchored to the roast's own
-    zero, never to wall clock, and the axis formats them mm:ss."""
-    from java.util import Date
+    X values are ELAPSED dates (axis base + elapsed seconds,
+    polish round 1 item 2), the v4.1 axis: every chart dataset
+    is anchored to the roast's own zero, never to wall clock,
+    and the axis formats them mm:ss."""
     idx = dict((c, i + 1) for i, c in enumerate(MARK_COLS[1:]))
     rows = []
     for e, lbl in sorted(evs):
         col = _MARK_COL_FOR.get(lbl, 'notes')
-        ts = Date(long(e * 1000))
+        ts = elapsed_date(e)
         top = [ts] + [None] * (len(MARK_COLS) - 1)
         top[idx[col]] = MARK_TOP
         bot = [ts] + [None] * (len(MARK_COLS) - 1)
@@ -1354,52 +2152,86 @@ def build_marks():
     system.tag.writeBlocking([MARKS_DS], [ds])
 
 
-def _ref_items(evs, top_gap=120.0, mid_gap=45.0, mid_top_gap=45.0):
+def _ref_items(evs, top_gap=55.0, mid_gap=45.0, mid_top_gap=45.0,
+               line_gap=None, grid_step=AXIS_GRID_STEP_SEC):
     """Canvas chart reference line items for (elapsed sec,
     label) events: native ECharts markLines through the
-    component's series referenceLines. Labels sit at the top
-    of the plot (position 'end', proven in the 2026-11-13
-    probe round) unless the collision policy in the loop
-    moves or drops them. Values are epoch milliseconds on the
-    elapsed time axis, clamped to the axis minimum of
-    1000 ms: the axis starts 1 s in so its first tick reads
-    00:01 instead of the year 1970 (the epoch boundary tick
-    gets a year format from ECharts), and a line at 0 would
-    fall outside the plot."""
+    component's series referenceLines. Polish phase 2 item 3:
+    labels live in the reserved band at the top of the plot,
+    above the curves. The charts' bean axis tops out at 520 F
+    while no curve exceeds about 460 F, so the top band of the
+    plot is empty by construction, and every label sits at the
+    line end ('end', the top of the line) in that band,
+    horizontal and readable.
+
+    A two row stagger was tried first and the component
+    cannot do it: 'insideEnd' labels render rotated vertical
+    along the line inside the plot, and the label 'offset',
+    'distance' and 'rotate' fields are not passed through by
+    the component (all three proven live in the 360px spaced
+    label screenshots). So there is ONE row, and top_gap is
+    sized per chart so any two visible labels are guaranteed
+    horizontal clearance: an event closer than top_gap to the
+    previous labeled event keeps its line and drops its
+    label rather than print touching text; the event strip
+    under the chart always carries the name. (mid_gap and
+    mid_top_gap remain in the signature for the existing
+    callers and are ignored.) Values are category names on
+    the elapsed category axis (polish round 3, HUNT-23):
+    the axis_label string of the event's second, from the
+    same formatter that names the categories.
+
+    Polish round 6 (HUNT-51): the value snaps to the grid
+    step first (grid_bucket), because a markLine can only
+    draw on a category that exists, and the categories are
+    now the 30 s grid steps. An event at 273 s draws its
+    line at 270 s, at most 15 s from its true second; the
+    exact time still lives in the events strip and the batch
+    document. The gap and line thinning below run on the
+    snapped seconds, since that is where the lines draw.
+
+    line_gap (round 6, detail chart only) thins the LINES
+    themselves: an unlabeled line closer than line_gap to
+    the last kept line is dropped, so lines a second or two
+    apart do not merge into a solid band at the left edge
+    of a short batch. It is deliberately far smaller than
+    top_gap (labels need tens of seconds of clearance,
+    lines only need a few pixels): a labeled line is never
+    dropped, and when a labeled line lands within line_gap
+    of a kept unlabeled line the unlabeled one goes instead,
+    so every visible label keeps its line. None keeps every
+    line, which is the live chart's settled behavior.
+    """
     items = []
+    secs = []
     last_top = None
-    last_mid = None
     for sec, lbl in sorted(evs, key=lambda e: float(e[0])):
-        sec = float(sec)
-        # Label collision policy (Eric, 2026-11-13, no overlap
-        # pass): labels ride the top of the plot ('end') only
-        # when they stand at least 120 s clear of the previous
-        # top label. (An audit roast with FC Start 100 s after
-        # Charge still merged the two top labels on the phone
-        # chart, where 100 s is only about 30px.) A closer event
-        # drops its label to the middle of the line when the
-        # middle slot is also clear (45 s from the last middle
-        # label and from the top one); anything tighter renders
-        # the line with no label at all rather than print
-        # unreadable stacked text. The event strip under the
-        # chart always carries the name.
+        sec = float(grid_bucket(sec, grid_step))
         if last_top is None or sec - last_top >= top_gap:
-            pos, vis = 'end', True
+            vis = True
             last_top = sec
-        elif (sec - last_top >= mid_top_gap
-                and (last_mid is None or sec - last_mid >= mid_gap)):
-            pos, vis = 'middle', True
-            last_mid = sec
         else:
-            pos, vis = 'end', False
+            vis = False
+        secs.append(sec)
         items.append({
-            'value': max(1000, int(sec * 1000)),
+            'value': axis_label(sec),
             'orientation': 'vertical',
-            'label': {'visible': vis, 'position': pos,
+            'label': {'visible': vis, 'position': 'end',
                       'text': lbl, 'color': '#f59e0b',
                       'fontSize': 11, 'elementStyle': {}},
             'line': {'color': '#f59e0b', 'width': 1.5,
                      'type': 'dashed', 'opacity': 0.9}})
+    if line_gap is not None:
+        kept = []
+        for sec, item in zip(secs, items):
+            labeled = item['label']['visible']
+            if kept and sec - kept[-1][0] < line_gap:
+                if not labeled:
+                    continue
+                if not kept[-1][1]['label']['visible']:
+                    kept.pop()
+            kept.append([sec, item])
+        items = [item for _sec, item in kept]
     return items
 
 
@@ -1407,20 +2239,18 @@ def event_reference_lines():
     """Reference line items for the live chart's bean series,
     bound through a script transform triggered by the
     EventMarksDS tag (rewritten on every press)."""
-    return _ref_items(_live_events())
+    return _ref_items(_live_events(), top_gap=55.0)
 
 
 def event_reference_lines_compact():
-    """Phone variant of the marker labels (no overlap pass):
-    the phone chart squeezes a whole roast into about 215px,
-    so two labels in the same band need roughly 150 s of
-    separation not to touch. The compact policy spaces top
-    labels 150 s apart and middle labels 150 s apart; an
-    event that fits neither band keeps its line and drops
-    its label. The events strip directly under the phone
-    chart names every event, so nothing is lost."""
-    return _ref_items(_live_events(), top_gap=150.0,
-                      mid_gap=150.0, mid_top_gap=30.0)
+    """Phone variant of the marker labels: the phone chart
+    squeezes a whole roast into about 215px, about 0.3 px
+    per second, so two labels in the top band need roughly
+    175 s of separation not to touch. An event closer than
+    that to the previous labeled event keeps its line and
+    drops its label; the events strip directly under the
+    phone chart names every event, so nothing is lost."""
+    return _ref_items(_live_events(), top_gap=175.0)
 
 
 def append_curve_sample(elapsed, t_stamp, temp, ror, fan, heat):
@@ -1682,8 +2512,21 @@ def evaluate_suggestions(temp, elapsed):
                          'FirstCrackStartElapsedSec',
                          'TargetDryEndTempF', 'TargetFCTempF',
                          '_DrySuggested', '_FcSuggested',
-                         'SuggestionActive'])
+                         'SuggestionActive',
+                         'TurningPointElapsedSec'])
     if vals['State'] != 'Roasting' or vals['SuggestionActive']:
+        return
+    # Turning point guard (the Artisan shape in the docstring
+    # above, enforced 2026-11-17): no suggestion before the
+    # turning point exists. Without it, a realistic charge
+    # temp (the 392 F simulator plateau, above both phase
+    # targets) suggested Dry End and FC Start in the first
+    # seconds of the roast, and an early FC stamp also stops
+    # turning point tracking. On a monotonic curve the guard
+    # costs nothing: the TP confirms at the first clear rise
+    # off the charge minimum.
+    if (vals['TurningPointElapsedSec'] is None
+            or vals['TurningPointElapsedSec'] < 0):
         return
     if (vals['SuggestDryEndEnabled']
             and not vals['_DrySuggested']
@@ -1838,8 +2681,7 @@ def analyzer_step(delta):
     if not points:
         return
     sec = read_members(['AnalyzerSec'])['AnalyzerSec']
-    base = float(points[-1]['t']) if sec is None or int(sec) < 0 \
-        else float(sec)
+    base = float(points[-1]['t']) if sec is None or int(sec) < 0         else float(sec)
     new = max(float(points[0]['t']),
               min(float(points[-1]['t']), base + float(delta)))
     write_members([('AnalyzerSec', int(new))])
@@ -1918,10 +2760,17 @@ def phase_band_ranges():
     [(column, start_sec, end_sec)] with elapsed seconds since
     charge. Drying runs charge to dry end, Maillard dry end to
     FC start, Development FC start to drop, and Cooling drop to
-    the latest sample. A phase that has been stamped ends at
+    a fixed horizon. A phase that has been stamped ends at
     its stamp; a phase still ahead ends at its effective target
     boundary (the ghost boundaries when phases from background
     is on and staged, else the saved phase duration targets).
+    Polish round 1 item 1: no range here may depend on the
+    latest sample or on now, so the ranges change only when a
+    phase boundary changes (an event stamp, a target edit, a
+    ghost staged or cleared), never on an ordinary tick. The
+    cooling band used to run to the latest sample and grew
+    every second; it now runs to the effective drop boundary,
+    or two minutes past a drop stamped later than that.
     Empty when idle or when no samples exist yet."""
     points = curve_points()
     if not points:
@@ -1934,7 +2783,6 @@ def phase_band_ranges():
         'BgPhaseDropSec'])
     if vals['State'] == 'Idle':
         return []
-    last = float(points[-1]['t'])
     dry_s = vals['DryEndElapsedSec']
     dry_s = int(dry_s) if dry_s is not None else -1
     fc_s = vals['FirstCrackStartElapsedSec']
@@ -1965,8 +2813,11 @@ def phase_band_ranges():
                       ('bandDev', fc_end, drop_end)):
         if e > s:
             out.append((col, float(s), float(e)))
-    if drop_s >= 0 and last > drop_s:
-        out.append(('bandCool', float(drop_s), float(last)))
+    if drop_s >= 0:
+        cool_end = max(b_drop, drop_s + 120)
+        if cool_end > drop_s:
+            out.append(('bandCool', float(drop_s),
+                        float(cool_end)))
     return out
 
 
@@ -1986,45 +2837,92 @@ def build_live_curve():
     with its elapsed seconds, kept for the whole roast however
     long the page stays open.
 
-    X values are elapsed dates (epoch + elapsed seconds) and the
-    axis formats them mm:ss. RoR is recomputed from the stored
-    temps with compute_ror_series and the current parameters
-    (live variant), the same math as RateOfRiseF and the saved
+    X values are elapsed seconds on the category axis
+    (polish round 3, HUNT-23): every row carries its
+    t_label category name from axis_label, one row per
+    second, so the labels are true elapsed in any browser
+    timezone. The t_stamp Date column stays for the
+    readers that subtract the axis base.
+    RoR is recomputed from the stored temps with
+    compute_ror_series and the current parameters (live
+    variant), the same math as RateOfRiseF and the saved
     batches, so the drawn curve can never disagree with them.
     Fan and heat ride along for the levels strip, same axis."""
-    from java.util import Date
     points = curve_points()
     pts = [(float(p['t']), p['bt']) for p in points]
     rors = compute_ror_series(pts, ror_params(), offline=False)
+    # Polish round 1 item 4 (Artisan display convention; the
+    # evidence is written up in docs/coffee-roaster-app.md):
+    # the DRAWN RoR column follows Artisan's live display
+    # rules, not the raw series. Artisan holds no delta values
+    # outside CHARGE..DROP, starts its RoR line a short span
+    # after CHARGE, and (RoRlimitFlag, on by default) blanks
+    # any displayed value outside the RoR limits. Roastery's
+    # gate: samples before the confirmed turning point draw
+    # nothing (the dip's steep negative slope is the charge
+    # transient, not a roast signal), and any value outside
+    # [RoRClipLowF, RoRClipHighF] draws nothing. The stored
+    # samples, the RateOfRiseF tag and the offline
+    # recomputation in saved batches keep the true values.
+    _disp = read_members(['TurningPointElapsedSec', 'RoRClipLowF',
+                          'RoRClipHighF'])
+    _tp = _disp['TurningPointElapsedSec']
+    _tp = float(_tp) if _tp is not None else -1.0
+    _lo = _disp['RoRClipLowF']
+    _lo = float(_lo) if _lo is not None else -18.0
+    _hi = _disp['RoRClipHighF']
+    _hi = float(_hi) if _hi is not None else 81.0
+    # The projection is a forecast, not a display of the past:
+    # it extends from the TRUE current RoR, so it is computed
+    # from the ungated series before the gate is applied.
+    proj_pts = projection_points(pts, rors)
+    rors = [(t, r if (r is not None and _tp >= 0 and t >= _tp
+                      and _lo <= r <= _hi) else None)
+            for t, r in rors]
     # The canvas line chart reads ONE wide dataset (v4.4
-    # migration): the ghost and target overlays merge into the
-    # same rows by timestamp union, each column null where its
-    # source has no point. The chart series set connectNulls,
-    # so the merge nulls never break a line; they are not data
-    # gaps. Columns bg, bgRor and plan come from the overlay
-    # datasets build_overlays maintains.
-    merged = {}
+    # migration): the ghost and target overlays merge into
+    # the same grid, each column null where its source has
+    # no point at that grid row. The chart series set
+    # connectNulls, so the merge nulls never break a line;
+    # they are not data gaps. Columns bg, bgRor and plan
+    # come from the overlay datasets build_overlays
+    # maintains. (Before polish round 3 the merge keyed rows
+    # by union timestamp on the time axis; the category axis
+    # needs the regular grid second_grid builds, and a point
+    # at a fractional second lands on its nearest grid
+    # step, polish round 6 HUNT-51.)
+    placed = {}
+    max_sec = [-1]
 
-    def put(ms, col, val):
-        row = merged.get(ms)
-        if row is None:
-            row = {}
-            merged[ms] = row
-        row[col] = val
+    def put(sec, col, val):
+        # Polish round 6 (HUNT-51): values land on the
+        # nearest 30 s grid bucket, so the drawn position is
+        # at most 15 s from the true second. The stored
+        # samples keep the true seconds; only this drawn
+        # grid quantizes.
+        s = grid_bucket(sec)
+        if s < 0:
+            s = 0
+        colmap = placed.get(col)
+        if colmap is None:
+            colmap = {}
+            placed[col] = colmap
+        colmap[s] = val
+        if s > max_sec[0]:
+            max_sec[0] = s
 
     # Display smoothing (item 12) shapes ONLY this bean column:
     # the samples and the RoR column above stay raw.
     display = display_smoothed([p['bt'] for p in points])
     for p, (_t, r), disp in zip(points, rors, display):
-        ms = long(p['t'] * 1000)
-        put(ms, 'bean', disp)
-        put(ms, 'ror', r)
-        put(ms, 'fan', float(p['fan']) if p['fan'] is not None
+        put(p['t'], 'bean', disp)
+        put(p['t'], 'ror', r)
+        put(p['t'], 'fan', float(p['fan']) if p['fan'] is not None
             else None)
-        put(ms, 'heat', float(p['heat']) if p['heat'] is not None
-            else None)
-    for t, v in projection_points(pts, rors):
-        put(long(t * 1000), 'proj', v)
+        put(p['t'], 'heat', float(p['heat'])
+            if p['heat'] is not None else None)
+    for t, v in proj_pts:
+        put(t, 'proj', v)
     for path, col in ((BACKGROUND_DS, 'bg'), (BGROR_DS, 'bgRor'),
                       (TARGET_DS, 'plan')):
         ds = system.tag.readBlocking([path])[0].value
@@ -2034,25 +2932,27 @@ def build_live_curve():
             t = ds.getValueAt(i, 't_stamp')
             v = ds.getValueAt(i, col)
             if t is not None and v is not None:
-                put(long(t.getTime()), col, float(v))
-    # Phase bands (Tier 3 item 16): crisp boundary rows at each
-    # band edge, then the band value at every row inside its
-    # range. The chart fills under these width 0 series, which
-    # shades the strip behind the curves.
+                put((long(t.getTime()) - AXIS_BASE_MS) / 1000.0,
+                    col, float(v))
+    # Phase bands (Tier 3 item 16, polish round 1 item 1):
+    # each band contributes ONLY its two boundary seconds.
+    # The band series run connectNulls, so the two points
+    # draw the full strip and the chart fills under these
+    # width 0 series, shading the strip behind the curves.
+    # The band columns change only when a phase boundary
+    # changes, never on an ordinary tick.
     for col, s, e in phase_band_ranges():
-        put(long(s * 1000), col, BAND_TOP_F)
-        put(long(e * 1000), col, BAND_TOP_F)
-        for ms in list(merged.keys()):
-            if long(s * 1000) <= ms <= long(e * 1000):
-                put(ms, col, BAND_TOP_F)
-    rows = []
-    for ms in sorted(merged):
-        m = merged[ms]
-        rows.append([Date(ms), m.get('bean'), m.get('ror'),
-                     m.get('fan'), m.get('heat'), m.get('bg'),
-                     m.get('bgRor'), m.get('plan'), m.get('proj'),
-                     m.get('bandDry'), m.get('bandMai'),
-                     m.get('bandDev'), m.get('bandCool')])
+        put(s, col, BAND_TOP_F)
+        put(e, col, BAND_TOP_F)
+    if max_sec[0] < 0:
+        rows = []
+    else:
+        rows = second_grid(
+            placed,
+            ['bean', 'ror', 'fan', 'heat', 'bg', 'bgRor',
+             'plan', 'proj', 'bandDry', 'bandMai', 'bandDev',
+             'bandCool'],
+            max_sec[0], fill_cols=('fan', 'heat'))
     system.tag.writeBlocking(
         [LIVE_DS], [system.dataset.toDataSet(LIVE_COLS, rows)])
 
@@ -2100,6 +3000,9 @@ def _stamp(stem, label):
         _clear_suggestion('DryEnd')
     elif stem == 'FirstCrackStart':
         _clear_suggestion('FCStart')
+    update_phase_label()
+    update_dock_actions()
+    update_stats_line()
     return elapsed
 
 
@@ -2109,9 +3012,31 @@ def stamp_event(stem, label):
 
 
 def stamp_custom(index):
-    """Record one of the four customizable events."""
+    """Record one of the four customizable events. A custom
+    whose CustomEventNEnabled member is off cannot be stamped
+    at all (polish round 1 item 7): the guard lives here in
+    the library, not only in the view, so no caller can
+    bypass it. A missing Enabled member (an older tag tree)
+    reads as enabled. A slot with a blank name cannot be
+    stamped either (polish round 6): an unnamed slot has no
+    button, so no caller should reach it, and stamping it
+    would record an event with no label. Returns True when
+    the stamp landed."""
     name_member = 'CustomEvent%dName' % index
-    vals = read_members(['BeanTempF', 'StartTime', name_member])
+    enabled_member = 'CustomEvent%dEnabled' % index
+    vals = read_members(['BeanTempF', 'StartTime', name_member,
+                         enabled_member])
+    enabled = vals[enabled_member]
+    if enabled is not None and not enabled:
+        return False
+    # Polish round 6: a slot with no name is hidden, so it
+    # cannot be stamped either. A name that is blank (or
+    # only whitespace) means Eric has not given this slot
+    # a name yet; stamping it would record an event with
+    # no label and a press row with no key.
+    name = vals[name_member]
+    if name is None or not str(name).strip():
+        return False
     now = system.date.now()
     elapsed = elapsed_sec(vals['StartTime'], now)
     stem = 'CustomEvent%d' % index
@@ -2120,10 +3045,491 @@ def stamp_custom(index):
     append_log('event', vals[name_member], vals['BeanTempF'], elapsed, now)
     record_press(vals[name_member])
     build_marks()
+    update_dock_actions()
+    return True
+
+
+def dock_actions():
+    """The phase aware dock contract (polish round 1 item 7):
+    an ordered list of action descriptors computed from State
+    and the stamped events, which the dock view renders in
+    the next chunk. Each descriptor carries:
+      key:   the action key record_press and the stamp
+             functions use ('Charge', 'Dry End',
+             'First Crack Start', ..., or a custom's name),
+      label: the button text (customs use CustomEventNName;
+             a slot whose name is blank is left out entirely,
+             polish round 6),
+      kind:  'primary', 'secondary', 'custom' or 'utility',
+      lead:  True for the one action the phase leads with,
+      customIndex: the custom slot (1 to 4) on customs, 0 on
+      every other action. It is carried on ALL descriptors on
+      purpose: a flex repeater reuses instance views when the
+      set changes, and a param missing from the new instance
+      keeps its previous value in the reused view, so a Drop
+      instance recycled from a custom slot would otherwise
+      inherit that slot's customIndex.
+    Every key routes through the same library handler the
+    current buttons call (charge, stamp_event with the same
+    stem and label pairs, drop, cool, finish, reset_batch,
+    stamp_custom), so press capture is unchanged: one
+    batch_events row per press. Fan and Heat steppers are
+    NOT part of the list; the dock keeps them as fixed
+    elements."""
+    members = ['State', 'DryEndElapsedSec',
+               'FirstCrackStartElapsedSec',
+               'FirstCrackEndElapsedSec',
+               'SecondCrackStartElapsedSec',
+               'SecondCrackEndElapsedSec']
+    for i in (1, 2, 3, 4):
+        members += ['CustomEvent%dName' % i,
+                    'CustomEvent%dEnabled' % i]
+    vals = read_members(members)
+
+    def act(key, label, kind, lead=False):
+        return {'key': key, 'label': label, 'kind': kind,
+                'lead': bool(lead), 'customIndex': 0}
+
+    def customs():
+        out = []
+        for i in (1, 2, 3, 4):
+            enabled = vals['CustomEvent%dEnabled' % i]
+            if enabled is not None and not enabled:
+                continue
+            # Polish round 6: a slot with no name is hidden.
+            # Eric names his own customs in Settings; the
+            # shipped defaults name only slot 1 (Fan Boost),
+            # so the dock shows one custom button instead of
+            # four, and a slot he clears in Settings drops
+            # off the controls until he names it again.
+            name = vals['CustomEvent%dName' % i]
+            if name is None or not str(name).strip():
+                continue
+            d = act(name, name, 'custom')
+            d['customIndex'] = i
+            out.append(d)
+        return out
+
+    def stamped(member):
+        v = vals[member]
+        return v is not None and v >= 0
+
+    state = vals['State']
+    if state == 'Complete':
+        # Charge stays on offer at Complete (polish phase 2
+        # amendment): charging the next batch is what
+        # finalizes an open between batch window into staged
+        # metrics, while Reset discards it. With Reset as the
+        # only action the between batch protocol could never
+        # complete in the real button flow (found by the
+        # tier 3c suite, whose roast 2 charges from Complete).
+        return [act('Charge', 'Charge', 'primary', True),
+                act('Reset', 'Reset / New Roast', 'utility')]
+    if state == 'Dropped':
+        return [act('Cool', 'Cool', 'primary', True),
+                act('Finish', 'Finish', 'secondary')]
+    if state == 'Cooling':
+        return [act('Finish', 'Finish', 'primary', True)]
+    if state != 'Roasting':
+        return [act('Charge', 'Charge', 'primary', True)]
+    if not stamped('DryEndElapsedSec'):
+        return [act('Dry End', 'Dry End', 'primary', True)] \
+            + customs()
+    if not stamped('FirstCrackStartElapsedSec'):
+        return [act('First Crack Start', 'FC Start', 'primary',
+                    True)] + customs()
+    if not stamped('FirstCrackEndElapsedSec'):
+        return [act('First Crack End', 'FC End', 'primary', True),
+                act('Drop', 'Drop', 'secondary')] + customs()
+    if not stamped('SecondCrackStartElapsedSec'):
+        return [act('Second Crack Start', 'SC Start', 'primary',
+                    True),
+                act('Drop', 'Drop', 'secondary')] + customs()
+    if not stamped('SecondCrackEndElapsedSec'):
+        return [act('Second Crack End', 'SC End', 'primary',
+                    True),
+                act('Drop', 'Drop', 'secondary')] + customs()
+    return [act('Drop', 'Drop', 'primary', True)] + customs()
+
+
+def update_dock_actions():
+    """Publish the current dock set to the DockActionsJson
+    member (polish phase 2 item 1), following the PhaseLabel
+    publish pattern: the dock views bind the JSON instead of
+    calling scripts per render. Recomputed at the same points
+    PhaseLabel is recomputed (the temp change path, event
+    stamps, charge, drop, cool, finish, reset), and from the
+    dock views' own startup so a customs rename or enable
+    change made in Settings (a direct tag write, no library
+    call) is picked up when the roast views load."""
+    try:
+        _publish('DockActionsJson',
+                 system.util.jsonEncode(dock_actions()))
+    except Exception:
+        pass
+
+
+# Key to library handler routing for the dock views. Every
+# entry is the same handler the pre phase 2 fixed buttons
+# called, so press capture is unchanged: one batch_events
+# row per press.
+DOCK_EVENT_STEMS = {
+    'Dry End': ('DryEnd', 'Dry End'),
+    'First Crack Start': ('FirstCrackStart', 'First Crack Start'),
+    'First Crack End': ('FirstCrackEnd', 'First Crack End'),
+    'Second Crack Start': ('SecondCrackStart',
+                           'Second Crack Start'),
+    'Second Crack End': ('SecondCrackEnd', 'Second Crack End'),
+}
+
+
+def _dock_route_key(key):
+    """Route one standard dock key to its handler. Returns True
+    when the key routed, False for an empty or unknown key."""
+    if key == 'Charge':
+        charge()
+    elif key in DOCK_EVENT_STEMS:
+        stem, label = DOCK_EVENT_STEMS[key]
+        stamp_event(stem, label)
+    elif key == 'Drop':
+        drop()
+    elif key == 'Cool':
+        cool()
+    elif key == 'Finish':
+        finish()
+    elif key == 'Reset':
+        reset_batch()
+    else:
+        return False
+    return True
+
+
+# Button label to descriptor key, for the dock_press fallback
+# below: the label is the text painted on the button.
+DOCK_LABEL_KEYS = {
+    'Charge': 'Charge',
+    'Dry End': 'Dry End',
+    'FC Start': 'First Crack Start',
+    'FC End': 'First Crack End',
+    'SC Start': 'Second Crack Start',
+    'SC End': 'Second Crack End',
+    'Drop': 'Drop',
+    'Cool': 'Cool',
+    'Finish': 'Finish',
+    'Reset / New Roast': 'Reset'}
+
+
+def _dock_press_by_label(params):
+    """Fallback routing for a dock click whose descriptor key
+    did not route (polish round 3, HUNT-22). The rapid press
+    audit caught a press reaching the session during the Drop
+    cooling seek's render load with its key param not yet
+    applied; the old dispatch then fell through and the press
+    vanished without a trace. The painted label is what the
+    user saw and tapped, so route by it: standard labels map
+    through DOCK_LABEL_KEYS, and a custom's label is its name,
+    matched back to its slot. Anything else is ignored, exactly
+    as an unknown key was before."""
+    label = str(params.get('label') or '')
+    if not label:
+        return
+    key = DOCK_LABEL_KEYS.get(label)
+    if key is not None:
+        _dock_route_key(key)
+        return
+    members = ['CustomEvent%dName' % i for i in (1, 2, 3, 4)]
+    vals = read_members(members)
+    for i in (1, 2, 3, 4):
+        if vals['CustomEvent%dName' % i] == label:
+            stamp_custom(i)
+            return
+
+
+def dock_press(self):
+    """One thin dispatch for every dock button (Views/DockButton
+    carries the descriptor as view params). Customs route by
+    customIndex; standard keys route by key. A click whose key
+    did not route falls back to routing by its painted label
+    (polish round 3, HUNT-22)."""
+    params = self.view.params
+    try:
+        idx = int(params.get('customIndex') or 0)
+    except Exception:
+        idx = 0
+    # Customs route by slot, but only when the descriptor kind
+    # says custom: standard keys always win, so a recycled
+    # repeater instance carrying a stale customIndex can never
+    # stamp the wrong event.
+    if params.get('kind') == 'custom' and idx:
+        stamp_custom(idx)
+        return
+    key = str(params.get('key') or '')
+    if not _dock_route_key(key):
+        _dock_press_by_label(params)
+
+
+# ---------------------------------------------------------------- theme
+# Polish phase 2 item 7. The ThemeMode memory tag lives in
+# [default]Roastery/AppSettings (setup_roastery_v4_tags.py).
+# Light and Dark set the built in session themes directly.
+# System sets the session theme to 'roastsystem', a gateway
+# theme resource that layers the built in dark variables and
+# palette over the built in light theme under a
+# prefers-color-scheme: dark media query, so the BROWSER
+# resolves the device preference (and restyles live when the
+# OS theme changes mid session). Stock Perspective has no
+# session property for the browser color scheme and
+# system.perspective.runJavaScriptAsync is an Embr Periscope
+# module function that is not installed on this gateway, so
+# the theme resource is the route that works; see the docs
+# section for the full investigation.
+
+THEME_MODE_TAG = '[default]Roastery/AppSettings/ThemeMode'
+SYSTEM_THEME = 'roastsystem'
+THEME_MODES = ('System', 'Light', 'Dark')
+
+
+def theme_mode():
+    try:
+        v = system.tag.readBlocking([THEME_MODE_TAG])[0].value
+    except Exception:
+        v = None
+    return v if v in THEME_MODES else 'System'
+
+
+def apply_theme(self):
+    """Set this session's theme from the ThemeMode tag."""
+    mode = theme_mode()
+    target = {'Light': 'light', 'Dark': 'dark'}.get(mode,
+                                                    SYSTEM_THEME)
+    try:
+        if str(self.session.props.theme) != target:
+            self.session.props.theme = target
+    except Exception:
+        pass
+    return target
+
+
+def set_theme_mode(self, mode):
+    """App Settings mode buttons: write the tag (the choice is
+    remembered across sessions) and apply to this session at
+    once."""
+    if mode not in THEME_MODES:
+        return
+    system.tag.writeBlocking([THEME_MODE_TAG], [mode])
+    apply_theme(self)
+
+
+def on_theme_mode_change(self):
+    """HudBar watcher (round 5, HUNT-38): the HudBar view
+    carries a themeMode custom prop bound to the ThemeMode
+    tag with this onChange script, and the HudBar top dock
+    is mounted on every page, so a ThemeMode write from
+    anywhere (another session's App Settings buttons, a
+    direct tag write) re-applies the theme in this already
+    open session without a reload. apply_theme stays the
+    single apply path; the brightness re-report refreshes
+    the chart probe for the System case. Idempotent: the
+    session's own button writes fire it too, after
+    set_theme_mode already applied."""
+    apply_theme(self)
+    report_brightness(self)
+
+
+def page_startup(self):
+    """Every page view's startup: come up in the right theme."""
+    apply_theme(self)
+    init_chart_dark(self)
+    report_brightness(self)
+
+
+# ------------------------------------------------ app settings dock
+# Polish round 3, HUNT-32 (Eric, 2026-11-19: "the popups
+# need to be very smooth, instead of real popups this
+# should use css to slide in from the side and slide
+# out"). App Settings was the app's only real popup; it
+# is now a right dock on every page, the BatchEdit
+# slide over pattern: the platform animates the dock in
+# and out, the gear toggles it, and the panel's own Close
+# button slides it away. Every control inside the view is
+# unchanged.
+
+APP_SETTINGS_DOCK = 'appSettings'
+
+
+def toggle_app_settings(self):
+    """Gear buttons: slide the App Settings panel in or
+    out."""
+    system.perspective.toggleDock(APP_SETTINGS_DOCK)
+
+
+def close_app_settings(self):
+    """App Settings Close button: slide the panel out."""
+    system.perspective.closeDock(APP_SETTINGS_DOCK)
+
+
+# ------------------------------------------------ chart dark mode
+# Polish round 3, HUNT-31 (Eric, 2026-11-18: in dark mode
+# "the shading is dark and hard to see and the numbers in
+# the axes are dark so you can't use it in dark"). Root
+# cause, proven in the lab: the canvas chart's axis label
+# and title colors default (empty string) to a dark gray
+# that does NOT follow the session theme, in pinned Dark
+# exactly as in System on a dark device, while the legend
+# and grid lines do follow the theme. A CSS var() string
+# in a chart text color is dropped by the component (the
+# round 3 probe: labels stayed dark under the dark theme
+# layer), so the colors are explicit literals switched by
+# the session's effective brightness:
+# - pinned Light or Dark: session.props.theme is exact;
+# - System (the roastsystem theme): the browser resolves
+#   prefers-color-scheme and the gateway cannot see it, so
+#   a small script run at startup (the same Periscope
+#   runJavaScriptAsync channel the toasts use) reads
+#   matchMedia on the client and clicks one of two hidden
+#   probe buttons in the shared HudBar dock; the buttons
+#   set the session custom prop chartDark, and a media
+#   change listener re-reports when the OS theme flips
+#   mid session. Every chart axis color and the band
+#   opacity bind to that prop through the script
+#   transforms below (the app's established dynamic prop
+#   pattern, null safe where a bare expression binding
+#   died on the unset prop in the probe).
+# If the script never runs (Periscope unavailable), pinned
+# modes still work and System keeps today's rendering.
+
+CHART_TEXT_ON_DARK = '#e2e8f0'
+CHART_TEXT_ON_LIGHT = '#475569'
+CHART_POINTER_BG_DARK = '#111827'
+CHART_POINTER_BG_LIGHT = '#f8fafc'
+# The probe buttons carry no text (a text label spills
+# past the 1px button box and trips the phone layout's
+# overflow checks); the script finds them by their style
+# class in DOM order: index 0 is BrightDarkBtn, index 1
+# is BrightLightBtn (HudBar child order).
+BRIGHTNESS_JS = (
+    "() => { const mq = window.matchMedia("
+    "'(prefers-color-scheme: dark)'); const report = () => {"
+    " const bs = document.querySelectorAll("
+    "'.psc-roast-brightness-probe'); const btn = "
+    "bs[mq.matches ? 0 : 1]; if (btn) btn.click(); }; "
+    "report(); setTimeout(report, 600); "
+    "setTimeout(report, 1800); if (mq.addEventListener) "
+    "mq.addEventListener('change', report); }")
+
+
+def init_chart_dark(self):
+    """Default the session's chartDark prop to False so the
+    chart color bindings have a value from the first paint;
+    the brightness report overwrites it a moment later in
+    System mode. Never raises."""
+    try:
+        if self.session.custom.chartDark is None:
+            self.session.custom.chartDark = False
+    except Exception:
+        pass
+
+
+def set_chart_dark(self, dark):
+    """HudBar probe buttons: record this session's resolved
+    brightness for the chart bindings."""
+    try:
+        self.session.custom.chartDark = bool(dark)
+    except Exception:
+        pass
+
+
+def report_brightness(self):
+    """Ask the client to report its color scheme (System
+    mode) through the probe buttons. Harmless in pinned
+    modes: the bindings key off the pinned theme first.
+    Never raises."""
+    try:
+        qv = system.tag.readBlocking(
+            [PERISCOPE_AVAILABLE_TAG])[0]
+        if not qv.value:
+            return
+        system.perspective.runJavaScriptAsync(
+            BRIGHTNESS_JS, {})
+    except:
+        # Polish round 6, HUNT-48: the brightness probe goes
+        # through Periscope to a page that may be closing
+        # (the themeMode onChange fires in every open
+        # session on a ThemeMode write), and a Java
+        # throwable is not a Python Exception in Jython
+        # (round 4, HUNT-36), so except Exception does not
+        # catch it and the onChange logs an error. Bare
+        # except keeps the Never raises promise; the theme
+        # itself was already applied by apply_theme, so a
+        # missed re-probe costs nothing.
+        pass
+
+
+def chart_dark(self):
+    """This session's effective chart brightness: True when
+    the charts sit on a dark background."""
+    try:
+        theme = str(self.session.props.theme)
+    except Exception:
+        theme = ''
+    if theme == 'dark':
+        return True
+    if theme == 'light':
+        return False
+    try:
+        return bool(self.session.custom.chartDark)
+    except Exception:
+        return False
+
+
+def chart_text_color(self, _value=None):
+    """Binding transform: axis label and title color for
+    the session's brightness (literal hex; chart props
+    never take CSS var() strings)."""
+    return (CHART_TEXT_ON_DARK if chart_dark(self)
+            else CHART_TEXT_ON_LIGHT)
+
+
+def chart_pointer_bg(self, _value=None):
+    """Binding transform: axis pointer label background."""
+    return (CHART_POINTER_BG_DARK if chart_dark(self)
+            else CHART_POINTER_BG_LIGHT)
+
+
+def chart_band_opacity(self, _value=None):
+    """Binding transform: phase band fill opacity. 0.12
+    reads clearly on the light panel; on the dark panel
+    the same hues need 0.30 to separate (HUNT-31)."""
+    return 0.30 if chart_dark(self) else 0.12
+
+
+def toggle_all_cols(self):
+    """Phone column sets (polish round 2, HUNT-13): flip the
+    calling view's showAllCols custom prop. The wide tables
+    (Log, Alarms, Phase Analysis) carry a reduced phone set
+    and a full set in a phone only wrapper; its toggle button
+    swaps which one shows. The advanced stylesheet never
+    renders the wrapper at desktop widths, so this only ever
+    fires from a phone width session."""
+    try:
+        cur = self.view.custom.showAllCols
+    except Exception:
+        cur = False
+    self.view.custom.showAllCols = not bool(cur)
 
 
 
 def _clear_events():
+    """Clear every event stamp member (polish round 1 item 6
+    audit): all six EVENT_STEMS events (DryEnd, FirstCrackStart,
+    FirstCrackEnd, SecondCrackStart, SecondCrackEnd, Drop)
+    times, temps and elapsed seconds, plus the four customs.
+    Charge is deliberately NOT cleared here because charge()
+    stamps ChargeTime and ChargeTempF immediately before
+    calling this; reset_batch clears ChargeTime and
+    ChargeTempF in its own write. There are no Cool event
+    members on the UDT (cool() is a state change plus a press
+    row only), so nothing Cool related can go stale."""
     pairs = []
     for stem in EVENT_STEMS:
         pairs += [(stem + 'Time', None), (stem + 'TempF', 0.0),
@@ -2139,9 +3545,337 @@ def _clear_log():
     system.tag.writeBlocking([EVENTS_LOG], [empty_log_dataset()])
 
 
+# ------------------------------------------------------- simulator sync
+# RoasterSim is a stepped simulator program (one static BeanTemp
+# row per program second; see scripts/setup_roastery_v4_tags.py
+# for the curve model and the capability evidence). The device
+# exposes meta nodes under [Controls] that the app reaches
+# through the Roastery level Sim* OPC tags:
+# - Reset: writing True restarts the program at interval 0
+#   (the 392 F charge plateau) and the node clears itself.
+# - Pause: True freezes the program at its current interval.
+# - BaseRate: milliseconds per program interval. For a STEPPED
+#   program this is a clean speed control (500 ms plays the
+#   curve at twice wall speed, 2000 ms at half), which is how
+#   Fan and Heat levels move the curve: more heat plays it
+#   faster, more fan slower. (For the old ramp() program this
+#   did not work: ramp progress is wall clock anchored while
+#   segment boundaries follow the counter, so the segments
+#   jumped. Proven on a scratch device, 2026-11-17.)
+# - Program Counter: read only on this device build. Writes
+#   while running and while paused are both ignored (proven
+#   live, polish round 2), so the Drop cooling seek below
+#   cannot jump the counter; it fast forwards through the
+#   Base Rate instead.
+# All of this is Simulated source only and fully guarded: on a
+# real transport (WebSocket, MQTT) or if the Sim tags are
+# missing, every call is a no-op and the roast flow is untouched.
+
+SIM_RESET = '[default]Roastery/SimReset'
+SIM_PAUSE = '[default]Roastery/SimPause'
+SIM_BASE_RATE = '[default]Roastery/SimBaseRate'
+SIM_COUNTER = '[default]Roastery/SimProgramCounter'
+SIM_CHARGE_TEMP_F = 392.0
+
+
+def _sim_is_simulated():
+    try:
+        return read_members(['ActiveSource'])['ActiveSource'] \
+            == 'Simulated'
+    except Exception:
+        return False
+
+
+def _sim_rate_ms(fan, heat):
+    """Base rate for the current Fan and Heat levels: the speed
+    factor is 1.0 at the 5/5 defaults, plus 6 percent per heat
+    level above 5 (minus below), minus 3.5 percent per fan level
+    above 5 (plus below), clamped so a roast can run at most
+    about 1.45x or 0.6x real time."""
+    speed = 1.0 + 0.06 * (int(heat or 5) - 5) \
+        - 0.035 * (int(fan or 5) - 5)
+    speed = max(0.6, min(1.45, speed))
+    ms = int(round(1000.0 / speed / 10.0) * 10)
+    return max(650, min(1700, ms))
+
+
+def sim_apply_rate():
+    """Publish the Fan/Heat driven Base Rate to the simulator.
+    Called at Charge and on every Fan or Heat step."""
+    if not _sim_is_simulated():
+        return
+    try:
+        vals = read_members(['FanLevel', 'HeatLevel'])
+        ms = _sim_rate_ms(vals['FanLevel'], vals['HeatLevel'])
+        cur = system.tag.readBlocking([SIM_BASE_RATE])[0].value
+        if cur is None or int(cur) != ms:
+            system.tag.writeBlocking([SIM_BASE_RATE], [ms])
+    except Exception:
+        pass
+
+
+def sim_align_charge():
+    """Restart the simulator program so its interval 0 (the
+    charge plateau and the start of the dip) lands on the app
+    Charge press, then wait briefly for the probe tag to show
+    the plateau, so ChargeTempF and the first curve samples are
+    the program start and not whatever the free running cycle
+    was showing. The wait is bounded (about 3 s worst case) and
+    any failure leaves the normal charge flow to proceed."""
+    if not _sim_is_simulated():
+        return
+    try:
+        # A fresh program starts here, so any seek flag left
+        # over from an interrupted seek clears with it.
+        write_members([('SimSeeking', False),
+                       ('SimSeekTargetSec', -1)])
+        vals = read_members(['FanLevel', 'HeatLevel'])
+        system.tag.writeBlocking(
+            [SIM_BASE_RATE, SIM_PAUSE, SIM_RESET],
+            [_sim_rate_ms(vals['FanLevel'], vals['HeatLevel']),
+             False, True])
+    except Exception:
+        return
+    try:
+        from java.lang import Thread
+        for _i in range(20):
+            qvs = system.tag.readBlocking(
+                [SIM_COUNTER, path('BeanTempF')])
+            pc, bt = qvs[0].value, qvs[1].value
+            if (pc is not None and int(pc) <= 2) or (
+                    bt is not None
+                    and abs(float(bt) - SIM_CHARGE_TEMP_F) <= 10.0):
+                break
+            Thread.sleep(150)
+    except Exception:
+        pass
+
+
+# ------------------------------------------------------- cooling seek
+# Polish round 2: on DROP the stepped program has no seek of
+# its own, so a Drop pressed far from the program drop anchor
+# (720 s) used to leave the probe following the roast schedule,
+# rising to the anchor peak before it cooled. The seek aligns
+# the program with the actual drop: it fast forwards (two
+# stage, 25 ms per interval then a 250 ms approach)
+# from the current counter to the cooling row aligned with the
+# actual bean temp at drop, then restores the Fan and Heat
+# rate. The declining cooling segment (program seconds 720 to
+# 785, temps below from the generator in
+# scripts/setup_roastery_v4_tags.py at 5 s steps) declines
+# monotonically, so the aligned row is the first row at or
+# below the drop temp; a drop temp below the segment bottom
+# (342.9 F) clamps to the bottom row. The fast forward is
+# two stage (bulk, then a slow approach) because the counter
+# can only be polled; see sim_seek_cooling. The seek is a
+# state machine, not a blocking loop: drop() arms it and
+# returns at once, sim_seek_advance steps it on each
+# BeanTempF change, and the between batch window opens when
+# the seek lands (drop() defers it), so the capture opens on
+# the aligned cooling curve and never sees the fast forward.
+# It is a tag write sequence, not a press, so the PressEvents
+# group still writes exactly one batch_events row for the
+# Drop press. Simulated source only, fully guarded like the
+# rest of the simulator glue.
+
+SIM_DROP_ANCHOR_SEC = 720
+SIM_COOL_BOTTOM_SEC = 785
+SIM_COOL_POINTS = [(720, 417.3), (725, 411.1), (730, 402.8),
+                   (735, 395.3), (740, 387.3), (745, 378.5),
+                   (750, 370.0), (755, 363.1), (760, 358.3),
+                   (765, 355.4), (770, 351.9), (775, 349.2),
+                   (780, 344.8), (785, 342.9)]
+SIM_SEEK_FAST_RATE_MS = 5
+SIM_SEEK_FAST_WINDOW = 200
+SIM_SEEK_RATE_MS = 25
+SIM_SEEK_APPROACH_RATE_MS = 150
+SIM_SEEK_APPROACH_STEPS = 45
+SIM_SEEK_TIMEOUT_SEC = 60
+
+
+def _sim_cool_target_sec(drop_temp):
+    """Program second in the declining cooling segment aligned
+    with drop_temp: the first second whose program temp is at
+    or below it (linear between the 5 s table rows), clamped
+    to the segment ends."""
+    try:
+        dt = float(drop_temp)
+    except Exception:
+        return SIM_DROP_ANCHOR_SEC
+    pts = SIM_COOL_POINTS
+    if dt >= pts[0][1]:
+        return pts[0][0]
+    for i in range(len(pts) - 1):
+        t0, v0 = pts[i]
+        t1, v1 = pts[i + 1]
+        if v1 <= dt <= v0:
+            for s in range(t0, t1 + 1):
+                v = v0 + (v1 - v0) * float(s - t0) / float(t1 - t0)
+                if v <= dt:
+                    return s
+            return t1
+    return SIM_COOL_BOTTOM_SEC
+
+
+def _sim_seeking(now_ms):
+    """True while sim_seek_cooling is fast forwarding the
+    simulator program (polish round 3, HUNT-22). The flag
+    carries a staleness expiry (the seek timeout plus a
+    margin) so a seek interrupted mid flight, by a gateway
+    restart for instance, can never mute the BeanTempF
+    pipeline for good."""
+    try:
+        qv = system.tag.readBlocking([path('SimSeeking')])[0]
+        if not qv.value:
+            return False
+        age = now_ms - long(qv.timestamp.getTime())
+        return age < (SIM_SEEK_TIMEOUT_SEC + 15) * 1000
+    except Exception:
+        return False
+
+
+def sim_seek_cooling(drop_temp):
+    """Arm the cooling seek (see the section note): fast
+    forward the simulator program to the cooling row aligned
+    with drop_temp WITHOUT blocking the caller, and return
+    True when a seek started. No-op (False) on real
+    transports, when the program is already at or past the
+    aligned row, or on any failure.
+
+    Polish round 3 (HUNT-22): this used to run as a blocking
+    poll loop inside drop(), holding the pressing session's
+    handler for the seek's whole 10 to 25 s. The rapid press
+    audit proved the cost: dock clicks landing during the
+    block were delivered late or dropped outright by the
+    client, one press in the post Drop cluster in most runs.
+    The state machine form keeps every press handler at
+    milliseconds; sim_seek_advance does the stepping on the
+    BeanTempF change rhythm the gateway already runs."""
+    if not _sim_is_simulated():
+        return False
+    try:
+        target = _sim_cool_target_sec(drop_temp)
+        cur = system.tag.readBlocking([SIM_COUNTER])[0].value
+        if cur is None or int(cur) >= target:
+            return False
+        # Mute the BeanTempF pipeline for the fast forward
+        # (the ticks are artifacts; on_bean_temp advances the
+        # seek instead of processing them) and start at the
+        # device floor, 5 ms per interval (about 150 per
+        # second): the old blocking poller could not track
+        # that rate and overshot by hundreds of intervals
+        # (polish round 2), but the state machine advances on
+        # the ticks themselves and stages the rate down as
+        # the target nears, so the fast stage is safe here
+        # and keeps the seek, and its session render load,
+        # as short as possible.
+        write_members([('SimSeekTargetSec', int(target)),
+                       ('SimSeeking', True)])
+        system.tag.writeBlocking(
+            [SIM_PAUSE, SIM_BASE_RATE],
+            [False, SIM_SEEK_FAST_RATE_MS])
+        return True
+    except Exception:
+        return False
+
+
+def sim_seek_advance():
+    """Advance the cooling seek one step: called on every
+    BeanTempF change while SimSeeking. The base rate stages
+    down as the target nears (5 ms bulk, 25 ms inside the
+    fast window, then the 150 ms approach crawl at about 6
+    intervals per second, so tick latency costs only an
+    interval or two of overshoot). At the target, or when
+    the seek has run past its timeout, finish: restore the
+    Fan and Heat base rate, reseed the live RoR buffer (the
+    fast forward filled it with compressed time samples;
+    the same reseed charge() performs), and open the
+    between batch window drop() deferred, so the window
+    still opens on the aligned cooling curve."""
+    try:
+        vals = read_members(['SimSeekTargetSec', 'FanLevel',
+                             'HeatLevel'])
+        target = vals['SimSeekTargetSec']
+        pc = system.tag.readBlocking([SIM_COUNTER])[0].value
+        qv = system.tag.readBlocking([path('SimSeeking')])[0]
+        age_ms = (system.date.toMillis(system.date.now())
+                  - long(qv.timestamp.getTime()))
+        done = (target is not None and int(target) >= 0
+                and pc is not None and int(pc) >= int(target))
+        if not done and age_ms < SIM_SEEK_TIMEOUT_SEC * 1000:
+            if (target is not None and int(target) >= 0
+                    and pc is not None):
+                remaining = int(target) - int(pc)
+                if remaining <= SIM_SEEK_APPROACH_STEPS:
+                    want = SIM_SEEK_APPROACH_RATE_MS
+                elif remaining <= SIM_SEEK_FAST_WINDOW:
+                    want = SIM_SEEK_RATE_MS
+                else:
+                    want = SIM_SEEK_FAST_RATE_MS
+                cur_rate = system.tag.readBlocking(
+                    [SIM_BASE_RATE])[0].value
+                if cur_rate != want:
+                    system.tag.writeBlocking(
+                        [SIM_BASE_RATE], [want])
+            return
+        restore_ms = _sim_rate_ms(vals['FanLevel'],
+                                  vals['HeatLevel'])
+        system.tag.writeBlocking([SIM_BASE_RATE], [restore_ms])
+        write_members([('SimSeeking', False),
+                       ('SimSeekTargetSec', -1),
+                       ('_RoRLiveJson', '')])
+        state = read_members(['State'])['State']
+        if state in ('Dropped', 'Cooling', 'Complete'):
+            if not _bbp_read(['WindowActive'])['WindowActive']:
+                _bbp_start_window()
+    except Exception:
+        pass
+
+
+def sim_hold_idle():
+    """Park the simulator on its charge plateau while the
+    workspace is Idle: restart the program and pause it at
+    interval 0 in the same write (proven on a scratch device:
+    the counter holds at 0 and the probe reads the plateau), so
+    the idle console shows a steady preheat reading instead of
+    a free running roast cycle, and the next Charge starts
+    from a known state."""
+    if not _sim_is_simulated():
+        return
+    try:
+        system.tag.writeBlocking(
+            [SIM_BASE_RATE, SIM_RESET, SIM_PAUSE],
+            [1000, True, True])
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------- flow
 
 def charge():
+    # State guard (polish round 3, HUNT-27): Charge is only
+    # offered at Idle and Complete, and a second charge while
+    # Roasting is never meaningful. The rapid press audit
+    # caught the platform re-delivering the sequence's first
+    # Charge event seconds late, after the workspace had been
+    # reset to Idle and even after the test session closed;
+    # without this guard that replay re-charged the workspace
+    # and stamped a phantom press. With it, a replayed Charge
+    # is a no-op, and it never reaches record_press.
+    if read_members(['State'])['State'] == 'Roasting':
+        return
+    # Settle any press rows the transaction group missed in
+    # the previous workspace before this batch's presses start
+    # (polish round 3, HUNT-22): charging is the natural close
+    # of the between batch story.
+    reconcile_press_pending()
+    # Align the simulator first (Simulated source only): its
+    # program restarts at the charge plateau, so the temp the
+    # BBP finalize and the Charge stamp read below is the
+    # program's charge moment, and the RoR buffer reseeds so
+    # the live RoR is derived from this roast's samples only.
+    sim_align_charge()
+    write_members([('_RoRLiveJson', '')])
     # Finalize any open between batch window FIRST (Tier 3
     # item 20): the metrics stage on the Bbp tags and ride into
     # this batch document at Save Batch. With no open window
@@ -2161,139 +3895,63 @@ def charge():
     record_press('Charge')
     build_overlays()
     build_marks()
+    update_phase_label()
+    update_dock_actions()
+    update_stats_line()
 
-
-
-
-# ------------------------------------------------------- cooling seek
-# Polish round 2: on DROP the stepped simulator program has
-# no seek of its own (the Program Counter meta node is read
-# only on this device build; writes are ignored, proven
-# live), so drop() fast forwards the program through the
-# Base Rate meta node to the cooling row aligned with the
-# actual bean temp at drop, before the between batch window
-# opens. The deployed library (roastery/core/code.py in the
-# project) carries this inside its full simulator glue
-# section with the SIM_* constants; this builder copy is
-# self contained with literal tag paths because the builder
-# core snapshot predates that section. Same rule: the
-# declining cooling segment (program seconds 720 to 785)
-# declines monotonically, the aligned row is the first row
-# at or below the drop temp, clamped to the bottom row.
-
-_SIM_COOL_POINTS = [(720, 417.3), (725, 411.1), (730, 402.8),
-                    (735, 395.3), (740, 387.3), (745, 378.5),
-                    (750, 370.0), (755, 363.1), (760, 358.3),
-                    (765, 355.4), (770, 351.9), (775, 349.2),
-                    (780, 344.8), (785, 342.9)]
-
-
-def _sim_cool_target_sec(drop_temp):
-    try:
-        dt = float(drop_temp)
-    except Exception:
-        return 720
-    pts = _SIM_COOL_POINTS
-    if dt >= pts[0][1]:
-        return pts[0][0]
-    for i in range(len(pts) - 1):
-        t0, v0 = pts[i]
-        t1, v1 = pts[i + 1]
-        if v1 <= dt <= v0:
-            for s in range(t0, t1 + 1):
-                v = v0 + (v1 - v0) * float(s - t0) / float(t1 - t0)
-                if v <= dt:
-                    return s
-            return t1
-    return 785
-
-
-def sim_seek_cooling(drop_temp):
-    """Simulated source only, fully guarded; restores the
-    Fan and Heat base rate and reseeds the live RoR buffer."""
-    try:
-        if read_members(['ActiveSource'])['ActiveSource'] \
-                != 'Simulated':
-            return
-    except Exception:
-        return
-    try:
-        counter = '[default]Roastery/SimProgramCounter'
-        pause = '[default]Roastery/SimPause'
-        rate = '[default]Roastery/SimBaseRate'
-        target = _sim_cool_target_sec(drop_temp)
-        cur = system.tag.readBlocking([counter])[0].value
-        if cur is None or int(cur) >= target:
-            return
-        vals = read_members(['FanLevel', 'HeatLevel'])
-        speed = 1.0 + 0.06 * (int(vals['HeatLevel'] or 5) - 5) \
-            - 0.035 * (int(vals['FanLevel'] or 5) - 5)
-        speed = max(0.6, min(1.45, speed))
-        restore_ms = max(650, min(1700, int(round(
-            1000.0 / speed / 10.0) * 10)))
-        from java.lang import Thread
-        # Two stages (bulk at 25 ms, approach at 150 ms for
-        # the last 45 intervals): at the 5 ms device floor the
-        # program runs about 150 intervals per second and a
-        # polling loop overshoots by hundreds (proven live).
-        # A counter wrap aborts the seek.
-        system.tag.writeBlocking([pause, rate], [False, 25])
-        try:
-            waited = 0.0
-            approach_at = target - 45
-            in_approach = False
-            last_pc = int(cur)
-            while waited < 60:
-                Thread.sleep(50)
-                waited += 0.05
-                pc = system.tag.readBlocking([counter])[0].value
-                if pc is None:
-                    continue
-                pc = int(pc)
-                if pc < last_pc:
-                    break
-                last_pc = pc
-                if pc >= target:
-                    break
-                if not in_approach and pc >= approach_at:
-                    in_approach = True
-                    system.tag.writeBlocking([rate], [150])
-        finally:
-            system.tag.writeBlocking([rate], [restore_ms])
-        write_members([('_RoRLiveJson', '')])
-    except Exception:
-        pass
 
 
 def drop():
+    # State guard (HUNT-27, see charge): a replayed or stale
+    # Drop outside Roasting would restamp the drop and re-run
+    # the cooling seek over a finished workspace.
+    if read_members(['State'])['State'] != 'Roasting':
+        return
     _stamp('Drop', 'Drop')
     write_members([('State', 'Dropped'), ('Mode', 'Cool')])
     # Align the simulator cooling curve with this actual drop
-    # (Simulated source only, no-op otherwise), BEFORE the
-    # between batch window opens, so the window captures the
-    # aligned cooling and never the seek fast forward.
-    sim_seek_cooling(read_members(['BeanTempF'])['BeanTempF'])
-    # The between batch window opens at DROP (Tier 3 item 20).
-    _bbp_start_window()
+    # (Simulated source only, no-op otherwise). When a seek
+    # starts, the between batch window opens when the seek
+    # lands (sim_seek_advance), so the window captures the
+    # aligned cooling and never the seek fast forward;
+    # otherwise it opens here, at DROP (Tier 3 item 20).
+    if not sim_seek_cooling(read_members(['BeanTempF'])['BeanTempF']):
+        _bbp_start_window()
     build_overlays()
+    update_phase_label()
+    update_dock_actions()
+    update_stats_line()
 
 
 
 def cool():
+    # State guard (HUNT-27, see charge).
+    if read_members(['State'])['State'] != 'Dropped':
+        return
     vals = read_members(['BeanTempF', 'StartTime'])
     write_members([('State', 'Cooling')])
     append_log('state', 'Cooling', vals['BeanTempF'],
                elapsed_sec(vals['StartTime']), system.date.now())
     record_press('Cool')
+    update_phase_label()
+    update_dock_actions()
+    update_stats_line()
 
 
 
 def finish():
+    # State guard (HUNT-27, see charge).
+    if read_members(['State'])['State'] not in ('Dropped',
+                                                'Cooling'):
+        return
     vals = read_members(['BeanTempF', 'StartTime'])
     write_members([('State', 'Complete')])
     append_log('state', 'Finished', vals['BeanTempF'],
                elapsed_sec(vals['StartTime']), system.date.now())
     record_press('Finish')
+    update_phase_label()
+    update_dock_actions()
+    update_stats_line()
 
 
 
@@ -2308,12 +3966,15 @@ def reset_batch():
     _reset_live_analytics()
     clear_curve_samples()
     _clear_log()
+    # Park the simulator on its charge plateau (Simulated only).
+    sim_hold_idle()
     # Reset discards an open between batch window and any
     # staged BBP metrics (Tier 3 item 20, documented decision):
     # a reset workspace starts a fresh between batch story.
     _bbp_clear_all()
     write_members([('PlanDeviationText', '--')])
     build_marks()
+    update_dock_actions()
 
 
 
@@ -2326,6 +3987,9 @@ def stepper(member, delta, label):
     if new == vals[member]:
         return
     write_members([(member, new)])
+    # A level change retimes the simulator program (Simulated
+    # only): more heat plays the curve faster, more fan slower.
+    sim_apply_rate()
     fan = new if member == 'FanLevel' else vals['FanLevel']
     heat = new if member == 'HeatLevel' else vals['HeatLevel']
     append_log('stepper', label, vals['BeanTempF'],
@@ -2353,7 +4017,6 @@ def build_overlays():
     on the current roast's timeline. The background points come from
     the BackgroundCurveJson tag ([seconds, temp] pairs), which
     roastery.batches fills from the batch_series table."""
-    from java.util import Date
     vals = read_members(['StartTime'])
     start = vals['StartTime']
     if start is None:
@@ -2362,20 +4025,21 @@ def build_overlays():
     # target_plan_points (Tier 3 item 17): the JSON list when
     # one is stored, else the legacy four point tags.
     pts = target_plan_points()
-    # X values are elapsed dates (epoch + offset seconds), the
-    # v4.1 axis shared by every chart dataset; StartTime only
-    # gates whether a roast timeline exists at all.
+    # X values are elapsed dates (axis base + offset seconds,
+    # polish round 1 item 2), the v4.1 axis shared by every
+    # chart dataset; StartTime only gates whether a roast
+    # timeline exists at all.
     rows = []
     s = 0.0
     while s < pts[-1][0]:
-        rows.append([Date(long(s * 1000)), _plan_at(pts, s)])
+        rows.append([elapsed_date(s), _plan_at(pts, s)])
         s += 15.0
-    rows.append([Date(long(pts[-1][0] * 1000)), pts[-1][1]])
+    rows.append([elapsed_date(pts[-1][0]), pts[-1][1]])
     bg_rows = []
     bg_json = system.tag.readBlocking([BACKGROUND_JSON])[0].value
     if bg_json:
         for pair in system.util.jsonDecode(bg_json):
-            bg_rows.append([Date(long(float(pair[0]) * 1000)),
+            bg_rows.append([elapsed_date(float(pair[0])),
                             float(pair[1])])
     system.tag.writeBlocking(
         [TARGET_DS, BACKGROUND_DS],
@@ -2391,7 +4055,7 @@ def build_overlays():
         for t, r in compute_ror_series(pairs, ror_params(),
                                        offline=True):
             if r is not None:
-                bg_ror_rows.append([Date(long(t * 1000)), r])
+                bg_ror_rows.append([elapsed_date(t), r])
     system.tag.writeBlocking(
         [BGROR_DS],
         [system.dataset.toDataSet(['t_stamp', 'bgRor'], bg_ror_rows)])
@@ -2927,37 +4591,19 @@ def config_submit(self, event):
     system.tag.writeBlocking([B + '/Sources/WebSocket/WsUrl',
                               B + '/Sources/WebSocket/Address'], [ws, ws])
     self.view.custom.formSaved = 'Batch details saved.'
+    show_toast(self, 'Batch details saved', 'success')
 
 
 # ---------------------------------------------------------------- session
 
 def main_startup(self):
-    self.view.custom.themeText = str(self.session.props.theme).capitalize()
-
-
-def theme_toggle(self):
-    cur = self.session.props.theme
-    new = 'light' if cur == 'dark' else 'dark'
-    self.session.props.theme = new
-    self.view.custom.themeText = new.capitalize()
-
-
-def toggle_all_cols(self):
-    """Phone column sets (polish round 2, HUNT-13): flip the
-    calling view's showAllCols custom prop. The wide tables
-    (Log, Alarms, Phase Analysis) carry a reduced phone set
-    and a full set in a phone only wrapper; its toggle button
-    swaps which one shows. The advanced stylesheet never
-    renders the wrapper at desktop widths, so this only ever
-    fires from a phone width session."""
-    try:
-        cur = self.view.custom.showAllCols
-    except Exception:
-        cur = False
-    self.view.custom.showAllCols = not bool(cur)
+    # Kept as the Roast page startup entry: theme from the
+    # ThemeMode tag (polish phase 2 item 7). The old
+    # theme_toggle is gone with the TabBar theme button.
+    apply_theme(self)
 '''
 
-BATCHES_CODE = '''# Roastery batch persistence: full CRUD for previous batches in
+BATCHES_CODE = r'''# Roastery batch persistence: full CRUD for previous batches in
 # Postgres, through NAMED QUERIES only. This module is the only
 # caller of the batch named queries; no view binding or handler
 # carries SQL.
@@ -2978,6 +4624,18 @@ BATCHES_CODE = '''# Roastery batch persistence: full CRUD for previous batches i
 #   JSON array parameter unpacked in SQL). View as Background reads
 #   the series back through Series/SelectByBatch, so every batch
 #   carries its own curve like an Artisan roast file.
+# - batch_events: one row per control press keyed by batch_number,
+#   written live during a roast by the PressEvents transaction
+#   group (and the library reconcile) through Events/InsertPress.
+#   It deliberately has NO foreign key to batches: presses are
+#   captured for the working batch number before any batches row
+#   exists (the row lands only at Save Batch), so an FK would
+#   break live press capture. Deleting a batch therefore removes
+#   its press rows explicitly in delete_batch (HUNT-35, polish
+#   round 4): the saved batch document already snapshots the
+#   press events at save time, and no surface reads batch_events
+#   rows for a batch that no longer exists, so rows left behind
+#   would be pure orphans.
 
 import math
 
@@ -2991,6 +4649,7 @@ NQ_DELETE = 'Roastery/Batches/Delete'
 NQ_SERIES_INSERT = 'Roastery/Series/InsertBatch'
 NQ_SERIES_SELECT = 'Roastery/Series/SelectByBatch'
 NQ_EVENTS_SELECT = 'Roastery/Events/SelectByBatch'
+NQ_EVENTS_DELETE = 'Roastery/Events/DeleteByBatch'
 NQ_MAX_NUMBER = 'Roastery/Batches/SelectMaxNumber'
 
 SELECTED_TAG = '[default]Roastery/SelectedBatchNumber'
@@ -3009,6 +4668,39 @@ DETAIL_REFRESH_MESSAGE = 'roastery-detail-refresh'
 # longer batches keep their natural end. Sized empirically
 # against the rendered ticks on batch 1042.
 DETAIL_MIN_SPAN_SEC = 600
+# Short batch span floor in seconds (polish round 5,
+# HUNT-37): a batch shorter than DETAIL_MIN_SPAN_SEC no
+# longer pads all the way to 600, which left a 43 s batch
+# plotted in the first tenth of the axis. _detail_span
+# floors the staged grid at the larger of this floor and
+# the batch extent, and _detail_top_gap scales the event
+# label gap down by the same proportion, so short batches
+# fill the chart and their later events can carry labels.
+# Batches at or over DETAIL_MIN_SPAN_SEC stage exactly as
+# before: natural extent, 55 s label gap.
+DETAIL_SHORT_FLOOR_SEC = 180
+# Event label gap in seconds on a full span detail chart
+# (the round 3 settlement detail_reference_lines used as a
+# bare 55.0 before HUNT-37).
+DETAIL_REF_GAP_SEC = 55.0
+# Minimum separation between DRAWN reference lines, as a
+# fraction of the staged span (polish round 6, item 3):
+# the label gap drops labels for close events but keeps
+# every dashed line, so on a short batch the six events in
+# the first 10 s of fixture 9919 drew as a solid band at
+# the left edge, lines 1.4 px apart on the roughly 250 px
+# phone plot. 0.03 of span is about 7.5 px on that plot
+# and about 30 px on desktop, enough for 1.5 px dashed
+# lines to read as separate lines. It is deliberately far
+# smaller than the label gap: thinning lines by the label
+# gap would drop real lines on a normal batch (fixture
+# 9920's FC END and SC END sit 30 s from their neighbors,
+# under the 55 s label gap), while 0.03 keeps them (21.6 s
+# at the 720 s span) and keeps the real batches' 9 s
+# CHARGE to DROP gaps (5.4 s at the 180 s floor). The
+# events strip under the chart still names every event,
+# so a dropped line loses no information.
+DETAIL_LINE_GAP_FRAC = 0.03
 
 BACKGROUND_LABEL = '[default]Roastery/BackgroundLabel'
 ROASTLOG_TAG = '[default]Roastery/RoastLog'
@@ -3127,7 +4819,17 @@ def build_document():
     lossd = loss_yield_density(vals)
     loss = lossd.get('weightLossPct')
     if loss is None:
-        loss = ((charge_w - out_w) * 100.0 / charge_w) if out_w > 0 and charge_w > 0 else 0.0
+        # HUNT-74: the old fallback did the raw arithmetic
+        # ((green - roasted) / green), which goes negative
+        # when the roasted weight exceeds the green weight
+        # (a bad scale entry: WeightOutG 250 on a 200 g
+        # charge read -25%). Artisan weight_loss returns 0
+        # in exactly that case, and _weight_loss is that
+        # function, so the fallback uses it. The out_w guard
+        # stays: with no roasted weight recorded the loss is
+        # 0, not 100%.
+        loss = (_weight_loss(charge_w, out_w)
+                if out_w > 0 and charge_w > 0 else 0.0)
     doc = {
         'batchNumber': vals['BatchNumber'],
         'beanName': vals['BeanName'],
@@ -3211,7 +4913,25 @@ def get_batch(batch_number):
 
 
 def delete_batch(batch_number):
-    """Delete named query; batch_series rows cascade in Postgres."""
+    """Delete a saved batch and everything keyed by its number.
+
+    Series rows cascade in Postgres (batch_series has a real FK
+    ON DELETE CASCADE). Press rows cannot cascade that way:
+    batch_events has no FK to batches, because presses are
+    written during a roast for a batch_number that has no
+    batches row until Save Batch, so an FK would break live
+    press capture. They are deleted explicitly here, first,
+    through Events/DeleteByBatch (HUNT-35, polish round 4).
+    The decision to cascade rather than keep an audit trail:
+    the saved batch document already snapshots the press
+    events at save time, and no surface reads batch_events
+    rows for a batch that no longer exists, so orphaned rows
+    would be pure leftovers; the snapshotted events die with
+    the batch row itself. If the events delete throws, the
+    error propagates and the batch is NOT deleted, rather
+    than deleting the batch and stranding the rows silently.
+    """
+    _run(NQ_EVENTS_DELETE, {'batch_number': int(batch_number)})
     return _run(NQ_DELETE, {'batch_number': int(batch_number)})
 
 
@@ -3253,35 +4973,98 @@ def _insert_series(batch_number, points):
 def save_current_batch(self):
     """Summary view Save button: persist the finished roast through
     the Insert named query, then its recorded curve through
-    Series/InsertBatch."""
-    vals = core.read_members(['BatchNumber', 'BeanName', 'ChargeTime',
-                              'DropTime', 'DropTempF'])
-    if get_batch(vals['BatchNumber']) is not None:
-        self.view.custom.saveNote = (
-            'Batch %d is already in the log. Start a New Roast for '
-            'a fresh batch number, or edit the saved batch from '
-            'the Log tab.' % vals['BatchNumber'])
+    Series/InsertBatch.
+
+    Failure containment (polish round 4, HUNT-36): the whole
+    database section is wrapped, so a faulted connection does
+    not throw out of the handler. The failure is reported in
+    the save note and as an error toast, and the function
+    returns None. The first call (get_batch) throws before
+    any write when the fault is already present at entry, so
+    nothing is half written in that case and a retry once the
+    connection heals saves completely; when a save did land,
+    the already saved guard below still answers the retry."""
+    number = None
+    try:
+        vals = core.read_members(['BatchNumber', 'BeanName', 'ChargeTime',
+                                  'DropTime', 'DropTempF'])
+        number = vals['BatchNumber']
+        if get_batch(vals['BatchNumber']) is not None:
+            self.view.custom.saveNote = (
+                'Batch %d is already in the log. Start a New Roast for '
+                'a fresh batch number, or edit the saved batch from '
+                'the Log tab.' % vals['BatchNumber'])
+            return vals['BatchNumber']
+        # A saved batch's press rows must be complete: settle any
+        # press the transaction group missed before the document
+        # lands (polish round 3, HUNT-22). A short grace is enough
+        # here; the group writes inside a second in the normal
+        # case, and Save follows the last press by seconds.
+        core.reconcile_press_pending(1.0)
+        doc = build_document()
+        _run(NQ_INSERT, {
+            'batch_number': vals['BatchNumber'],
+            'roast_start': vals['ChargeTime'],
+            'roast_end': vals['DropTime'],
+            'bean_name': vals['BeanName'],
+            'drop_temp_f': vals['DropTempF'],
+            'data': system.util.jsonEncode(doc)})
+        _insert_series(vals['BatchNumber'], core.curve_points())
+        # The staged BBP metrics were written into this batch
+        # document by build_document; consume them so a later
+        # save cannot inherit them (Tier 3 item 20).
+        core.bbp_clear_staged()
+        core.record_press('Save Batch')
+        self.view.custom.saveNote = 'Saved batch %d to the database.' % vals['BatchNumber']
+        core.show_toast(self, 'Batch %d saved' % vals['BatchNumber'],
+                        'success')
         return vals['BatchNumber']
-    doc = build_document()
-    _run(NQ_INSERT, {
-        'batch_number': vals['BatchNumber'],
-        'roast_start': vals['ChargeTime'],
-        'roast_end': vals['DropTime'],
-        'bean_name': vals['BeanName'],
-        'drop_temp_f': vals['DropTempF'],
-        'data': system.util.jsonEncode(doc)})
-    _insert_series(vals['BatchNumber'], core.curve_points())
-    # The staged BBP metrics were written into this batch
-    # document by build_document; consume them so a later
-    # save cannot inherit them (Tier 3 item 20).
-    core.bbp_clear_staged()
-    core.record_press('Save Batch')
-    self.view.custom.saveNote = 'Saved batch %d to the database.' % vals['BatchNumber']
-    return vals['BatchNumber']
+    except:
+        # Bare except on purpose (polish round 4, HUNT-36):
+        # runNamedQuery throws a Java exception on a faulted
+        # connection, which except Exception does not catch
+        # in Jython (see roastery.core.record_press).
+        msg = ('Save failed: batch %s was not saved. The database '
+               'connection failed, so nothing was written. Try '
+               'again once the connection is back.'
+               % (number if number is not None else '?'))
+        try:
+            self.view.custom.saveNote = msg
+        except:
+            pass
+        core.show_toast(self, msg, 'error')
+        return None
 
 
 
 # ---------------------------------------------------------------- edit form
+
+def _recompute_loss(doc):
+    """Recompute the weight loss figures from the document's
+    current metadata (HUNT-75): the slide over editor used to
+    save edited weights without touching doc['weightLossPct']
+    or doc['loss'], so the BatchDetail Weight Loss tile kept
+    the save-time value while the Loss section (recomputed
+    live from metadata in detail_startup) showed the new one.
+    Same guarded math as build_document, so an edit that
+    pushes the roasted weight over the green weight reads 0,
+    not a negative loss (HUNT-74)."""
+    meta = doc.get('metadata') or {}
+    lossd = loss_yield_density(meta)
+    doc['loss'] = lossd
+    win = 0.0
+    wout = 0.0
+    try:
+        win = float(meta.get('ChargeWeightG') or 0.0)
+        wout = float(meta.get('WeightOutG') or 0.0)
+    except Exception:
+        pass
+    loss = lossd.get('weightLossPct')
+    if loss is None:
+        loss = (_weight_loss(win, wout)
+                if wout > 0 and win > 0 else 0.0)
+    doc['weightLossPct'] = loss
+
 
 def _apply_form(doc, payload):
     meta = dict(doc.get('metadata') or {})
@@ -3342,9 +5125,23 @@ def edit_form_data_for(self):
         return {}
     doc = batch['document']
     meta = dict(doc.get('metadata') or {})
+    # Polish round 1 item 0: a member the stored document does
+    # not carry falls back to the standing tag value, NOT to a
+    # hard 0. Seeded and legacy documents carry sparse metadata
+    # (batch 1042 has no HarvestYear and no TargetDropTempF),
+    # and a hard 0 violates those form fields' enabled
+    # constraints (HarvestYear min 1900, TargetDropTempF min
+    # 200), which left the form permanently invalid, so its
+    # Save Batch button (autoDisable) never enabled no matter
+    # what was typed into the event fields. The tag values are
+    # the same standing values create mode starts from, and
+    # they are always inside the field constraints.
+    fallback = core.config_form_data()
     data = {}
     for m in core.FORM_MEMBERS:
         v = meta.get(m)
+        if v is None:
+            v = fallback.get(m)
         if v is None:
             v = (False if m in core.FORM_BOOLS else
                  0 if m in core.FORM_INTS else
@@ -3384,12 +5181,14 @@ def _update_submit(self, event):
         # Reject nonsense with a visible message; nothing is saved.
         self.view.custom.editNote = err
         return
+    _recompute_loss(doc)
     _run(NQ_UPDATE, {
         'batch_number': batch_number,
         'bean_name': doc.get('beanName'),
         'drop_temp_f': doc.get('dropTempF'),
         'data': system.util.jsonEncode(doc)})
     self.view.custom.editNote = 'Saved batch %d.' % batch_number
+    core.show_toast(self, 'Batch %d saved' % batch_number, 'success')
     stage_detail(batch_number)
     system.perspective.sendMessage(REFRESH_MESSAGE, {}, scope='session')
     system.perspective.sendMessage(DETAIL_REFRESH_MESSAGE, {},
@@ -3412,12 +5211,14 @@ def _create_submit(self, event):
            'totalSec': 0, 'phases': {}, 'events': {}, 'metadata': {},
            'manualEntry': True}
     doc = _apply_form(doc, event)
+    _recompute_loss(doc)
     now = system.date.now()
     _run(NQ_INSERT, {
         'batch_number': number, 'roast_start': now, 'roast_end': now,
         'bean_name': doc.get('beanName') or '', 'drop_temp_f': 0.0,
         'data': system.util.jsonEncode(doc)})
     self.view.custom.editNote = 'Created batch %d.' % number
+    core.show_toast(self, 'Batch %d created' % number, 'success')
     system.perspective.sendMessage(REFRESH_MESSAGE, {}, scope='session')
 
 
@@ -3502,8 +5303,9 @@ def arm_delete(self):
     if number <= 0:
         return
     self.view.custom.confirmDelete = True
-    self.view.custom.selNote = ('Delete batch %d and its curve? '
-                                'Press Confirm Delete to proceed.' % number)
+    self.view.custom.selNote = ('Delete batch %d, its curve and its '
+                                'press log? Press Confirm Delete to '
+                                'proceed.' % number)
 
 
 def cancel_delete(self):
@@ -3588,9 +5390,207 @@ def set_background(self):
 # path stage_detail uses, so compared curves can never disagree
 # with the detail view.
 
-COMPARE_COLS = ['t_stamp', 'btA', 'rorA', 'btB', 'rorB',
-                'btC', 'rorC']
+COMPARE_COLS = ['t_stamp', 't_label', 't_sec', 'btA', 'rorA',
+                'btB', 'rorB', 'btC', 'rorC']
 COMPARE_SLOTS = ('A', 'B', 'C')
+
+# Polish round 8 (HUNT-56): event-based compare alignment,
+# after Artisan 5.0.0's alignEvent (src/artisanlib/canvas.py
+# timealign for the background, comparator.py realign for
+# the comparator). Artisan's align names are CHARGE, TP,
+# DRY, FCs, FCe, SCs, SCe, DROP (comparator.py alignnames,
+# indices 0-7); its background alignEvent adds ALL (7),
+# which tries DROP, then SCe, SCs, FCe, FCs, DRY, CHARGE
+# in that order. realign anchors the TOP profile to its
+# CHARGE (delta = startTime, refTime 0 for CHARGE) and
+# shifts every other profile by delta = eventTime -
+# refTime, where eventTime is that profile's chosen event
+# read off its own timex; a profile missing the event is
+# NOT aligned (it falls back to its CHARGE / first
+# reading), and a vertical align line draws at refTime.
+# This build offers the seven stamped events (no TP: the
+# turning point is derived, not a stamped event in the
+# batch document; no ALL: the comparator needs one
+# explicit event). The tag value is the stored key below;
+# the dropdowns show the Artisan short label.
+COMPARE_ALIGN_EVENTS = [
+    ('charge', 'CHARGE'), ('dryEnd', 'DRY'),
+    ('fcStart', 'FCs'), ('fcEnd', 'FCe'),
+    ('scStart', 'SCs'), ('scEnd', 'SCe'),
+    ('drop', 'DROP')]
+COMPARE_ALIGN_LABELS = dict(COMPARE_ALIGN_EVENTS)
+COMPARE_ALIGN_TAG = '[default]Roastery/CurrentBatch/CompareAlignEvent'
+
+
+def compare_align_event():
+    """The Display setting for compare alignment: the tag
+    value, or 'charge' for anything missing or unknown
+    (same fallback shape as core.axis_format). Both the
+    Settings Display dropdown and the Log compare row
+    dropdown bind this one tag, so they always agree."""
+    try:
+        v = core.read_members(['CompareAlignEvent'])['CompareAlignEvent']
+    except Exception:
+        v = None
+    return v if v in COMPARE_ALIGN_LABELS else 'charge'
+
+
+def _compare_events(doc):
+    """A batch document's stamped event seconds, keyed by
+    align key; None where the batch never stamped the
+    event (the seeded stubs, for example, carry only
+    charge, dryEnd, fcStart and drop)."""
+    events = (doc or {}).get('events') or {}
+    out = {}
+    for key, _lbl in COMPARE_ALIGN_EVENTS:
+        e = events.get(key)
+        t = e.get('t') if isinstance(e, dict) else None
+        out[key] = None if t is None else float(t)
+    return out
+
+
+def align_compare_slots(slot_data, align_key):
+    """Pure alignment math over staged slot data (no tag or
+    database reads, so the suite can drive it through the
+    same library functions build_compare calls). slot_data
+    is a list in slot order (A first, the Artisan top
+    profile) of dicts with slot, number, bean, points
+    [(t_sec, bean_temp_f)], rors {t_sec: ror_or_None} and
+    events {align_key: t_sec_or_None}.
+    Returns placed {column: {grid_sec: value}}, max_sec,
+    ref_sec (the displayed, grid-snapped reference event
+    second), ref_label, fallbacks [(slot, number)] for
+    every slot that lacked the event, shifts {slot:
+    snapped_shift_sec} and offset_sec.
+    Shifts are Artisan's delta (own event minus the
+    reference event) snapped to the 30 s library grid
+    (HUNT-51): a shift lands on a grid step, so the
+    aligned event lands within 15 s of the reference,
+    the same quantization the grid already applies to
+    every sample. A slot missing the event falls back to
+    aligning its charge to the reference event (its t=0
+    lands on ref_sec), Artisan's fallback: realign's last
+    branch reads a profile missing the event at its CHARGE
+    as its event time. The reference slot itself never
+    shifts. When the reference slot itself lacks the event
+    there is no Artisan reference point (realign returns
+    without aligning); this build falls back to charge
+    alignment for all slots instead and says so in the
+    caption, so Compare never leaves curves unaligned
+    without saying why. Aligned seconds can go
+    negative (aligning on DROP pulls every charge left
+    of zero); the category grid starts at 0, so the
+    whole overlay translates right by offset_sec, a grid
+    multiple, and the reference line moves with it.
+    Artisan instead shows negative times; the translate
+    keeps every sample visible on this grid at the cost
+    of the reference no longer reading its raw second,
+    which the caption states by naming the event."""
+    if align_key not in COMPARE_ALIGN_LABELS:
+        align_key = 'charge'
+    ref = slot_data[0]
+    ref_t = ref['events'].get(align_key)
+    fallbacks = []
+    if ref_t is None:
+        ref_t = 0.0
+        fallbacks.append((ref['slot'], ref['number']))
+    shifts = {}
+    for sd in slot_data:
+        own = sd['events'].get(align_key)
+        if own is None:
+            own = 0.0
+            fallbacks.append((sd['slot'], sd['number']))
+        shifts[sd['slot']] = core.grid_bucket(own - ref_t)
+    buckets = {}
+    min_bucket = None
+    max_bucket = 0
+    for sd in slot_data:
+        rows = []
+        for t, bt in sd['points']:
+            b = core.grid_bucket(t - shifts[sd['slot']])
+            rows.append((b, bt, sd['rors'].get(t)))
+            if min_bucket is None or b < min_bucket:
+                min_bucket = b
+            if b > max_bucket:
+                max_bucket = b
+        buckets[sd['slot']] = rows
+    offset = (-min_bucket if min_bucket is not None
+              and min_bucket < 0 else 0)
+    placed = {}
+    for sd in slot_data:
+        for b, bt, ror in buckets[sd['slot']]:
+            s = b + offset
+            placed.setdefault('bt' + sd['slot'], {})[s] = bt
+            placed.setdefault('ror' + sd['slot'], {})[s] = ror
+    return {'placed': placed, 'max_sec': max_bucket + offset,
+            'ref_sec': core.grid_bucket(ref_t) + offset,
+            'ref_label': COMPARE_ALIGN_LABELS[align_key],
+            'fallbacks': fallbacks, 'shifts': shifts,
+            'offset_sec': offset, 'align_key': align_key}
+
+
+def compare_dataset(chosen, align_key=None):
+    """Build a compare overlay for chosen [(slot, number)]
+    in A/B/C order. Returns (rows, caption, ref_items,
+    info): rows for second_grid's dataset shape, the
+    caption naming each slot plus the alignment, the
+    single ALIGN reference line item for the reference
+    event (core._ref_items, so the line snaps to the
+    grid like every other reference line), and the
+    align_compare_slots info dict. Empty when nothing
+    stages. A chosen batch with no curve data stages
+    nothing but is still named in the caption
+    (HUNT-61): ' | Batch <n> has no curve data.'"""
+    if align_key is None:
+        align_key = compare_align_event()
+    elif align_key not in COMPARE_ALIGN_LABELS:
+        align_key = 'charge'
+    slot_data = []
+    captions = []
+    no_curve = []
+    for slot, number in chosen:
+        if number <= 0:
+            continue
+        points = _compare_points(number)
+        if not points:
+            no_curve.append(number)
+            continue
+        rors = core.compute_ror_series(points, core.ror_params(),
+                                       offline=True)
+        batch = get_batch(number)
+        bean = (batch['beanName'] if batch else '') or ''
+        doc = (batch or {}).get('document') or {}
+        slot_data.append({'slot': slot, 'number': number,
+                          'bean': bean, 'points': points,
+                          'rors': dict((t, r) for t, r in rors),
+                          'events': _compare_events(doc)})
+        captions.append('%s = Batch %d %s' % (slot, number, bean))
+    if not slot_data:
+        caption = 'Pick at least one batch to compare.'
+        for n in no_curve:
+            caption += ' | Batch %d has no curve data.' % n
+        return [], caption, [], {
+            'placed': {}, 'max_sec': 0, 'ref_sec': 0,
+            'ref_label': COMPARE_ALIGN_LABELS.get(align_key,
+                                                  'CHARGE'),
+            'fallbacks': [], 'shifts': {}, 'offset_sec': 0,
+            'align_key': align_key}
+    info = align_compare_slots(slot_data, align_key)
+    rows = core.second_grid(
+        info['placed'], ['btA', 'rorA', 'btB', 'rorB', 'btC',
+                         'rorC'], info['max_sec'])
+    caption = (' - '.join(captions) + ' - Aligned on '
+               + info['ref_label'])
+    if info['fallbacks']:
+        caption += (' (' + ', '.join(
+            '%s has no %s, charge aligned' % (s, info['ref_label'])
+            for s, _n in info['fallbacks']) + ')')
+    for n in no_curve:
+        caption += ' | Batch %d has no curve data.' % n
+    ref_items = core._ref_items(
+        [(info['ref_sec'], 'ALIGN ' + info['ref_label'])],
+        top_gap=55.0)
+    return rows, caption, ref_items, info
 
 
 def compare_options():
@@ -3638,43 +5638,25 @@ def _compare_points(batch_number):
 
 def build_compare(self):
     """Compare button: build the wide compare dataset on the
-    elapsed axis (timestamp union, nulls elsewhere, the live
-    chart's merge shape) and the caption naming each slot."""
-    from java.util import Date
+    elapsed category axis (grid rows 30 s apart, nulls
+    elsewhere, the live chart's merge shape; polish round 3,
+    HUNT-23; polish round 6, HUNT-51: the rows are the even
+    grid steps, so the shown labels are even increments),
+    the caption naming each slot and the alignment, and the
+    single ALIGN reference line on the reference event.
+    Alignment is Artisan's alignEvent (polish round 8,
+    HUNT-56): the curves shift so the chosen event (the
+    CompareAlignEvent tag, CHARGE by default) lands on the
+    same grid step for every batch, slot A as the reference;
+    see align_compare_slots for the shift, fallback and
+    translate rules."""
     c = self.view.custom
     chosen = [('A', int(c.cmpA or 0)), ('B', int(c.cmpB or 0)),
               ('C', int(c.cmpC or 0))]
-    merged = {}
-    captions = []
-    for slot, number in chosen:
-        if number <= 0:
-            continue
-        points = _compare_points(number)
-        if not points:
-            continue
-        rors = core.compute_ror_series(points, core.ror_params(),
-                                       offline=True)
-        ror_by_t = dict((t, r) for t, r in rors)
-        for t, bt in points:
-            ms = long(t * 1000)
-            row = merged.get(ms)
-            if row is None:
-                row = {}
-                merged[ms] = row
-            row['bt' + slot] = bt
-            row['ror' + slot] = ror_by_t.get(t)
-        batch = get_batch(number)
-        bean = (batch['beanName'] if batch else '') or ''
-        captions.append('%s = Batch %d %s' % (slot, number, bean))
-    rows = []
-    for ms in sorted(merged):
-        m = merged[ms]
-        rows.append([Date(ms), m.get('btA'), m.get('rorA'),
-                     m.get('btB'), m.get('rorB'),
-                     m.get('btC'), m.get('rorC')])
+    rows, caption, ref_items, _info = compare_dataset(chosen)
     c.compareDs = system.dataset.toDataSet(COMPARE_COLS, rows)
-    c.compareCaption = (' - '.join(captions) if captions
-                        else 'Pick at least one batch to compare.')
+    c.compareCaption = caption
+    c.compareRefLines = ref_items
 
 
 # ---------------------------------------------------------------- event editing
@@ -3784,6 +5766,37 @@ def _apply_events(doc, payload):
 
 # ---------------------------------------------------------------- detail + new roast
 
+def _detail_span(end_sec):
+    """Staged detail grid span in seconds for a batch whose
+    extent (last event or curve point) is end_sec. At or
+    over DETAIL_MIN_SPAN_SEC the span is the natural extent,
+    unchanged from the round 2 and 3 behavior. Under it the
+    span floors at the larger of DETAIL_SHORT_FLOOR_SEC and
+    the extent (HUNT-37), so a short batch fills a sensible
+    share of the axis instead of the first tenth of a 600 s
+    grid."""
+    end_sec = int(end_sec)
+    if end_sec >= DETAIL_MIN_SPAN_SEC:
+        return end_sec
+    return max(DETAIL_SHORT_FLOOR_SEC, end_sec)
+
+
+def _detail_top_gap(span):
+    """Event label gap in seconds for a detail chart staged
+    at span seconds: DETAIL_REF_GAP_SEC at the full span,
+    scaled in proportion under it (55 s at 600 scales to
+    16.5 s at the 180 s floor), so events a few seconds
+    apart on a short batch still drop their labels while
+    events tens of seconds apart earn them. At or over
+    DETAIL_MIN_SPAN_SEC the gap is exactly
+    DETAIL_REF_GAP_SEC."""
+    span = int(span)
+    if span >= DETAIL_MIN_SPAN_SEC:
+        return DETAIL_REF_GAP_SEC
+    return DETAIL_REF_GAP_SEC * float(span) / float(
+        DETAIL_MIN_SPAN_SEC)
+
+
 def stage_detail(batch_number):
     """Stage everything the Log detail view binds for one batch:
     DetailDS (bean temp + RoR recomputed from the stored temps
@@ -3807,14 +5820,31 @@ def stage_detail(batch_number):
                            float(bt)))
     rors = core.compute_ror_series(points, core.ror_params(),
                                    offline=True)
-    # X values are elapsed dates (epoch + t_offset seconds), the
-    # v4.1 axis: the detail chart reads exactly like the live
-    # chart, and no longer depends on the batch having a stored
-    # roast_start wall clock (the generated fixture batches have
-    # none, and their detail curves used to stage empty).
-    rows = []
+    # X values are elapsed seconds on the category axis
+    # (polish round 3, HUNT-23): the detail chart reads
+    # exactly like the live chart, true elapsed labels in
+    # any browser timezone, and no longer depends on the
+    # batch having a stored roast_start wall clock (the
+    # generated fixture batches have none, and their detail
+    # curves used to stage empty). The grid span comes from
+    # _detail_span (the round 2 tick span fix, which used to
+    # bind the axis max from detail_startup; the padded grid
+    # now carries the span itself, floored by HUNT-37 for
+    # short batches). A stored point at a fractional second
+    # lands on its nearest grid step (HUNT-51: the grid
+    # rows are 30 s apart, so a stored point buckets to its
+    # nearest row; the stored series keeps true seconds).
+    placed = {'bt': {}, 'ror': {}}
     for (t, bt), (_t2, ror) in zip(points, rors):
-        rows.append([Date(long(t * 1000)), bt, ror])
+        s = core.grid_bucket(t)
+        placed['bt'][s] = bt
+        placed['ror'][s] = ror
+    end_sec = int(float(doc.get('totalSec') or 0))
+    if points:
+        end_sec = max(end_sec, int(round(points[-1][0])))
+    rows = core.second_grid(
+        placed, ['bt', 'ror'],
+        _detail_span(end_sec))
     evs = []
     events = doc.get('events') or {}
     for key, lbl in (('charge', 'CHARGE'), ('dryEnd', 'DRY END'),
@@ -3830,7 +5860,8 @@ def stage_detail(batch_number):
                         (c.get('name') or 'CUSTOM').upper()))
     system.tag.writeBlocking(
         [DETAIL_DS, DETAIL_MARKS],
-        [system.dataset.toDataSet(['t_stamp', 'bt', 'ror'], rows),
+        [system.dataset.toDataSet(
+            ['t_stamp', 't_label', 't_sec', 'bt', 'ror'], rows),
          core.marks_dataset(evs)])
     # The detail analyzer (Tier 2 item 13) restages with the
     # batch: selection back to Latest, readout recomputed.
@@ -3859,19 +5890,23 @@ def _detail_analyzer_paths():
 
 
 def _detail_points():
-    ds = system.tag.readBlocking([DETAIL_DS])[0].value
-    points = []
-    rors = []
-    if ds is None:
-        return points, rors
-    for r in range(ds.rowCount):
-        ts = ds.getValueAt(r, 't_stamp')
-        bt = ds.getValueAt(r, 'bt')
-        if ts is None or bt is None:
-            continue
-        t = ts.getTime() / 1000.0
-        points.append((t, float(bt)))
-        rors.append((t, ds.getValueAt(r, 'ror')))
+    """Points for the BatchDetail analyzer: the staged batch's
+    stored series (true seconds), NOT the DetailDS grid.
+    Polish round 6 (HUNT-51): the DetailDS grid is one row
+    per 30 s for display, so interpolating over it reads up
+    to 7 F off on a steep section; the analyzer is a precision
+    readout and must use the stored samples, the same source
+    stage_detail staged from. RoR is recomputed by the one
+    implementation (offline), as stage_detail does."""
+    try:
+        n = int(system.tag.readBlocking([SELECTED_TAG])[0].value)
+    except Exception:
+        return [], []
+    rows = _series_rows(n)
+    points = [(float(r['t']), float(r['bt'])) for r in rows
+              if r['t'] is not None and r['bt'] is not None]
+    rors = core.compute_ror_series(points, core.ror_params(),
+                                   offline=True)
     return points, rors
 
 
@@ -3897,8 +5932,7 @@ def detail_analyzer_step(delta):
         return
     sec = system.tag.readBlocking(
         [core.DETAIL_ANALYZER + '/Sec'])[0].value
-    base = points[-1][0] if sec is None or int(sec) < 0 \
-        else float(sec)
+    base = points[-1][0] if sec is None or int(sec) < 0         else float(sec)
     new = max(points[0][0], min(points[-1][0],
                                 base + float(delta)))
     system.tag.writeBlocking(
@@ -3913,11 +5947,20 @@ def detail_analyzer_latest():
     detail_analyzer_refresh()
 
 
-def detail_reference_lines():
-    """Reference line items for the staged batch's events, from
-    the DetailDocJson document stage_detail wrote (custom event
-    names intact). Bound on the detail chart's bean series
-    through a script transform triggered by DetailMarksDS."""
+def _detail_reference_lines(gap_fn):
+    """Shared body for detail_reference_lines and its compact
+    variant: reference line items for the staged batch's
+    events, from the DetailDocJson document stage_detail
+    wrote (custom event names intact). The label gap comes
+    from gap_fn(span): the span is read back from the staged
+    DetailDS grid itself (one row per grid step, so
+    (rowCount minus 1) times the step is the span
+    stage_detail built), which keeps the gap in exact step
+    with the grid; when no grid is staged the span falls back
+    to the document extent through
+    _detail_span. The same span also sets the line gap
+    (DETAIL_LINE_GAP_FRAC of span), so desktop and phone
+    draw the same lines and differ only in labels."""
     raw = system.tag.readBlocking([DETAIL_JSON])[0].value
     if not raw:
         return []
@@ -3935,8 +5978,43 @@ def detail_reference_lines():
         if c.get('t') is not None:
             evs.append((float(c['t']),
                         (c.get('name') or 'CUSTOM').upper()))
-    return core._ref_items(evs, top_gap=150.0, mid_gap=60.0,
-                           mid_top_gap=60.0)
+    span = None
+    ds = system.tag.readBlocking([DETAIL_DS])[0].value
+    if ds is not None and ds.rowCount > 0:
+        span = (ds.rowCount - 1) * core.AXIS_GRID_STEP_SEC
+    if span is None:
+        end_sec = int(float(doc.get('totalSec') or 0))
+        for _t, _lbl in evs:
+            end_sec = max(end_sec, int(_t))
+        span = _detail_span(end_sec)
+    return core._ref_items(evs, top_gap=gap_fn(span),
+                           line_gap=DETAIL_LINE_GAP_FRAC * span)
+
+
+def detail_reference_lines():
+    """Reference line items for the staged batch's events.
+    Bound on the desktop detail chart's bean series through
+    a script transform triggered by DetailMarksDS. The label
+    gap scales with the staged span (HUNT-37): 55 s at the
+    600 s span, proportionally less under it."""
+    return _detail_reference_lines(_detail_top_gap)
+
+
+def detail_reference_lines_compact():
+    """Phone variant of the detail reference lines (round 5,
+    HUNT-41): the phone detail chart squeezes the span into
+    about 250 px, so two labels in the top band need about
+    65 px of clearance not to touch, which is 0.26 of the
+    span in seconds. The desktop gap (16.5 s at the 180 s
+    floor) let batch 1042's CHARGE and DROP print as one
+    word, CHARGEDROP, and batch 9919's CHARGE and LATE NOTE
+    as CHARGELATE NOTE at 360 px; the compact gap drops the
+    second label instead (the events strip under the chart
+    always names every event). Bound on the phone detail
+    chart instance, the same paired instance pattern as the
+    live chart and the HUNT-13 phone tables."""
+    return _detail_reference_lines(
+        lambda span: 0.26 * float(span))
 
 
 def open_detail(self):
@@ -4027,10 +6105,22 @@ def loss_yield_density(meta):
         if vg > 0:
             out['volumeGainPct'] = vg
     if gmoist > 0 and rmoist > 0:
+        # HUNT-73: both losses are Artisan dialog shapes, not
+        # raw subtraction. The dialog blanks a moisture loss
+        # at or below zero (roast_properties moisture_percent)
+        # and clamps the organic loss to 0..100
+        # (calc_organic_loss), so inconsistent metadata (a
+        # roasted moisture above the green one, or a moisture
+        # loss bigger than the weight loss) can no longer show
+        # a negative loss on BatchDetail. Artisan's stored
+        # computed block keeps the raw subtraction; the detail
+        # page is the dialog side, so it follows the dialog.
         ml = gmoist - rmoist
-        out['moistureLossPct'] = ml
-        if wl > 0:
-            out['organicLossPct'] = wl - ml
+        if ml > 0:
+            out['moistureLossPct'] = ml
+            if wl > 0:
+                out['organicLossPct'] = max(
+                    0.0, min(100.0, wl - ml))
     if win > 0 and (wout > 0 or defects > 0):
         res = (wout - defects) if wout > 0 else (win - defects)
         if res > 0:
@@ -4147,6 +6237,12 @@ def _phase_analysis(doc, points):
     at the FC sample), the total RoR (TP to drop), and a cool
     phase line (drop to the cool end: the imported Artisan
     COOL time when present, else the last stored sample).
+    Seeded batches (HUNT-65) carry stored phase splits but
+    no event times; for those, and only those, a phase with
+    no events still gets a row with its stored duration and
+    share and '--' for gain, RoR and AUC, so the table
+    agrees with the stats line instead of showing only the
+    Cool row.
     Returns (table rows, turning point text, extra dict)."""
     events = doc.get('events') or {}
     meta = doc.get('metadata') or {}
@@ -4202,10 +6298,33 @@ def _phase_analysis(doc, points):
     bounds = (('Drying', 0, dry_t, dry_gain, dry_ror),
               ('Maillard', dry_t, fc_t, None, None),
               ('Development', fc_t, drop_t, None, None))
+    # Seeded batches (HUNT-65) carry stored phase splits in
+    # doc['phases'] but no event times, so the event derived
+    # rows below vanish while the stats line shows the same
+    # splits. Only the migration source carries event-less
+    # splits: a real roast with unstamped events has no phase
+    # at all, and its stored splits are 0/total sentinels,
+    # so the fallback is gated on seededFromRoastLog.
+    seeded = bool(doc.get('seededFromRoastLog'))
+    stored = doc.get('phases') or {}
+    stored_sec = {'Drying': stored.get('dryingSec'),
+                  'Maillard': stored.get('maillardSec'),
+                  'Development': stored.get('developmentSec')}
     phases = {}
     rows = []
+    entries = []
     for name, ta, tb, gain, ror in bounds:
         if ta is None or tb is None or tb <= ta:
+            if seeded:
+                s = stored_sec.get(name)
+                if s is not None and float(s) > 0:
+                    dur = float(s)
+                    entries.append((name, dur, None, None, None))
+                    phases[name] = {'sec': dur,
+                                    'sharePct': (dur * 100.0 / total)
+                                    if total else None,
+                                    'deltaF': None, 'rorFMin': None,
+                                    'aucFMin': None}
             continue
         dur = tb - ta
         if gain is None:
@@ -4232,15 +6351,29 @@ def _phase_analysis(doc, points):
                         if total else None,
                         'deltaF': gain, 'rorFMin': ror,
                         'aucFMin': auc}
+        entries.append((name, dur, gain, ror, auc))
+    # HUNT-63: the phase shares are largest remainder shares
+    # of the shown durations, so they always sum to 100 on a
+    # complete roast instead of 99 or 101 by independent
+    # rounding.
+    shares = core.shares_100([e[1] for e in entries], total)
+    for (name, dur, gain, ror, auc), share in zip(entries,
+                                                  shares):
         rows.append([name, _mmss(dur),
-                     ('%.0f%%' % (dur * 100.0 / total))
-                     if total else '--',
+                     ('%d%%' % share) if share is not None else '--',
                      ('%+.0f F' % gain) if gain is not None
                      else '--',
                      ('%.1f F/min' % ror) if ror is not None
                      else '--',
                      ('%.0f' % auc) if auc is not None else '--'])
-    # Cool phase: drop to cool end.
+    # Cool phase: drop to cool end. HUNT-72: the Cool row used
+    # to carry a share on a different basis (cool seconds over
+    # the roast plus cool span), so the Share column summed to
+    # 105 on batch 1042 (26/37/37 plus Cool 5) while the stats
+    # line above it sums to 100. Cool is not a roast phase and
+    # Artisan does not include it in the phase shares, so its
+    # share cell reads '--' like its gain, RoR and AUC cells,
+    # and the column now sums to 100.
     cool_sec = None
     cool_end = None
     sub = (doc.get('artisan') or {}).get('events') or {}
@@ -4250,10 +6383,8 @@ def _phase_analysis(doc, points):
         cool_end = float(points[-1][0])
     if cool_end is not None and drop_t is not None and cool_end > drop_t:
         cool_sec = cool_end - drop_t
-        span = total + cool_sec
         rows.append(['Cool', _mmss(cool_sec),
-                     ('%.0f%%' % (cool_sec * 100.0 / span))
-                     if span else '--', '--', '--', '--'])
+                     '--', '--', '--', '--'])
     # RoR at FC START from the one RoR implementation.
     fcs_ror = None
     if fc_t is not None and points:
@@ -4279,6 +6410,7 @@ def _phase_analysis(doc, points):
 
 
 def detail_startup(self):
+    core.apply_theme(self)
     """BatchDetail view onStartup: fill the view custom props from
     the staged document (DetailDocJson) and the captured presses
     (Events/SelectByBatch, named query)."""
@@ -4323,22 +6455,34 @@ def detail_startup(self):
     # total roast time. No new math: the phase seconds and the
     # DTR percent come straight from the document phases block.
     _tot = float(doc.get('totalSec') or 0)
+    # HUNT-63: the three shares are largest remainder shares
+    # of the stored phase splits, so they always sum to 100
+    # instead of 99 or 101 by independent rounding.
+    _shares = core.shares_100(
+        [phases.get('dryingSec') or 0.0,
+         phases.get('maillardSec') or 0.0,
+         phases.get('developmentSec') or 0.0], _tot)
 
-    def _share(sec):
+    def _share(idx, sec):
         if not _tot or sec is None:
             return '--'
-        return '%d%%' % int(round(float(sec) * 100.0 / _tot))
+        v = _shares[idx]
+        return ('%d%%' % v) if v is not None else '--'
     def _ms(sec):
-        sec = int(max(0, float(sec or 0)))
+        # Polish round 1 item 5: a phase the document does not
+        # have reads --:--, matching its -- share, never 0:00.
+        if sec is None:
+            return '--:--'
+        sec = int(max(0, float(sec)))
         return '%d:%02d' % (sec // 60, sec % 60)
     _sep = ' ' + chr(183) + ' '
     self.view.custom.dStatsLine = _sep.join([
         'Dry %s %s' % (_ms(phases.get('dryingSec')),
-                       _share(phases.get('dryingSec'))),
+                       _share(0, phases.get('dryingSec'))),
         'Mai %s %s' % (_ms(phases.get('maillardSec')),
-                       _share(phases.get('maillardSec'))),
+                       _share(1, phases.get('maillardSec'))),
         'Dev %s %s' % (_ms(phases.get('developmentSec')),
-                       _share(phases.get('developmentSec'))),
+                       _share(2, phases.get('developmentSec'))),
         'DTR %s' % (('%.0f%%' % phases['dtrPct'])
                     if phases.get('dtrPct') is not None
                     else '--')])
@@ -4354,17 +6498,12 @@ def detail_startup(self):
     except Exception:
         pts = []
     pts.sort()
-    # Detail chart max (polish round 2 item 6): floor the
-    # axis span at DETAIL_MIN_SPAN_SEC so a very short batch
-    # renders minute:second ticks like the live chart; the
-    # DetailChart xAxis max binds this custom prop. The min
-    # stays at axis base + 1000 in the view.
-    _end_sec = float(doc.get('totalSec') or 0)
-    if pts:
-        _end_sec = max(_end_sec, pts[-1][0])
-    _span_sec = max(_end_sec, float(DETAIL_MIN_SPAN_SEC))
-    self.view.custom.detailMaxMs = (
-        core.AXIS_BASE_MS + long(_span_sec * 1000) + 1000)
+    # Detail chart span (polish round 2 item 6, moved in
+    # round 3): the span floor at DETAIL_MIN_SPAN_SEC used
+    # to bind the axis max through a detailMaxMs custom
+    # prop; on the category axis the padded grid
+    # stage_detail builds carries the span itself, and the
+    # view's axis max is simply auto.
     seg_rows, tp_text, extra = _phase_analysis(doc, pts)
     self.view.custom.analysisDs = system.dataset.toDataSet(
         ['phase', 'time', 'share', 'gain', 'avgRor', 'auc'],
@@ -4825,6 +6964,8 @@ def export_csv_download(self):
         return
     filename, text = build_csv_text(int(number))
     system.perspective.download(filename, text)
+    core.show_toast(self, 'Batch %d CSV downloaded' % int(number),
+                    'success')
 
 
 def export_json_download(self):
@@ -4834,6 +6975,8 @@ def export_json_download(self):
         return
     filename, text = build_json_text(int(number))
     system.perspective.download(filename, text)
+    core.show_toast(self, 'Batch %d JSON downloaded' % int(number),
+                    'success')
 
 
 def export_summary_download(self):
@@ -4844,6 +6987,8 @@ def export_summary_download(self):
         return
     filename, text = build_summary_html(int(number))
     system.perspective.download(filename, text)
+    core.show_toast(self, 'Batch %d summary downloaded' % int(number),
+                    'success')
 
 
 def calculator_seed(doc):
@@ -6352,6 +8497,14 @@ STYLE_CLASSES = {
     'roast-btn-cool': {'backgroundColor': '#0284c7'},
     'roast-btn-reset': {'backgroundColor': '#6b7280'},
     'roast-btn-step': {'fontSize': '16px', 'padding': '6px 14px'},
+    'roast-btn-compact': {'minHeight': '28px', 'padding': '2px 8px',
+                          'fontSize': '11px', 'fontWeight': '700',
+                          'borderRadius': 'var(--roast-radius-interactive)',
+                          'cursor': 'pointer'},
+    'roast-btn-dock': {'fontSize': '12px', 'padding': '10px 4px'},
+    'roast-btn-dock-lead': {'fontSize': '14px', 'padding': '10px 6px'},
+    'roast-btn-nowrap': {},
+    'roast-gear-btn': {'padding': '6px 6px'},
     'roast-input': {'borderRadius': 'var(--roast-radius-interactive)',
                     'padding': '8px 10px',
                     'fontSize': '14px', 'color': 'var(--label)',
@@ -6407,6 +8560,7 @@ STYLE_CLASSES = {
     'roast-gap-8': {'gap': '8px'},
     'roast-gap-10': {'gap': '10px'},
     'roast-gap-12': {'gap': '12px'},
+    'roast-gap-14': {'gap': '14px'},
     'roast-tabbar': {'backgroundColor': 'var(--container)',
                      'padding': '6px 100px 6px 10px', 'gap': '8px'},
     'roast-tab-btn': {'fontSize': '15px', 'fontWeight': '700',
@@ -6414,6 +8568,11 @@ STYLE_CLASSES = {
                       'padding': '10px 8px',
                       'cursor': 'pointer', 'color': 'var(--label)',
                       'backgroundColor': 'transparent'},
+    'roast-tab-active': {'backgroundColor': 'var(--containerNested)'},
+    'roast-tab-item': {'fontSize': '14px', 'fontWeight': '700',
+                       'color': 'var(--label)', 'padding': '8px 14px',
+                       'borderRadius': 'var(--roast-radius-small)',
+                       'cursor': 'pointer'},
     'roast-hud': {'backgroundColor': 'var(--container)',
                   'padding': '5px 6px', 'gap': '4px'},
     'roast-hud-field': {'paddingLeft': '8px'},
@@ -6488,6 +8647,11 @@ STYLESHEET_CSS = """/* Roastery advanced stylesheet.
 .psc-roast-tabbar { border-top: 1px solid var(--border); }
 .psc-roast-controldock { border-top: 1px solid var(--border); }
 .psc-roast-hud { border-bottom: 1px solid var(--border); }
+/* HUNT-31 brightness probe buttons in HudBar: present in
+   the DOM so the startup script can click them, visually
+   nothing (1px, near transparent, clipped). */
+.psc-roast-brightness-probe {
+  opacity: 0.01; overflow: hidden; pointer-events: none; }
 .psc-roast-hud-field { border-left: 1px solid var(--border); }
 .psc-roast-section-div { border-top: 1px solid var(--border); }
 
@@ -6546,18 +8710,6 @@ STYLESHEET_CSS = """/* Roastery advanced stylesheet.
 /* Touch targets: every roast button is at least 44px tall. */
 .psc-roast-btn { min-height: 44px; }
 .psc-roast-tab-btn { min-height: 48px; }
-
-/* Save-note labels reserve their line: the class compiler strips
-   min-height from style classes, so the 18px floor in
-   roast-note-success never applied and an empty note measured 0px
-   tall, shifting the layout when text appeared. */
-.psc-roast-note-success { min-height: 18px; }
-
-/* Compare field gap: the class compiler drops the gap property
-   from style classes, so the ALIGN ON caption relied on a gap
-   that served 0px. The scoped rule restores the 8px
-   caption-to-control gap on the Log compare row only. */
-.psc-roast-compare-field { gap: 8px; }
 .psc-roast-tab-btn:hover { background: var(--containerNested); }
 
 /* ---- v4.1 declutter (Eric's phone, 360px) ---------------------
@@ -6566,23 +8718,115 @@ STYLESHEET_CSS = """/* Roastery advanced stylesheet.
    a 360px phone because tiles refused to shrink). */
 .psc-roast-flexmin > * { min-width: 0; }
 
-/* Tab bar compaction under 560px: at 360px the theme button's
-   fixed 88px plus three growing tabs left about 46px per tab,
-   clipping 'Settings' to 'Setting'. Smaller type, tighter
-   padding, a narrower theme button and less nub clearance. */
+/* Tab bar under 560px (polish phase 2): the bar now holds a
+   single horizontal menu, so the v4.1 compaction rules for the
+   old button tabs are gone. One of them pinned the bar's first
+   child to a fixed 46px (the old theme button's slot); applied
+   to the menu it collapsed the whole tab bar to 46px wide at
+   phone widths, found and removed in the phase 2 overflow
+   hunt. Only the shrink allowance remains. */
 @media (max-width: 560px) {
-  /* Perspective emits style class props as element styles, so
-     these overrides need !important to win the cascade (proven
-     live: without it the padding and font size rules silently
-     lost to the class definitions). */
-  .psc-roast-tabbar { padding: 6px 60px 6px 6px !important;
-    gap: 6px !important; }
   .psc-roast-tabbar > * { min-width: 0; }
-  .psc-roast-tabbar > *:first-child { flex: 0 0 46px !important; }
-  .psc-roast-tab-btn { font-size: 12px !important;
-    padding: 8px 1px !important;
-    white-space: nowrap; overflow: hidden; }
 }
+
+/* ---- polish phase 2 ------------------------------------------
+   Tab menu: the horizontal menu items are flex children that
+   must be allowed to shrink at 360px, and the active item's
+   filled tile comes from the roast-tab-active class binding. */
+.psc-roast-tabbar { padding: 6px 10px !important; }
+.psc-roast-tabbar > * { min-width: 0; }
+/* The dock's own expand nub overlays the bar's right end; at
+   phone widths keep the last menu item clear of it: reserve
+   the nub's width on the bar and tighten the menu items so
+   the Log label ends well left of the nub (with the desktop
+   item padding it ended at the nub's edge and the g of Log
+   slid under it, found in the phase 2 overflow hunt). */
+@media (max-width: 560px) {
+  .psc-roast-tabbar { padding-right: 60px !important; }
+  .psc-roast-tab-item { padding: 8px 6px !important;
+    font-size: 13px !important; }
+}
+
+/* Tile units never wrap or shrink away: the unit label keeps
+   its full text and the value label takes the squeeze. */
+.psc-roast-unit { white-space: nowrap; }
+
+/* Analyzer compact buttons: the 44px touch minimum on
+   .psc-roast-btn does not apply (these are not roast-btn
+   classed), this rule pins the compact height so the strip
+   rows keep their fixed heights. */
+.psc-roast-btn-compact { min-height: 28px; }
+
+/* Save-note labels reserve their line: the class compiler strips
+   min-height from style classes, so the 18px floor in
+   roast-note-success never applied and an empty note measured 0px
+   tall, shifting the layout when text appeared. A position basis
+   cannot reserve height for the two notes whose parent is a row,
+   so the floor lives here, next to the compact 28px floor. */
+.psc-roast-note-success { min-height: 18px; }
+
+/* Gear buttons keep a square 40px footprint in headers and
+   the HUD. */
+.psc-roast-gear-btn { min-height: 40px; }
+
+/* HUD tightening (polish phase 2 item 7): the gear joins the
+   HUD at 360px, so the bar's gaps, side padding and field
+   padding shrink before any text does. With these numbers
+   the longest phase text (Second Crack) and a 59:59 clock
+   both fit at 360px. */
+.psc-roast-hud { gap: 3px !important; padding: 3px 4px !important; }
+.psc-roast-hud-field { padding-left: 4px !important; }
+
+/* ---- polish round 9: compare row caption gap (item 8) ------------
+   The Log compare row mixes bare batch pickers with one
+   labeled column (the Align picker), and the row bottom
+   aligns its children, so the ALIGN ON caption sits above
+   its own dropdown with clear space instead of crowding the
+   top edge of the C picker. The 8px caption to control gap
+   lives here, not in the roast-gap-8 style class: the class
+   compiler drops gap from style classes (proven live: every
+   gap rule serves empty while the sibling properties in the
+   same files serve). Scoped to the compare field only, so no
+   other layout moves; restoring gap globally would shift
+   exact fit rows elsewhere. */
+.psc-roast-compare-field { gap: 8px; }
+
+/* ---- polish round 10: calculator gaps (worker A) ----------------
+   The Yield and Conversion Calculator card on BatchDetail mixes
+   inputs and readouts in four wrap rows of 150px basis fields,
+   and every field is a caption over a control. The class
+   compiler drops the gap property from style classes, so the
+   rows served 0px between fields (measured: the TEMP (F) input
+   ends at x 1002 and the TEMP (C) readout starts at x 1002)
+   and 0px between each caption and its control. The scoped
+   rules below restore the intended gaps on the calculator card
+   only: 12px between fields in a row, 8px caption to control
+   inside a field, 10px between the card head, note and rows.
+   Scoped, not global, for the same reason as the compare field
+   above: restoring gap on all 288 roast-gap-* uses would shift
+   exact fit rows elsewhere (the Mode pill row in Controls, the
+   space-between Summary rows, the compare row pickers). The
+   calculator fields are flexible (grow 1, shrink 1, basis
+   150px) inside wrap rows, so the restored gaps only shrink
+   the fields, never overflow the card. */
+.psc-roast-calc-row { gap: 12px; }
+.psc-roast-calc-field { gap: 8px; }
+.psc-roast-calc-card { gap: 10px; }
+
+
+/* ---- polish round 6: HUD clock clip (HUNT-49) ---------------------
+   The roast clock value ("00:00", 16px monospace) needs 48px
+   but its tile is 47px at 360px: the HUD row is exactly full
+   (pill plus four tiles plus the gear), so the tile is squeezed
+   1px below what the value needs and the last "0" loses a
+   pixel, with overflow hidden. The phase 2 note claimed a
+   59:59 clock fits; it is off by that 1px (same width in
+   monospace). At phone widths the HUD values drop to 15px,
+   which needs about 45px and leaves room. Desktop keeps
+   16px. The phase value is unaffected: its tile grows to fit
+   ("Development" and "Second Crack" both measure exact). */
+@media (max-width: 560px) {
+  .psc-roast-hud-value { font-size: 15px !important; } }
 
 /* ---- polish round 2: phone column sets (HUNT-13) ------------
    The three wide tables (Log, Alarms, Phase Analysis) ship in
@@ -6618,7 +8862,78 @@ STYLESHEET_CSS = """/* Roastery advanced stylesheet.
      row's fixed 76px basis would clip the second line under
      the action row, so the row sizes to its content here. */
   .psc-roast-detail-head { flex-basis: auto !important; }
+  /* Polish round 3 (HUNT-25): the detail head row stacks at
+     phone widths. Back and the gear keep the first row
+     (space-between spreads them to the edges) and the title
+     column wraps onto its own full width second row, so the
+     Back button box and the title box no longer touch at one
+     edge the way HUNT-15 left them. */
+  .psc-roast-detail-head { flex-wrap: wrap !important; }
+  .psc-roast-detail-titlecol { flex: 1 1 100% !important;
+    order: 3; }
 }
+
+/* ---- polish round 5: dock buttons (HUNT-39) -----------------
+   Dock button labels never wrap. The class chain carried no
+   white-space rule, so the button default (normal) wrapped
+   two word custom names (Custom 3, Drum Note) inside the
+   narrow repeater slots, and in the phone dock's fixed
+   height row the second line clipped at the button edge.
+   The dock classes pin the text to one line; a user renamed
+   custom that still does not fit truncates with an ellipsis
+   instead of wrapping or pushing the layout. Paired with
+   the repeater instance floors in Views/Controls and
+   Views/ControlDock, which give every dock button a slot
+   wide enough for the standard labels at this size. */
+.psc-roast-btn-dock, .psc-roast-btn-dock-lead {
+  white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; min-width: 0; }
+
+/* ---- polish round 5, HUNT-43 --------------------------------------
+   The New Roast utility button is not a dock button, so the
+   HUNT-39 dock rule did not cover it, and at 360px its 84px
+   slot wrapped "New Roast" to two lines (56px tall). The
+   button sizes to its content in its flex row, so pinning
+   nowrap alone keeps it one line without an ellipsis. */
+.psc-roast-btn-nowrap { white-space: nowrap; }
+
+/* ---- polish round 5, HUNT-44 --------------------------------------
+   The phase segment detail ("target 02:30") is 11px and the
+   narrowest segment at 360px (Development, 2:30 target, 65px
+   wide) has 4px of side padding, leaving about 57px for the
+   caption, so the 11px "target 02:30" clipped a couple of
+   pixels on each side. At phone widths the detail drops to
+   9px, which fits the narrowest default segment with room
+   for the stamped actuals form ("02:30 · 21%") too. The
+   !important is required: the style class sets 11px and its
+   generated rule beats a plain advanced stylesheet rule.
+   Desktop is untouched. */
+@media (max-width: 560px) {
+  .psc-roast-seg-detail { font-size: 9px !important; } }
+
+/* ---- polish round 6: mode pill (round 6 candidate 3) --------------
+   The pill read "MODE Off" and wrapped to two lines at 360px:
+   the HeadRow is exactly full (heading 128px plus New Roast
+   87px leave about 71px), while "MODE Roast" needs about
+   89px at 11px bold, so no font or padding tweak can fit the
+   prefix in every mode. The pill now shows just the mode
+   value (Off, Roast, Cool); the section heading already says
+   Roaster Controls and the pill color still codes the mode
+   (gray, red, blue). The nowrap pins it to one line so a
+   future longer mode value cannot wrap it again. */
+.psc-roast-mode-pill { white-space: nowrap; }
+
+/* ---- polish round 6: unnamed custom event cells (HUNT-47) --------
+   An unnamed custom slot has no button and no name, so its
+   EventsStrip cell must not render at all. A props.visible
+   binding on these embedded cells is not honored on this
+   build (an expression binding and a tag binding with an
+   expression transform were both tried: the unnamed cells
+   kept rendering as blank boxes with dashes). The cells are
+   hidden by class instead, through the same style system as
+   every other rule here. The !important is required: the
+   embedded view's own layout beats a plain rule. */
+.psc-roast-cell-hidden { display: none !important; }
 """
 
 def write_styles():
@@ -8271,7 +10586,8 @@ def batch_edit_view():
     note = label('ModeNote',
                  'Editing the stored batch document. Saving recomputes '
                  'phase times, DTR, total time and roast degree from '
-                 'the event times. The batch number is the batch '
+                 'the event times, and weight loss from the weights. '
+                 'The batch number is the batch '
                  'identity and does not change.',
                  'roast-note')
     form = batch_edit_form()
@@ -9915,13 +12231,19 @@ def _calc_val(name, member, fmt='0.0'):
 
 def _calc_field(name, caption, comp):
     cap = label(name + 'Cap', caption, 'roast-form-caption')
-    return flex(name, 'column', [cap, comp], classes='roast-gap-8',
+    # Round 10: roast-calc-field carries the scoped 8px
+    # caption to control gap (advanced stylesheet); the
+    # roast-gap-8 class alone serves 0px, the compiler drops gap.
+    return flex(name, 'column', [cap, comp],
+                classes='roast-gap-8 roast-calc-field',
                 position={'grow': 1, 'shrink': 1, 'basis': '150px'})
 
 
 def _calc_row(name, fields):
+    # Round 10: roast-calc-row carries the scoped 12px gap
+    # between fields (advanced stylesheet).
     return flex(name, 'row', fields, wrap='wrap',
-                classes='roast-gap-12')
+                classes='roast-gap-12 roast-calc-row')
 
 
 def _calc_card():
@@ -9970,7 +12292,9 @@ def _calc_card():
               'Seeded from this batch weights. Edit any input '
               'and the readouts update live (expression tags in '
               'the Calculator folder).', 'roast-note-sm')] + rows,
-        classes='roast-card roast-gap-10',
+        # Round 10: roast-calc-card carries the scoped 10px gap
+        # between head, note and rows (advanced stylesheet).
+        classes='roast-card roast-gap-10 roast-calc-card',
         position={'grow': 0, 'shrink': 0, 'basis': 'auto'})
 
 

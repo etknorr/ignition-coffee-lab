@@ -3695,7 +3695,7 @@
             "props": {
               "direction": "column",
               "style": {
-                "classes": "roast-card roast-gap-10"
+                "classes": "roast-card roast-gap-10 roast-calc-card"
               }
             },
             "children": [
@@ -3732,7 +3732,7 @@
                   "direction": "row",
                   "wrap": "wrap",
                   "style": {
-                    "classes": "roast-gap-12"
+                    "classes": "roast-gap-12 roast-calc-row"
                   }
                 },
                 "children": [
@@ -3744,7 +3744,7 @@
                     "props": {
                       "direction": "column",
                       "style": {
-                        "classes": "roast-gap-8"
+                        "classes": "roast-gap-8 roast-calc-field"
                       }
                     },
                     "children": [
@@ -3801,7 +3801,7 @@
                     "props": {
                       "direction": "column",
                       "style": {
-                        "classes": "roast-gap-8"
+                        "classes": "roast-gap-8 roast-calc-field"
                       }
                     },
                     "children": [
@@ -3858,7 +3858,7 @@
                     "props": {
                       "direction": "column",
                       "style": {
-                        "classes": "roast-gap-8"
+                        "classes": "roast-gap-8 roast-calc-field"
                       }
                     },
                     "children": [
@@ -3921,7 +3921,7 @@
                     "props": {
                       "direction": "column",
                       "style": {
-                        "classes": "roast-gap-8"
+                        "classes": "roast-gap-8 roast-calc-field"
                       }
                     },
                     "children": [
@@ -3987,7 +3987,7 @@
                   "direction": "row",
                   "wrap": "wrap",
                   "style": {
-                    "classes": "roast-gap-12"
+                    "classes": "roast-gap-12 roast-calc-row"
                   }
                 },
                 "children": [
@@ -3999,7 +3999,7 @@
                     "props": {
                       "direction": "column",
                       "style": {
-                        "classes": "roast-gap-8"
+                        "classes": "roast-gap-8 roast-calc-field"
                       }
                     },
                     "children": [
@@ -4056,7 +4056,7 @@
                     "props": {
                       "direction": "column",
                       "style": {
-                        "classes": "roast-gap-8"
+                        "classes": "roast-gap-8 roast-calc-field"
                       }
                     },
                     "children": [
@@ -4119,7 +4119,7 @@
                     "props": {
                       "direction": "column",
                       "style": {
-                        "classes": "roast-gap-8"
+                        "classes": "roast-gap-8 roast-calc-field"
                       }
                     },
                     "children": [
@@ -4176,7 +4176,7 @@
                     "props": {
                       "direction": "column",
                       "style": {
-                        "classes": "roast-gap-8"
+                        "classes": "roast-gap-8 roast-calc-field"
                       }
                     },
                     "children": [
@@ -4242,7 +4242,7 @@
                   "direction": "row",
                   "wrap": "wrap",
                   "style": {
-                    "classes": "roast-gap-12"
+                    "classes": "roast-gap-12 roast-calc-row"
                   }
                 },
                 "children": [
@@ -4254,7 +4254,7 @@
                     "props": {
                       "direction": "column",
                       "style": {
-                        "classes": "roast-gap-8"
+                        "classes": "roast-gap-8 roast-calc-field"
                       }
                     },
                     "children": [
@@ -4311,7 +4311,7 @@
                     "props": {
                       "direction": "column",
                       "style": {
-                        "classes": "roast-gap-8"
+                        "classes": "roast-gap-8 roast-calc-field"
                       }
                     },
                     "children": [
@@ -4374,7 +4374,7 @@
                     "props": {
                       "direction": "column",
                       "style": {
-                        "classes": "roast-gap-8"
+                        "classes": "roast-gap-8 roast-calc-field"
                       }
                     },
                     "children": [
@@ -4431,7 +4431,7 @@
                     "props": {
                       "direction": "column",
                       "style": {
-                        "classes": "roast-gap-8"
+                        "classes": "roast-gap-8 roast-calc-field"
                       }
                     },
                     "children": [
@@ -4497,7 +4497,7 @@
                   "direction": "row",
                   "wrap": "wrap",
                   "style": {
-                    "classes": "roast-gap-12"
+                    "classes": "roast-gap-12 roast-calc-row"
                   }
                 },
                 "children": [
@@ -4509,7 +4509,7 @@
                     "props": {
                       "direction": "column",
                       "style": {
-                        "classes": "roast-gap-8"
+                        "classes": "roast-gap-8 roast-calc-field"
                       }
                     },
                     "children": [
@@ -4566,7 +4566,7 @@
                     "props": {
                       "direction": "column",
                       "style": {
-                        "classes": "roast-gap-8"
+                        "classes": "roast-gap-8 roast-calc-field"
                       }
                     },
                     "children": [

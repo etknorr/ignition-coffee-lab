@@ -65,7 +65,7 @@
           "name": "ModeNote"
         },
         "props": {
-          "text": "Editing the stored batch document. Saving recomputes phase times, DTR, total time and roast degree from the event times. The batch number is the batch identity and does not change.",
+          "text": "Editing the stored batch document. Saving recomputes phase times, DTR, total time and roast degree from the event times, and weight loss from the weights. The batch number is the batch identity and does not change.",
           "style": {
             "classes": "roast-note"
           }
