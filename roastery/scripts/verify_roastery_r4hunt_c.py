@@ -18,6 +18,11 @@
 Ends with the fixture deleted through the app delete
 flow and the lab at the seeded baseline.
 Run with wsvenv python from ~/workspace/ignition-lab.
+Round 8 (HUNT-58): the restore now runs through the shared
+r4hunt_fixture helper (lab-dir snapshot first, /tmp fallback;
+a partial fixture is replaced wholesale), and the final
+delete is guarded by drain_pending so the press ring cannot
+resurrect the deleted press rows afterwards.
 """
 import json
 import os
@@ -27,6 +32,7 @@ import time
 sys.path.insert(0, '/home/hatch/workspace/ignition-lab')
 from playwright.sync_api import sync_playwright
 import verify_roastery_polish2 as P
+import r4hunt_fixture as RF
 
 BASE = P.BASE
 SHOTS = P.SHOTS
@@ -96,60 +102,12 @@ def shot(pg, name):
         return False
 
 
-def restore_fixture():
-    if P.psql('SELECT COUNT(*) FROM batches WHERE '
-              'batch_number = %d' % FIX) == '1':
-        print('fixture already present', flush=True)
-        return
-    # Round 7: the snapshot used to live only in /tmp and a
-    # VM replacement wiped it, failing C at startup. It now
-    # lives in the lab dir (persistent); /tmp stays as a
-    # fallback for older snapshots.
-    snap_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        'r4hunt_fixture_9919.json')
-    if not os.path.exists(snap_path):
-        snap_path = '/tmp/r4hunt_fixture_9919.json'
-    snap = json.loads(open(snap_path).read())
-    b = snap['batch']
-    import subprocess
-    pw = open('/home/hatch/workspace/ignition-lab/'
-              '.roastery-pgpass').read().strip()
-    env = dict(os.environ, PGPASSWORD=pw,
-               PATH=os.environ['PATH']
-               + ':/usr/lib/postgresql/16/bin')
-
-    def run(sql):
-        out = subprocess.run(
-            ['psql', '-h', 'localhost', '-U', 'ignition',
-             '-d', 'db', '-v', 'ON_ERROR_STOP=1', '-c', sql],
-            capture_output=True, text=True, env=env)
-        assert out.returncode == 0, out.stderr
-
-    run("INSERT INTO batches (batch_number, roast_start, "
-        "roast_end, bean_name, drop_temp_f, data) VALUES "
-        "(%d, '%s', '%s', '%s', %s, '%s'::jsonb)" % (
-            b['batch_number'], b['roast_start'], b['roast_end'],
-            b['bean_name'].replace("'", "''"),
-            b['drop_temp_f'],
-            json.dumps(b['data']).replace("'", "''")))
-    for s in snap['series']:
-        def num(v):
-            return 'NULL' if v is None else str(v)
-        run("INSERT INTO batch_series (batch_number, "
-            "t_offset_sec, bean_temp_f, rate_of_rise_f, "
-            "fan_level, heat_level) VALUES (%d, %s, %s, %s, "
-            "%s, %s)" % (FIX, num(s['t']), num(s['bt']),
-                         num(s['ror']), num(s['fan']),
-                         num(s['heat'])))
-    print('fixture restored, series',
-          P.psql('SELECT COUNT(*) FROM batch_series WHERE '
-                 'batch_number = %d' % FIX), flush=True)
-
-
 def main():
     os.makedirs(SHOTS, exist_ok=True)
-    restore_fixture()
+    # HUNT-58: shared self-heal; restores fixture 9919 from
+    # the lab-dir snapshot when a VM replacement wiped it,
+    # and replaces a partial fixture the same way.
+    RF.ensure_fixture()
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
 
@@ -303,6 +261,11 @@ def main():
         browser.close()
 
     # ---------- delete fixture + baseline -----------------
+    # HUNT-58: drain the press ring before the app delete.
+    # The delete cascades the fixture's press rows; if the
+    # ring still held them, the reconciler would re-insert
+    # them into the database on the next BeanTempF change.
+    P.drain_pending()
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         ctx = browser.new_context(
@@ -332,6 +295,15 @@ def main():
     print('end counts:', end, flush=True)
     check('lab at seeded baseline after part C',
           end == (7, 101, 0), end)
+    # HUNT-58: a resurrection lands on a BeanTempF change
+    # tail within seconds, so re-read after a short wait.
+    time.sleep(10)
+    end2 = (int(P.psql('SELECT COUNT(*) FROM batches')),
+            int(P.psql('SELECT COUNT(*) FROM batch_series')),
+            int(P.psql('SELECT COUNT(*) FROM batch_events')))
+    print('counts after 10s stability wait:', end2, flush=True)
+    check('baseline stable after 10s (no press resurrection)',
+          end2 == (7, 101, 0), end2)
     print('FAILS:', FAILS, flush=True)
     print('PART C DONE', flush=True)
 

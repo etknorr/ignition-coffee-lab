@@ -35,6 +35,13 @@ theme buttons behind its fullViewOverlay. The error
 toast itself is waited out before each gear click:
 it sits top center for about 5 s over the gear and
 intercepts the click.
+Round 8 (HUNT-58): part B verifies its precondition
+at start (fixture 9919 present with its full series)
+and re-creates it from the persistent lab-dir
+snapshot when a VM replacement wiped it between
+parts A and B, so the delete flow at the end no
+longer fails on the missing fixture and no manual
+part A rerun is needed.
 """
 import json
 import os
@@ -44,6 +51,7 @@ import time
 sys.path.insert(0, '/home/hatch/workspace/ignition-lab')
 from playwright.sync_api import sync_playwright
 import verify_roastery_polish2 as P
+import r4hunt_fixture as RF
 
 BASE = P.BASE
 SHOTS = P.SHOTS
@@ -179,6 +187,14 @@ def rows_for(batch_no):
 
 def main():
     os.makedirs(SHOTS, exist_ok=True)
+    # HUNT-58: the delete flow at the end needs fixture 9919,
+    # which part A created. A VM replacement between A and B
+    # restores the database to the reseeded baseline and wipes
+    # it (round 7 first-pass failure 2). Verify the
+    # precondition now and re-create the fixture from the
+    # lab-dir snapshot when it is missing or partial, so B
+    # passes without a manual part A rerun.
+    RF.ensure_fixture()
     print('counts at B start:',
           P.psql('SELECT COUNT(*) FROM batches'),
           P.psql('SELECT COUNT(*) FROM batch_series'),

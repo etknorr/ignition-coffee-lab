@@ -6855,3 +6855,580 @@ PhaseFromBg False), PressSlots empty, and 0 events
 still after a 60 s idle wait. The PressEvents group is
 RUNNING by functional proof (every suite press landed
 exactly once in the audits).
+
+## Polish round 8: Artisan comparator alignment (2026-11-20)
+
+### Item 1: HUNT-56, compare curves align on a chosen event
+
+HUNT-56 (minor, fixed): build_compare aligned compare
+curves on charge only, so two roasts with different
+phase timings overlaid with their first cracks minutes
+apart and no way to line them up. Artisan 5.0.0 aligns
+on a chosen event instead: comparator.py realign anchors
+the top profile to its CHARGE and shifts every other
+profile by delta = eventTime minus refTime for the
+chosen event (align names CHARGE, TP, DRY, FCs, FCe,
+SCs, SCe, DROP), a profile missing the event falls back
+to its charge, and a vertical align line draws at
+refTime; canvas.py timealign does the same for the
+background, trying DROP, then SCe, SCs, FCe, FCs, DRY,
+CHARGE when alignEvent is ALL.
+
+Fix, in roastery/batches/code.py: compare_dataset and
+the pure align_compare_slots build the overlay for the
+event named by the CompareAlignEvent tag (CHARGE by
+default). The reference is slot A, the first chosen
+batch; every other slot shifts by its event minus the
+reference event, snapped to the 30 s library grid
+(HUNT-51), so an aligned event lands within 15 s of the
+reference, the same quantization the grid already
+applies to every sample. A slot missing the event
+aligns its charge to the reference event, Artisan's
+fallback. Aligned seconds can go negative (aligning on
+DROP pulls every charge left of zero); the category
+grid starts at 0, so the whole overlay translates
+right by a grid multiple and the reference line moves
+with it. Artisan instead shows negative times; the
+translate keeps every sample visible and the caption
+names the event. The seven stamped events are offered
+(no TP: the turning point is derived, not a stamped
+event in the batch document; no ALL: the comparator
+needs one explicit event). The caption names each slot
+plus the alignment and any fallback ("B has no SCs,
+charge aligned"). One ALIGN reference line (core.
+_ref_items, so it snaps to the grid like every other
+reference line) draws at the snapped reference second
+on the bean series of both CompareChart instances,
+bound to view.custom.compareRefLines, which
+build_compare writes.
+
+The choice lives on one tag-backed setting,
+CurrentBatch/CompareAlignEvent (String, default
+'charge'; member added to setup_roastery_artisan_tags.
+py, the UDT record the round 7 UDT diff verifies:
+203 members, still alphabetical), exposed in both
+places it belongs: a "Compare alignment" dropdown in
+Settings Display (next to the time axis format, same
+tag binding shape as DispAxisFormat) and an "Align
+on" dropdown on the Log compare row (before the
+Compare button). Both bind the one tag
+bidirectionally, so they always agree; changing
+either and pressing Compare restages the overlay.
+build_roastery_v4.py carries the same row, chart
+binding and Display row so a future regeneration
+keeps the feature. The setup_roastery_v4_tags.py
+script was NOT updated: it is a stale fork of the
+UDT list and the live UDT matches
+setup_roastery_artisan_tags.py, not it (round 7 UDT
+diff: 0 differences). The press path is untouched
+(HUNT-53 app fix stays out of scope).
+
+Proof: new suite verify_r8_align.py (repo
+roastery/scripts, mirrored to the lab), run
+2026-11-21, ALL HUNT-56 CHECKS PASSED, 37 PASS
+lines, exit 0. Gateway math through the same
+library functions build_compare calls, on two
+full-length fixtures (9920, 720 s, FCs 540, DROP
+720; new 9921, 660 s, FCs 420, DROP 660): aligning
+on FCs shifts B by -120 s with reference 540 and a
+27-row grid 0..780, B's charge landing at 120 and
+both curves meeting at bucket 540 (A 401.5 F, B
+395.4 F); aligning on DROP shifts B by -60 s with
+reference 720 and a 25-row grid 0..720, both drops
+landing at 720 (A 415.0 F, B 418.0 F); CHARGE
+shifts nothing with reference 0. Every label is an
+even 30 s step, and the single ALIGN reference line
+reads 9:00 / ALIGN FCs and 12:00 / ALIGN DROP. A
+synthetic two-slot case proves the missing-event
+fallback (B with no SCs shifts -660, its charge
+landing on the reference SCs at 660), and the live
+seeded stub 1048 (events: only charge 0 and drop 9)
+falls back the same way in the caption. Live UI at
+desktop Light: the compare row Align dropdown reads
+FCs from the tag, Compare stages A=9920 B=9921 with
+the caption naming the alignment (chart ink 8269),
+picking DROP in the row writes the tag and
+restages; the Settings Display dropdown reads DROP
+and picking CHARGE writes the tag back. At 360px
+Light the same two batches stage on DROP with no
+horizontal overflow (360/360/360). Screenshots:
+r8-align-fcs-desktop.png (ALIGN FCs line at 9:00,
+B curve starting at 2:00), r8-align-drop-360.png
+(ALIGN DROP line at 12:00, short titles, no
+overlap), r8-align-drop-desktop.png,
+r8-align-settings.png. Run 1 died on a harness
+flake, not the app: the single-process Chromium
+closed between the desktop and Settings phases
+(TargetClosedError on new_page); the suite's
+finally still deleted all three fixtures and
+restored the lab, and the suite now launches a
+fresh browser per phase. The lab UDT diff passes
+at the new counts (RoastBatch 204, RoasterSource
+7, 0 differences) and validate_roastery_artisan.py
+passes. Lab left clean at 7 batches (1042-1048),
+101 series, 0 events, defaults restored (Fan 5,
+Heat 5, BatchNumber 1042, ActiveSource Simulated,
+Mode Off, ThemeMode System, DispAxisFormat m:ss,
+PressCaptureMode Group, PeriscopeAvailable True,
+background cleared, PhaseFromBg False),
+CompareAlignEvent CHARGE, PressSlots empty.
+
+### Item 2: HUNT-58, r4hunt A-to-B chain self-heals after a VM replacement
+
+HUNT-58 (harness, fixed): in round 7 the battery's A-to-B
+chain broke when a VM replacement wiped fixture 9919
+between parts A and B (part A creates fixture 9919 with
+42 series rows; part B deletes it through the Log UI).
+The resumed battery had to rerun A then B by hand
+(round 7 first-pass failure 2). Root cause: only part C
+restored the fixture from a snapshot; A and B assumed
+it was there.
+
+Fix, suite and harness only, no app behavior change:
+new shared helper roastery/scripts/r4hunt_fixture.py
+(lab ~/workspace/ignition-lab/r4hunt_fixture.py), used
+by parts A, B and C. ensure_fixture() verifies the
+precondition at part start (fixture 9919 present with
+the snapshot's full series count) and re-creates it from
+the persistent lab-dir snapshot when it is missing or
+partial; the snapshot lives in the lab dir with the
+helper's own directory and /tmp as fallbacks, never
+/tmp alone. Part A calls ensure_clean_baseline() at
+start (a stale fixture or leftover press rows from a
+partial A run are removed, so the live roast can
+re-create the fixture instead of refusing the duplicate
+batch number) and snapshot_fixture() right after the
+save, so the snapshot is fresh after every A run
+instead of a one-off file; snapshot_r4hunt_fixture.py
+is now a thin wrapper over the same function. Part C's
+local restore is replaced by the shared helper (a
+partial fixture is replaced wholesale, not just a
+missing batch). Every cleanup path runs the HUNT-53
+guard first: P.drain_pending() settles the press ring
+and clears all 16 PressSlots before any batch_events
+rows are deleted, so the reconciler cannot resurrect
+them. Part C also drains before its final app delete
+and re-reads the counts after a 10 s stability wait.
+Parts D and E were checked and need nothing: neither
+references fixture 9919 (D probes the upload modal and
+toasts with files it writes itself; E proves
+PressEvents with its own charge/reset probe).
+run_r7_battery.sh is untouched; its resume-safe
+skip-DONE behavior is intact because the self-heal
+lives in the suites, not the runner. A committed copy
+of the snapshot (roastery/scripts/
+r4hunt_fixture_9919.json) is kept as a fallback behind
+the lab-dir copy. Number note: this item was first
+written as HUNT-56, then renumbered to HUNT-58 after
+another round 8 worker claimed HUNT-56 (comparator
+alignment) and HUNT-57 (its builder follow-up); the
+renumber is comment-only, the proven code is identical.
+
+Proof, live 2026-11-20 after the VM replacement and lab
+recovery (gateway RUNNING 23:38 UTC, lab at the clean
+7/101/0 baseline, slots cleared). Full chain, logs in
+~/workspace/ignition-lab/r8-hunt58/:
+- verify_roastery_r4hunt_a.py: exit 0, FAILS: [], PART A
+  DONE. Fixture 9919 saved (41 series rows this run),
+  snapshot written, 41 snapshot rows vs 41 db rows.
+  A rerun immediately afterwards (A3) proved the start
+  cleanup: "cleaning stale part A residue: fixture
+  batch 1, series 42, fixture events 13, total events
+  14", then re-roasted and re-saved clean, FAILS: [].
+- verify_roastery_r4hunt_b.py (normal chain): exit 0,
+  FAILS: [], PART B DONE, 17 PASS lines. Head of log:
+  "fixture 9919 at part start: batch 1, series 41,
+  events 13; fixture 9919 already present, 41 series
+  rows". Fixture deleted through the app, series and
+  press rows cascaded, lab (7, 101, 0).
+- Wipe simulation: fixture 9919 rows deleted from the
+  database only (counts 8/142/14 to 7/101/1), PressSlots
+  left holding 14 stale presses, exactly the
+  post-replacement state. Part B rerun: exit 0, FAILS:
+  [], PART B DONE. Head of log: "fixture 9919 at part
+  start: batch 0, series 0, events 0; fixture 9919
+  missing or partial (batch 0, series 0, want 41);
+  restoring from snapshot; press guard: PressSlots
+  drained and cleared; fixture 9919 restored, 41 series
+  rows". No manual part A rerun. Fixture deleted
+  through the app, lab (7, 101, 0).
+- verify_roastery_r4hunt_c.py: exit 0, FAILS: [], PART C
+  DONE. Restored the fixture from the snapshot (batch 0
+  to 41 series rows), deleted it through the app, lab
+  (7, 101, 0) and still (7, 101, 0) after the 10 s
+  stability wait: "baseline stable after 10s (no press
+  resurrection)".
+- verify_roastery_r4hunt_d.py: exit 0, PART D DONE.
+  verify_roastery_r4hunt_e.py: exit 0, PART E DONE,
+  PressEvents wrote the Charge row, final counts
+  (7, 101, 0), SlotsCleared True.
+
+Lab left clean at 7 batches (1042-1048), 101 series,
+0 events, defaults restored (Fan 5, Heat 5, BatchNumber
+1042, ActiveSource Simulated, Mode Off, ThemeMode
+System, DispAxisFormat m:ss, PressCaptureMode Group,
+PeriscopeAvailable True, background cleared,
+PhaseFromBg False), PressSlots empty, and 0 events
+still after a 60 s idle wait. Note: part E's final
+tags read ThemeMode Light, not System; neither D nor
+E writes ThemeMode, so a fresh browser session (light
+color scheme) appears to sync the tag on startup.
+Pre-existing suite behavior, not caused by this
+change; the tag was written back to System by hand
+after the chain and verified. Screenshots:
+r4hunt-close-live-desktop-light/dark.png,
+r4hunt-close-live-360-light/dark.png,
+r4hunt-appsettings-desktop-open.png,
+r4hunt-detail-close-desktop-light/dark.png,
+r4hunt-detail-close-360-light/dark.png,
+r4hunt-seek-during-360.png, r4hunt-seek-landed-360.png,
+r4hunt-toast-light/dark-360.png,
+r4hunt-delete-confirm-360.png (lab showcase/shots
+only; the repo stays config only).
+
+### Item 3: HUNT-59, HUNT-60, HUNT-61, fresh hunting pass (worker C)
+
+Fresh hunting pass, worker C. New suite
+verify_r8_freshhunt.py (lab, mirrored to the repo
+roastery/scripts/), extending the round 7 suite: the
+four-page walk (Roast, Log, BatchDetail staged 1042,
+Settings) at 1360px and 360px, light and dark,
+measuring horizontal overflow and clipped leaf text
+(Perspective footer excluded), plus a live roast at
+360px light measured at every stage (Charge, Dry End,
+FC Start, ghost, Drop), the saved roast's detail at
+360px dark, compare at 360px and 1360px dark with the
+phone All-columns toggle, the AppSettings dock at 360px
+dark, Settings scroll captures, and a
+RoRSmoothingSec write/read-back. The suite does not
+retest the timezone TIME axis passthrough or HUNT-46
+(beta-gated) and does not touch the press path
+(HUNT-53 app fix stays out of scope).
+
+Suite result before the HUNT-60 fix: 72 PASS, 3 FAIL,
+exit 1, log ~/workspace/ignition-lab/r8-freshhunt.log.
+All three failures are the same HUNT-60 clip. Every
+other check passed, including the full walk, the live
+roast (New Roast, Charge, Dry End, FC Start, ghost,
+Drop, Finish, Save Batch as 1049, Reset, Idle),
+detail-1049 delete through the Log UI, compare at
+360/1360 dark, the All-columns toggle, the AppSettings
+dock, and the RoR smoothing write/read-back (45,
+restored to 30). The HUNT-60 fix was verified by a
+focused live re-probe, not a full suite rerun.
+
+HUNT-59 (minor, fixed): the repo builder's
+_custom_binding emitted binding-level-only
+bidirectional (roastery/scripts/build_roastery_v4.py),
+so regenerating the compare pickers would have
+reintroduced HUNT-55. Fix: bidirectional true inside
+config as well (binding-level copy kept, matching the
+live views). Static proof, no gateway needed: the
+AST-extracted _custom_binding output deep-equals the
+live CmpA binding in Views/BatchesPanel/view.json, 3
+PASS. Number note: first written as HUNT-57,
+renumbered to HUNT-59 because HUNT-57 belongs to the
+align worker's builder follow-up. Builder caveat: the
+repo builder embeds a stale CORE_CODE/BATCHES_CODE
+(pre-HUNT-23 build_compare) and its PROJ points at a
+nonexistent path; it is a source record, never run
+against the live tree, and the lab builder copy is
+stale again after the sibling's align edits, so do not
+re-copy it while the sibling edits.
+
+HUNT-60 (minor, fixed): the Mode pill text "Roast"
+clipped 31>29px at 360px while roasting (suite live,
+dry-end and ghost-live stages, light). Root cause: the
+HeadRow flex row is exactly full at 360px (Heading
+140 + pill 53 + New Roast 93 = 286) and the pill's
+default shrink 1 absorbed 2px; "Off" (3 chars) and
+"Cool" (4 chars) fit, "Roast" (5 chars) does not.
+First fix attempt FAILED and was reverted: adding
+flexShrink 0 to the roast-mode-pill style class did
+nothing, because Perspective writes inline
+"flex: 0 1 auto" on flex children from their position
+config, and an inline shorthand beats any stylesheet
+rule. (The gateway did ingest the edited style.json,
+blob b119a1ac, but the served style.css kept the old
+rule under its versioned hash.) Real fix, in
+Views/Controls/view.json: position shrink 0 on the
+ModePill node (grow 0, shrink 0, basis auto), the same
+pattern the Config popup fix used. Proof, live at
+360px with Mode Roast: the pill's inline flex is now
+"0 0 auto", pill 55px, span 31/31, zero clipped leaves
+on the whole page, document width 360, New Roast
+button 92px unclipped (the heading wraps to two lines
+and absorbs the slack). Screenshot:
+r8-probe-modepill-fixed3-card-360-light.png (lab
+showcase/shots only; the repo stays config only).
+
+HUNT-61 (minor, filed, fix not applied here): a
+compare batch with no curve data silently vanishes
+from the caption. Clean repro (lab at 7/101/0, Idle,
+Align charge): batch 1050 created with 0 series rows,
+picked as C with A 1048 and B 1047, Compare pressed.
+Caption verbatim: "A = Batch 1048 Ethiopia Guji - B
+= Batch 1047 Ethiopia Guji - Aligned on CHARGE".
+Batch 1050 is not named and there is no note. Root
+cause: compare_dataset skips batches with no points
+("if not points: continue") with no caption note.
+Fix sketch, for the align worker in compare_dataset:
+append a note for chosen batches with no points, e.g.
+" | Batch 1050 has no curve data." Screenshot:
+r8-probe-nocurve-clean-1360-light.png. Batch 1050
+was deleted through the Log UI afterwards; lab ends
+Idle at 7/101/0.
+
+HUNT-61 (minor, fixed by worker D): compare_dataset
+now appends " | Batch <n> has no curve data." for each
+chosen batch with no series rows, after the alignment
+and fallback parenthetical, in both the staged caption
+and the pick-at-least-one caption; the grid and rows
+are unchanged. Proof: verify_r8_align.py extended
+(gateway math plus live UI at desktop and 360px Light),
+run 2026-11-21, ALL HUNT-56/HUNT-61 CHECKS PASSED, 44
+PASS lines, exit 0. Live caption verbatim: "A = Batch
+1048 Ethiopia Guji - B = Batch 1047 Ethiopia Guji -
+Aligned on CHARGE | Batch 1050 has no curve data."
+Screenshots: r8-nocurve-1360-light.png,
+r8-nocurve-360-light.png (lab showcase/shots only;
+the repo stays config only). Batch 1050 was deleted
+through the Log UI afterwards; lab ends Idle at
+7/101/0. Harness note: the first run of the extended
+suite died twice on the single-process Chromium flake
+(TargetClosedError on new_page), once at a second
+sync_playwright() launch and once opening a second
+context in the same browser; Phase 4 now relaunches
+the browser inside the one playwright session and
+reopens /log in a fresh page of the same context
+(worker C's probe pattern).
+
+Checked and dismissed this round: nothing else in
+the walk failed. An earlier no-curve probe result
+(empty caption, "Pick at least one batch to
+compare.") was contaminated, the sibling deleted
+fixture 9921 mid-probe while the lab went from 10
+batches back to 7, and is superseded by the clean
+HUNT-61 repro above; it is not a defect. Stray file
+note, no action: the gateway tree has an extra
+roastery/code.py (duplicate of core/code.py), not
+present in the repo; leave alone.
+
+Lab left clean at 7 batches (1042-1048), 101 series,
+0 events, defaults restored (Fan 5, Heat 5,
+BatchNumber 1042, ActiveSource Simulated, Mode Off,
+ThemeMode System, DispAxisFormat m:ss,
+PressCaptureMode Group, PeriscopeAvailable True,
+background cleared, PhaseFromBg False), PressSlots
+empty.
+
+Number note: HUNT-57 was the align worker's builder
+follow-up (build_roastery_v4.py updated to match the
+UDT member add in the HUNT-56 commit); it was not
+separately filed. The builder bidirectional drift was
+filed as HUNT-59.
+
+### Lab incidents during the round
+
+A VM replacement around 23:20 UTC on 2026-11-20
+killed the gateway before the round started (the
+coordinator's first StatusPing failed). Recovery:
+Postgres not installed, workspace intact; the
+os-intent replay's apt-get update hung on
+mirror.cogentco.com (PID 799), killed by exact PID;
+recover-lab.sh's chained update hung the same way
+twice (PIDs 2844, 4991, killed by exact PID);
+postgresql-16 installed from cache, cluster online,
+DDL applied, gateway RUNNING, trial 6,859 s, reseed
+verified 7 batches and 101 series by direct count
+(the reseed script refused with "batches not empty"
+because a concurrent process had already seeded).
+Concurrent live activity during the recovery ran a
+scripted press sequence on batch 9919 (counters
+4880-4891, saved as an 8th batch) and started a
+roast on batch 1042 (counters 4893-4897); PressSlots
+were cleared twice and verified empty, and the
+seed data was intact. A first gateway died
+mid-startup (PID 3940, log truncated mid-line, no
+OOM evidence); the second start succeeded.
+
+Two VM replacements hit the closing battery
+(2026-11-21, about 01:18 UTC during
+validate_chartlab and about 03:15 UTC during the
+first hunt55 rerun). Both recoveries followed the
+standard pattern: hung replay apt-get update
+killed by exact PID the first time (PID 800),
+left alone the second time (finished on its own,
+slow not hung, 75 lists); azure-only update fast;
+recover-lab.sh clean; gateway RUNNING; database
+back at 7/101/0 with no reseed needed. The second
+replacement surfaced the textbook HUNT-53
+resurrection: six press rows (Charge, Dry End, FC
+Start, Drop, Finish, Reset for batch 1042,
+counters 5186-5191, all stamped 03:20:11 at
+gateway restart) reappeared from the PressSlots
+ring after the fresh database came back. The guard
+ran (slots cleared first, then the rows deleted),
+0 events stable after a 60 s idle wait, and the
+hunt55 rerun then passed from scratch. The HUNT-58
+self-heal claim was not exercised by a live
+replacement in this battery: part B ran with
+fixture 9919 already present, so no restore was
+needed; the claim still rests on the round 8 wipe
+simulation.
+
+### Verification
+
+Closing battery, run 2026-11-21, 01:16 to 03:12 UTC,
+runner run_r8_battery.sh (adapted from
+run_r7_battery.sh, resume-safe, results in
+r8-battery/results.txt), interrupted twice by VM
+replacements and resumed from the same results file.
+37 of 37 suites green on the final code; the one
+first-pass failure is recorded after the table.
+
+- validate_roastery_artisan.py: VALIDATION PASS.
+- validate_chartlab.py: VALIDATION CHECK REPORT, 0
+  chartlab warnings, 0 bogus control warnings.
+- verify_roastery_ror.py: ALL ROR CHECKS PASSED, 6
+  PASS, 1 designed SKIP (live window not on a steady
+  ramp; same SKIP path as the round 7 rerun).
+- verify_roastery_tier1.py: 42/42, ALL TIER 1 CHECKS
+  PASSED.
+- verify_roastery_tier2.py: 87/87, ALL TIER 2 CHECKS
+  PASSED.
+- verify_roastery_tier3a.py: 40/40, ALL TIER 3A CHECKS
+  PASSED.
+- verify_roastery_tier3b.py: 47/47, ALL TIER 3B CHECKS
+  PASSED.
+- verify_roastery_tier3c.py: 69/69, ALL TIER 3C CHECKS
+  PASSED.
+- verify_roastery_v4.py: 60/60, ALL CHECKS PASSED.
+- verify_roastery_polish1.py: 49/49, ALL POLISH ROUND 1
+  CHECKS PASSED.
+- verify_roastery_polish2.py: 65/65, ALL POLISH2 CHECKS
+  PASSED.
+- verify_roastery_polish3.py: 37/37, ALL CHECKS PASSED.
+- verify_r6_customs.py: 17/17, ALL R6 CUSTOMS CHECKS
+  PASSED.
+- verify_roastery_dark.py: 10/10, ALL DARK MODE CHECKS
+  PASSED.
+- verify_r6_hunt.py: 7/7, ALL R6 HUNT CHECKS PASSED.
+- verify_roastery_pressburst.py: ALL PRESS BURST CHECKS
+  PASSED (6 PASS lines).
+- verify_roastery_pressfault.py: 62/62, ALL PRESS FAULT
+  CHECKS PASSED.
+- verify_roastery_deletecascade.py: 15/15, ALL DELETE
+  CASCADE CHECKS PASSED.
+- verify_r5_hunt3.py: 7/7, HUNT FAILURES: none.
+- verify_roastery_axis.py: 14/14, ALL AXIS CHECKS
+  PASSED.
+- verify_r5_detail_span.py capture: 9920 25 rows, 9919
+  7 rows, 1042 7 rows, every t label an even 30 s step;
+  fixtures removed afterwards (PressSlots cleared
+  first).
+- verify_r7_hunt54.py: 33/33, ALL HUNT-54 CHECKS PASSED.
+- verify_r7_hunt55.py: first pass rc=1 (see below);
+  rerun rc=0, 17 PASS lines, ALL HUNT-55 CHECKS PASSED.
+- verify_r7_freshhunt.py: PASSES: 41, FAILURES: none.
+- verify_r8_align.py: ALL HUNT-56/HUNT-61 CHECKS
+  PASSED, 44 PASS lines.
+- verify_r8_freshhunt.py: PASSES: 75, FAILURES: none
+  (the full-rerun proof for the HUNT-60 fix; was 72
+  PASS, 3 FAIL before the fix).
+- verify_r5_hunt.py: 12 PASS lines, HUNT FAILURES: none.
+- verify_r5_hunt2.py: 6 PASS lines, HUNT FAILURES: none.
+- verify_r6_abc.py: 16/16, FAILURES: none.
+- verify_r6_abc2.py: 15 PASS lines, FAILURES: none.
+- verify_roastery_r4hunt_a.py: FAILS: [], PART A DONE.
+- verify_roastery_r4hunt_b.py: FAILS: [], PART B DONE.
+- verify_roastery_r4hunt_c.py: FAILS: [], PART C DONE.
+- verify_roastery_r4hunt_d.py: PART D DONE.
+- verify_roastery_r4hunt_e.py: PART E DONE.
+- cleanup_workspace.py: exit 0, lab (7, 101, 0).
+- r7_udt_diff.py: UDT DIFF PASS, 0 differences
+  (RoastBatch 204, RoasterSource 7).
+
+First-pass failure, verify_r7_hunt55.py (suite bug,
+not an app bug). Only check 3 of 17 failed: "pickers
+carry startup defaults". The suite asserted the
+dropdown texts equal the old 3-element list, but
+HUNT-56 added the "Align on" dropdown to the compare
+row, so dropdown_texts() now returns four entries
+(1048, 1047, None, CHARGE). The app was correct:
+pickers default to 1048/1047/None and the Align
+dropdown reads CHARGE (the CompareAlignEvent
+default), and the next checks passed in the same run.
+Fix, suite only: the check now expects the
+4-element list with a comment naming the HUNT-56
+dropdown. Rerun: rc=0, 17 PASS lines, ALL HUNT-55
+CHECKS PASSED. The suite had no repo copy (lab-only),
+so the fixed suite was mirrored into the repo as
+roastery/scripts/verify_r7_hunt55.py.
+
+Lab left clean at 7 batches (1042-1048), 101 series,
+0 events, defaults restored (Fan 5, Heat 5,
+BatchNumber 1042, ActiveSource Simulated, Mode Off,
+ThemeMode System, DispAxisFormat m:ss,
+CompareAlignEvent charge, PressCaptureMode Group,
+PeriscopeAvailable True, background cleared,
+PhaseFromBg False), PressSlots empty, and 0 events
+still after a 60 s idle wait. ThemeMode read Light
+after the battery (a fresh browser session syncs the
+tag to Light, per the round 8 HUNT-58 note); it was
+written back to System by hand and verified. The
+PressEvents group is RUNNING by functional proof
+(every suite press landed exactly once in the
+audits).
+
+### Round 9 candidates
+
+1. The timezone TIME axis retest on the next Ignition
+   beta (the passthrough candidates from round 2); the
+   shipped category axis stays regardless.
+2. The packaged Docker boot test on Eric's machine or
+   homelab (still the one parity era item only he can
+   run).
+3. HUNT-46: the remounted page freeze on
+   2027.2.0-beta1. Retest on the next beta; if it is
+   fixed, the suite fresh-page workarounds can stay
+   (they are harmless) and the docs note closes.
+4. HUNT-53: the app-side fix (delete and cleanup paths
+   clear the ring slots for the affected batch and
+   counters; recovery clears PressSlots on a fresh
+   database) still needs Eric's direction. The lab
+   mitigation (clear PressSlots after every recovery
+   and reseed) is in effect and proved itself again
+   this round, twice.
+5. The ThemeMode Light observation (round 8, HUNT-58
+   note; battery note): a fresh browser session with
+   a light color scheme appears to sync the ThemeMode
+   tag to Light on startup, even though nothing in
+   the suites writes it. Worth a look: whether the
+   startup sync is intended and whether System mode
+   should hold.
+6. setup_roastery_v4_tags.py is a stale fork of the
+   UDT list (live matches setup_roastery_artisan_tags.py,
+   not it). Delete it or resync it; it is only a
+   script, never run against the live tree.
+7. Stray file, no action yet: the gateway tree has an
+   extra roastery/code.py (duplicate of core/code.py),
+   not present in the repo; leave alone until a
+   cleanup round confirms it is unused.
+8. The "ALIGN ON" label sits tight against the top
+   edge of the C picker on the desktop Log page
+   (round 8, HUNT-61 note). Pre-existing compare-row
+   layout, cosmetic.
+9. Style-class lesson (round 8, HUNT-60): a style
+   class cannot override Perspective's inline flex
+   shorthand on a flex child; set shrink/grow in the
+   view's position instead. Also, POST /scan/projects
+   ingested an edited style.json but the served
+   style.css version hash did not bump, so a
+   style-class-only change may not reach new sessions
+   until the hash moves (gateway restart or Designer
+   save). View changes do go live via scan.
+10. The HUNT-58 self-heal claim still rests on the
+    wipe simulation, not on a live replacement hitting
+    the A-to-B chain; it is exercised only if a
+    replacement lands mid-chain in a future battery.

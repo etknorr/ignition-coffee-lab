@@ -10,7 +10,8 @@
     "cmpC": 0,
     "compareDs": null,
     "compareCaption": "Pick up to three batches and press Compare.",
-    "showAllCols": false
+    "showAllCols": false,
+    "compareRefLines": []
   },
   "params": {},
   "propConfig": {},
@@ -941,6 +942,92 @@
             }
           },
           {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "CmpAlignField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "CmpAlignFieldCap"
+                },
+                "props": {
+                  "text": "Align on",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.dropdown",
+                "meta": {
+                  "name": "CmpAlign"
+                },
+                "props": {
+                  "options": [
+                    {
+                      "value": "charge",
+                      "label": "CHARGE"
+                    },
+                    {
+                      "value": "dryEnd",
+                      "label": "DRY"
+                    },
+                    {
+                      "value": "fcStart",
+                      "label": "FCs"
+                    },
+                    {
+                      "value": "fcEnd",
+                      "label": "FCe"
+                    },
+                    {
+                      "value": "scStart",
+                      "label": "SCs"
+                    },
+                    {
+                      "value": "scEnd",
+                      "label": "SCe"
+                    },
+                    {
+                      "value": "drop",
+                      "label": "DROP"
+                    }
+                  ],
+                  "value": "charge",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/CompareAlignEvent",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "150px"
+            }
+          },
+          {
             "type": "ia.input.button",
             "meta": {
               "name": "CompareButton"
@@ -1813,6 +1900,14 @@
                     }
                   ]
                 }
+              },
+              "props.series[0].referenceLines.items": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.compareRefLines"
+                  }
+                }
               }
             },
             "position": {
@@ -2637,6 +2732,14 @@
                       "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
                     }
                   ]
+                }
+              },
+              "props.series[0].referenceLines.items": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.compareRefLines"
+                  }
                 }
               }
             },

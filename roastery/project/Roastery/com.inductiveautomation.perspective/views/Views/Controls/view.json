@@ -48,6 +48,11 @@
             "meta": {
               "name": "ModePill"
             },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            },
             "props": {
               "text": "Off",
               "style": {

@@ -8006,22 +8006,38 @@ def batches_panel_view():
                       [import_lbl, upload, import_note],
                       align='center', wrap='wrap',
                       classes='roast-gap-12')
-    # Compare section (Tier 1 item 2): three batch pickers, a
-    # Compare button and the overlay chart. Options and the
-    # dataset are library built (roastery.batches.compare_*).
+    # Compare section (Tier 1 item 2): three batch pickers, an
+    # Align picker (polish round 8, HUNT-56: the Artisan
+    # alignEvent choice, bound to the CompareAlignEvent tag
+    # shared with Settings Display), a Compare button and the
+    # overlay chart. Options and the dataset are library built
+    # (roastery.batches.compare_*).
     def cmp_drop(name, prop):
         return {'type': 'ia.input.dropdown', 'meta': {'name': name},
                 'props': {'options': [], 'value': 0,
                           'style': {'classes': 'roast-input'}},
                 'propConfig': {'props.value': _custom_binding(prop)},
                 'position': {'grow': 1, 'shrink': 1, 'basis': '150px'}}
+    align_opts = [{'value': 'charge', 'label': 'CHARGE'},
+                  {'value': 'dryEnd', 'label': 'DRY'},
+                  {'value': 'fcStart', 'label': 'FCs'},
+                  {'value': 'fcEnd', 'label': 'FCe'},
+                  {'value': 'scStart', 'label': 'SCs'},
+                  {'value': 'scEnd', 'label': 'SCe'},
+                  {'value': 'drop', 'label': 'DROP'}]
     cmp_btn = button('CompareButton', 'Compare',
                      'roast-btn roast-btn-sm roast-btn-primary',
                      events=lib_event(
                          'roastery.batches.build_compare(self)'))
     compare_row = flex('CompareRow', 'row',
                        [cmp_drop('CmpA', 'cmpA'), cmp_drop('CmpB', 'cmpB'),
-                        cmp_drop('CmpC', 'cmpC'), cmp_btn],
+                        cmp_drop('CmpC', 'cmpC'),
+                        cfg_field('CmpAlignField', 'Align on',
+                                  tag_dropdown('CmpAlign',
+                                               'CompareAlignEvent',
+                                               align_opts),
+                                  basis='150px'),
+                        cmp_btn],
                        align='center', wrap='wrap',
                        classes='roast-gap-12')
     cmp_cap = label('CompareCaption', '', 'roast-note',
@@ -8048,7 +8064,8 @@ def batches_panel_view():
                        'importNote': 'Choose an Artisan .alog file to add that roast to the log.',
                        'cmpA': 0, 'cmpB': 0, 'cmpC': 0,
                        'compareDs': None,
-                       'compareCaption': 'Pick up to three batches and press Compare.'},
+                       'compareCaption': 'Pick up to three batches and press Compare.',
+                       'compareRefLines': []},
             'params': {}, 'propConfig': {},
             'props': {'defaultSize': {'width': 1200, 'height': 940}},
             'events': {'system': {'onStartup': {
@@ -8069,7 +8086,11 @@ def compare_chart():
     The HUNT-31 per-theme color bindings are applied
     post-generation, so this builder only emits the data
     binding; do not run it against the live project tree.
-    The legend names every series."""
+    The legend names every series. Polish round 8
+    (HUNT-56): the bean series carries one ALIGN reference
+    line, bound to view.custom.compareRefLines, which
+    build_compare writes at the aligned reference event
+    (grid-snapped, Artisan's vertical align line)."""
     p = _canvas_props()
     p['data'] = []
     p['xAxis'] = _canvas_xaxis(split=11, rotate=30)
@@ -8099,7 +8120,10 @@ def compare_chart():
             'meta': {'name': 'CompareChart'},
             'props': p,
             'propConfig': {'props.data': {'binding': prop_binding(
-                'view.custom.compareDs')}},
+                'view.custom.compareDs')},
+                'props.series[0].referenceLines.items': {
+                    'binding': prop_binding(
+                        'view.custom.compareRefLines')}},
             'position': {'grow': 1, 'shrink': 1, 'basis': '0px'}}
 
 
@@ -9283,9 +9307,20 @@ def settings_auc_view():
 
 def _custom_binding(prop):
     """Bidirectional property binding to a view custom prop,
-    for editor inputs the library reads back on save."""
+    for editor inputs the library reads back on save. The
+    bidirectional flag belongs inside CONFIG: the property
+    binding schema (knowledge/raw/binding-schemas/
+    binding-property.json) puts it there, and IA's own
+    example does the same. HUNT-55 proved the binding level
+    copy alone runs one way, so a pick never writes back.
+    HUNT-59 (polish round 8): this builder emitted binding
+    level only, so running it would have reintroduced
+    HUNT-55 on the three compare pickers, the only
+    _custom_binding use. Both copies now match the live
+    BatchesPanel view and the tag bindings."""
     return {'binding': {'type': 'property',
-                        'config': {'path': 'view.custom.' + prop},
+                        'config': {'path': 'view.custom.' + prop,
+                                   'bidirectional': True},
                         'bidirectional': True}}
 
 
@@ -9624,12 +9659,24 @@ def settings_display_view():
     style_opts = [{'value': 'solid', 'label': 'Solid'},
                   {'value': 'dashed', 'label': 'Dashed'},
                   {'value': 'dotted', 'label': 'Dotted'}]
+    align_opts = [{'value': 'charge', 'label': 'CHARGE'},
+                  {'value': 'dryEnd', 'label': 'DRY'},
+                  {'value': 'fcStart', 'label': 'FCs'},
+                  {'value': 'fcEnd', 'label': 'FCe'},
+                  {'value': 'scStart', 'label': 'SCs'},
+                  {'value': 'scEnd', 'label': 'SCe'},
+                  {'value': 'drop', 'label': 'DROP'}]
     display = settings_section('DisplaySection', 'Curve Display',
         'How the live curves are drawn, Artisan CurveStyles '
         'style: line width and style per curve, an optional '
         'fill under the rate of rise curve, and the size of '
         'the event markers on the bean curve. Colors do not '
-        'change here; they stay the app palette in both themes.', [
+        'change here; they stay the app palette in both themes. '
+        'The compare chart aligns its curves on the event '
+        'chosen below (Artisan alignEvent: Charge, Dry End, '
+        'First Crack start and end, Second Crack start and '
+        'end, Drop); the same choice sits on the Log compare '
+        'row, and both write the one CompareAlignEvent tag.', [
         cfg_row('DispRow1', [
             cfg_field('DispBtWField', 'Bean temp width',
                       tag_dropdown('DispBtWDrop', 'DispBtWidth',
@@ -9659,6 +9706,18 @@ def settings_display_view():
             cfg_field('DispMarkerField', 'Event marker size',
                       tag_dropdown('DispMarkerDrop', 'DispMarkerSize',
                                    width_opts((2, 4, 6, 8, 10))),
+                      basis='170px')]),
+        cfg_row('DispRow3', [
+            cfg_field('DispAxisFmtField', 'Time axis format',
+                      tag_dropdown('DispAxisFmtDrop', 'DispAxisFormat',
+                                   [{'value': 'm:ss',
+                                     'label': 'Artisan (m:ss)'},
+                                    {'value': 'mm:ss',
+                                     'label': 'Padded (mm:ss)'}]),
+                      basis='170px'),
+            cfg_field('CompareAlignField', 'Compare alignment',
+                      tag_dropdown('CompareAlignDrop',
+                                   'CompareAlignEvent', align_opts),
                       basis='170px')]),
     ])
     staged = label('BgPhaseReadout', '', 'roast-value',

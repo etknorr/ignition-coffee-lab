@@ -750,6 +750,204 @@ COMPARE_COLS = ['t_stamp', 't_label', 't_sec', 'btA', 'rorA',
                 'btB', 'rorB', 'btC', 'rorC']
 COMPARE_SLOTS = ('A', 'B', 'C')
 
+# Polish round 8 (HUNT-56): event-based compare alignment,
+# after Artisan 5.0.0's alignEvent (src/artisanlib/canvas.py
+# timealign for the background, comparator.py realign for
+# the comparator). Artisan's align names are CHARGE, TP,
+# DRY, FCs, FCe, SCs, SCe, DROP (comparator.py alignnames,
+# indices 0-7); its background alignEvent adds ALL (7),
+# which tries DROP, then SCe, SCs, FCe, FCs, DRY, CHARGE
+# in that order. realign anchors the TOP profile to its
+# CHARGE (delta = startTime, refTime 0 for CHARGE) and
+# shifts every other profile by delta = eventTime -
+# refTime, where eventTime is that profile's chosen event
+# read off its own timex; a profile missing the event is
+# NOT aligned (it falls back to its CHARGE / first
+# reading), and a vertical align line draws at refTime.
+# This build offers the seven stamped events (no TP: the
+# turning point is derived, not a stamped event in the
+# batch document; no ALL: the comparator needs one
+# explicit event). The tag value is the stored key below;
+# the dropdowns show the Artisan short label.
+COMPARE_ALIGN_EVENTS = [
+    ('charge', 'CHARGE'), ('dryEnd', 'DRY'),
+    ('fcStart', 'FCs'), ('fcEnd', 'FCe'),
+    ('scStart', 'SCs'), ('scEnd', 'SCe'),
+    ('drop', 'DROP')]
+COMPARE_ALIGN_LABELS = dict(COMPARE_ALIGN_EVENTS)
+COMPARE_ALIGN_TAG = '[default]Roastery/CurrentBatch/CompareAlignEvent'
+
+
+def compare_align_event():
+    """The Display setting for compare alignment: the tag
+    value, or 'charge' for anything missing or unknown
+    (same fallback shape as core.axis_format). Both the
+    Settings Display dropdown and the Log compare row
+    dropdown bind this one tag, so they always agree."""
+    try:
+        v = core.read_members(['CompareAlignEvent'])['CompareAlignEvent']
+    except Exception:
+        v = None
+    return v if v in COMPARE_ALIGN_LABELS else 'charge'
+
+
+def _compare_events(doc):
+    """A batch document's stamped event seconds, keyed by
+    align key; None where the batch never stamped the
+    event (the seeded stubs, for example, carry only
+    charge, dryEnd, fcStart and drop)."""
+    events = (doc or {}).get('events') or {}
+    out = {}
+    for key, _lbl in COMPARE_ALIGN_EVENTS:
+        e = events.get(key)
+        t = e.get('t') if isinstance(e, dict) else None
+        out[key] = None if t is None else float(t)
+    return out
+
+
+def align_compare_slots(slot_data, align_key):
+    """Pure alignment math over staged slot data (no tag or
+    database reads, so the suite can drive it through the
+    same library functions build_compare calls). slot_data
+    is a list in slot order (A first, the Artisan top
+    profile) of dicts with slot, number, bean, points
+    [(t_sec, bean_temp_f)], rors {t_sec: ror_or_None} and
+    events {align_key: t_sec_or_None}.
+    Returns placed {column: {grid_sec: value}}, max_sec,
+    ref_sec (the displayed, grid-snapped reference event
+    second), ref_label, fallbacks [(slot, number)] for
+    every slot that lacked the event, shifts {slot:
+    snapped_shift_sec} and offset_sec.
+    Shifts are Artisan's delta (own event minus the
+    reference event) snapped to the 30 s library grid
+    (HUNT-51): a shift lands on a grid step, so the
+    aligned event lands within 15 s of the reference,
+    the same quantization the grid already applies to
+    every sample. A slot missing the event falls back to
+    aligning its charge to the reference event (its t=0
+    lands on ref_sec), Artisan's fallback: realign's last
+    branch reads a profile missing the event at its CHARGE
+    as its event time. The reference slot itself never
+    shifts. When the reference slot itself lacks the event
+    there is no Artisan reference point (realign returns
+    without aligning); this build falls back to charge
+    alignment for all slots instead and says so in the
+    caption, so Compare never leaves curves unaligned
+    without saying why. Aligned seconds can go
+    negative (aligning on DROP pulls every charge left
+    of zero); the category grid starts at 0, so the
+    whole overlay translates right by offset_sec, a grid
+    multiple, and the reference line moves with it.
+    Artisan instead shows negative times; the translate
+    keeps every sample visible on this grid at the cost
+    of the reference no longer reading its raw second,
+    which the caption states by naming the event."""
+    if align_key not in COMPARE_ALIGN_LABELS:
+        align_key = 'charge'
+    ref = slot_data[0]
+    ref_t = ref['events'].get(align_key)
+    fallbacks = []
+    if ref_t is None:
+        ref_t = 0.0
+        fallbacks.append((ref['slot'], ref['number']))
+    shifts = {}
+    for sd in slot_data:
+        own = sd['events'].get(align_key)
+        if own is None:
+            own = 0.0
+            fallbacks.append((sd['slot'], sd['number']))
+        shifts[sd['slot']] = core.grid_bucket(own - ref_t)
+    buckets = {}
+    min_bucket = None
+    max_bucket = 0
+    for sd in slot_data:
+        rows = []
+        for t, bt in sd['points']:
+            b = core.grid_bucket(t - shifts[sd['slot']])
+            rows.append((b, bt, sd['rors'].get(t)))
+            if min_bucket is None or b < min_bucket:
+                min_bucket = b
+            if b > max_bucket:
+                max_bucket = b
+        buckets[sd['slot']] = rows
+    offset = (-min_bucket if min_bucket is not None
+              and min_bucket < 0 else 0)
+    placed = {}
+    for sd in slot_data:
+        for b, bt, ror in buckets[sd['slot']]:
+            s = b + offset
+            placed.setdefault('bt' + sd['slot'], {})[s] = bt
+            placed.setdefault('ror' + sd['slot'], {})[s] = ror
+    return {'placed': placed, 'max_sec': max_bucket + offset,
+            'ref_sec': core.grid_bucket(ref_t) + offset,
+            'ref_label': COMPARE_ALIGN_LABELS[align_key],
+            'fallbacks': fallbacks, 'shifts': shifts,
+            'offset_sec': offset, 'align_key': align_key}
+
+
+def compare_dataset(chosen, align_key=None):
+    """Build a compare overlay for chosen [(slot, number)]
+    in A/B/C order. Returns (rows, caption, ref_items,
+    info): rows for second_grid's dataset shape, the
+    caption naming each slot plus the alignment, the
+    single ALIGN reference line item for the reference
+    event (core._ref_items, so the line snaps to the
+    grid like every other reference line), and the
+    align_compare_slots info dict. Empty when nothing
+    stages. A chosen batch with no curve data stages
+    nothing but is still named in the caption
+    (HUNT-61): ' | Batch <n> has no curve data.'"""
+    if align_key is None:
+        align_key = compare_align_event()
+    elif align_key not in COMPARE_ALIGN_LABELS:
+        align_key = 'charge'
+    slot_data = []
+    captions = []
+    no_curve = []
+    for slot, number in chosen:
+        if number <= 0:
+            continue
+        points = _compare_points(number)
+        if not points:
+            no_curve.append(number)
+            continue
+        rors = core.compute_ror_series(points, core.ror_params(),
+                                       offline=True)
+        batch = get_batch(number)
+        bean = (batch['beanName'] if batch else '') or ''
+        doc = (batch or {}).get('document') or {}
+        slot_data.append({'slot': slot, 'number': number,
+                          'bean': bean, 'points': points,
+                          'rors': dict((t, r) for t, r in rors),
+                          'events': _compare_events(doc)})
+        captions.append('%s = Batch %d %s' % (slot, number, bean))
+    if not slot_data:
+        caption = 'Pick at least one batch to compare.'
+        for n in no_curve:
+            caption += ' | Batch %d has no curve data.' % n
+        return [], caption, [], {
+            'placed': {}, 'max_sec': 0, 'ref_sec': 0,
+            'ref_label': COMPARE_ALIGN_LABELS.get(align_key,
+                                                  'CHARGE'),
+            'fallbacks': [], 'shifts': {}, 'offset_sec': 0,
+            'align_key': align_key}
+    info = align_compare_slots(slot_data, align_key)
+    rows = core.second_grid(
+        info['placed'], ['btA', 'rorA', 'btB', 'rorB', 'btC',
+                         'rorC'], info['max_sec'])
+    caption = (' - '.join(captions) + ' - Aligned on '
+               + info['ref_label'])
+    if info['fallbacks']:
+        caption += (' (' + ', '.join(
+            '%s has no %s, charge aligned' % (s, info['ref_label'])
+            for s, _n in info['fallbacks']) + ')')
+    for n in no_curve:
+        caption += ' | Batch %d has no curve data.' % n
+    ref_items = core._ref_items(
+        [(info['ref_sec'], 'ALIGN ' + info['ref_label'])],
+        top_gap=55.0)
+    return rows, caption, ref_items, info
+
 
 def compare_options():
     """Dropdown options for the compare pickers, from the
@@ -799,42 +997,22 @@ def build_compare(self):
     elapsed category axis (grid rows 30 s apart, nulls
     elsewhere, the live chart's merge shape; polish round 3,
     HUNT-23; polish round 6, HUNT-51: the rows are the even
-    grid steps, so the shown labels are even increments)
-    and the caption naming each slot."""
+    grid steps, so the shown labels are even increments),
+    the caption naming each slot and the alignment, and the
+    single ALIGN reference line on the reference event.
+    Alignment is Artisan's alignEvent (polish round 8,
+    HUNT-56): the curves shift so the chosen event (the
+    CompareAlignEvent tag, CHARGE by default) lands on the
+    same grid step for every batch, slot A as the reference;
+    see align_compare_slots for the shift, fallback and
+    translate rules."""
     c = self.view.custom
     chosen = [('A', int(c.cmpA or 0)), ('B', int(c.cmpB or 0)),
               ('C', int(c.cmpC or 0))]
-    placed = {}
-    max_sec = [0]
-    captions = []
-    for slot, number in chosen:
-        if number <= 0:
-            continue
-        points = _compare_points(number)
-        if not points:
-            continue
-        rors = core.compute_ror_series(points, core.ror_params(),
-                                       offline=True)
-        ror_by_t = dict((t, r) for t, r in rors)
-        for t, bt in points:
-            s = core.grid_bucket(t)
-            placed.setdefault('bt' + slot, {})[s] = bt
-            placed.setdefault('ror' + slot, {})[s] = \
-                ror_by_t.get(t)
-            if s > max_sec[0]:
-                max_sec[0] = s
-        batch = get_batch(number)
-        bean = (batch['beanName'] if batch else '') or ''
-        captions.append('%s = Batch %d %s' % (slot, number, bean))
-    if placed:
-        rows = core.second_grid(
-            placed, ['btA', 'rorA', 'btB', 'rorB', 'btC',
-                     'rorC'], max_sec[0])
-    else:
-        rows = []
+    rows, caption, ref_items, _info = compare_dataset(chosen)
     c.compareDs = system.dataset.toDataSet(COMPARE_COLS, rows)
-    c.compareCaption = (' - '.join(captions) if captions
-                        else 'Pick at least one batch to compare.')
+    c.compareCaption = caption
+    c.compareRefLines = ref_items
 
 
 # ---------------------------------------------------------------- event editing

@@ -23,6 +23,13 @@ Perspective dock stays in the DOM at x=420 on a 360px
 screen); the mobile detail open now strips BASE from
 dp.url (open_page prepends it, so the absolute URL made
 a malformed request and the gateway answered 400).
+Round 8 (HUNT-58): part A self-heals its own start (a
+stale fixture 9919 or leftover press rows from a partial
+A run, or a VM replacement in between, are cleaned with
+the HUNT-53 press guard first, so the live roast can
+re-create the fixture) and re-writes the lab-dir snapshot
+right after the save, so parts B and C never depend on a
+stale one-off snapshot file.
 """
 import json
 import os
@@ -32,6 +39,7 @@ import time
 sys.path.insert(0, '/home/hatch/workspace/ignition-lab')
 from playwright.sync_api import sync_playwright
 import verify_roastery_polish2 as P
+import r4hunt_fixture as RF
 
 BASE = P.BASE
 SHOTS = P.SHOTS
@@ -145,6 +153,12 @@ def overflow(page):
 
 def main():
     os.makedirs(SHOTS, exist_ok=True)
+    # HUNT-58: a rerun after a partial A (or a VM replacement
+    # that left a stale fixture plus press rows) must start
+    # clean, or the live save refuses the duplicate batch
+    # number. The guard drains and clears the press ring
+    # before any rows are deleted, so nothing resurrects.
+    RF.ensure_clean_baseline()
     base = (int(P.psql('SELECT COUNT(*) FROM batches')),
             int(P.psql('SELECT COUNT(*) FROM batch_series')),
             int(P.psql('SELECT COUNT(*) FROM batch_events')))
@@ -335,6 +349,15 @@ def main():
             nser = P.psql('SELECT COUNT(*) FROM batch_series '
                           'WHERE batch_number = %d' % FIX)
             print('fixture series rows:', nser, flush=True)
+            # HUNT-58: re-write the lab-dir snapshot from the
+            # just-saved fixture, so parts B and C restore the
+            # fixture this run actually created, never a stale
+            # one-off file.
+            snap = RF.snapshot_fixture()
+            check('fixture snapshot written for parts B/C',
+                  len(snap['series']) == int(nser),
+                  '%d snapshot rows vs %s db rows'
+                  % (len(snap['series']), nser))
 
             # ---------- BatchDetail for close events -------
             dp.goto(BASE + '/log', wait_until='domcontentloaded',

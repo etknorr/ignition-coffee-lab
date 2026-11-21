@@ -157,6 +157,7 @@ MEMBERS = [
     mem('ChargeTime', 'DateTime', None, omit_value=True),
     mem('ChargeWeightG', 'Float8', 200.0, doc='Green coffee charged, grams (SR800 home scale).'),
     mem('ColorSystem', 'String', '', doc='Color reading system (for example Agtron).'),
+    mem('CompareAlignEvent', 'String', 'charge', doc='Polish round 8 (HUNT-56): compare alignment event, after Artisan 5.0.0 alignEvent. Stored keys: charge, dryEnd, fcStart, fcEnd, scStart, scEnd, drop (Artisan labels CHARGE, DRY, FCs, FCe, SCs, SCe, DROP). roastery.batches.build_compare shifts every compared curve so the chosen event lands on the same 30 s grid step, slot A as the reference; a batch missing the event falls back to its charge. Bound in Settings Display and on the Log compare row, one tag for both.'),
     mem('CuppingNotes', 'String', ''),
     mem('CustomEvent1ElapsedSec', 'Int4', -1),
     mem('CustomEvent1Enabled', 'Boolean', True, doc='Polish round 1 item 7: whether this custom event can be stamped (dock list and the library stamp guard both honor it).'),
