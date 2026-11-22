@@ -5211,11 +5211,24 @@ def _create_submit(self, event):
            'totalSec': 0, 'phases': {}, 'events': {}, 'metadata': {},
            'manualEntry': True}
     doc = _apply_form(doc, event)
+    # HUNT-80: the create path never applied the event fields
+    # the form invites the user to type, so a manually created
+    # batch with typed event times saved with no events, no
+    # total time, no phases and drop_temp_f 0.0. The update
+    # path applies them through _apply_events; create does the
+    # same, and the insert carries the edited drop temp. With
+    # no events typed nothing changes: _apply_events leaves
+    # the phases empty and the total at 0.
+    err = _apply_events(doc, event)
+    if err:
+        self.view.custom.editNote = err
+        return
     _recompute_loss(doc)
     now = system.date.now()
     _run(NQ_INSERT, {
         'batch_number': number, 'roast_start': now, 'roast_end': now,
-        'bean_name': doc.get('beanName') or '', 'drop_temp_f': 0.0,
+        'bean_name': doc.get('beanName') or '',
+        'drop_temp_f': doc.get('dropTempF') or 0.0,
         'data': system.util.jsonEncode(doc)})
     self.view.custom.editNote = 'Created batch %d.' % number
     core.show_toast(self, 'Batch %d created' % number, 'success')
@@ -7571,8 +7584,19 @@ def profile_to_batch(p, batch_number):
     charge_temp = charge_ev['tempF'] if charge_ev else None
     charge_w = _weight_g(p, 0)
     out_w = _weight_g(p, 1)
-    loss = ((charge_w - out_w) * 100.0 / charge_w) \
-        if out_w > 0 and charge_w > 0 else 0.0
+    # HUNT-78: the raw arithmetic ((green - roasted) / green)
+    # went negative when the roasted weight exceeded the green
+    # weight (a bad scale entry: 250 g out on a 200 g charge
+    # read -25%). Artisan weight_loss returns 0 in exactly
+    # that case, and batches._weight_loss is that function
+    # (the HUNT-74 fix in build_document); the import path
+    # used the raw form, so an imported batch showed a
+    # negative Weight Loss tile while its Loss section
+    # (loss_yield_density, guarded) showed none. The out_w
+    # guard stays: with no roasted weight recorded the loss
+    # is 0, not 100%.
+    loss = (batches._weight_loss(charge_w, out_w)
+            if out_w > 0 and charge_w > 0 else 0.0)
 
     meta = dict((m, '' if m not in core.FORM_INTS
                  and m not in core.FORM_FLOATS else 0)
@@ -7762,6 +7786,7 @@ def import_profile(p, filename):
 def import_upload(self, event):
     """Log page FileUpload onFileReceived handler (thin)."""
     note = ''
+    toast = None
     try:
         f = event.file
         if f is None:
@@ -7774,20 +7799,27 @@ def import_upload(self, event):
         if number is not None:
             system.perspective.sendMessage(
                 batches.REFRESH_MESSAGE, {}, scope='page')
+            toast = ('Imported %s as batch %d'
+                     % (f.name or 'file', number), 'success')
+        else:
+            toast = (note, 'warning')
     except Exception as e:
         LOG.error('Artisan import failed: %s' % e)
         note = 'Import failed: %s' % e
+        toast = (note, 'error')
     try:
         self.view.custom.importNote = note
     except Exception:
         pass
+    if toast is not None:
+        core.show_toast(self, toast[0], toast[1])
     return note
 
 
 def stage_background_upload(self, event):
-    """Roast page FileUpload onFileReceived handler (thin):
-    stage the uploaded profile's bean curve as the Roast page
-    background overlay. Nothing is saved to the log."""
+    """Settings Background Profile FileUpload onFileReceived
+    handler (thin): stage the uploaded profile's bean curve
+    as the background overlay. Nothing is saved to the log."""
     note = ''
     try:
         f = event.file
@@ -7826,9 +7858,16 @@ def stage_background_upload(self, event):
         note = 'Background staged from %s: %d samples. ' \
             'Nothing was saved to the log.' % (
                 f.name or 'file', len(pairs))
+        core.show_toast(self, 'Background staged from %s'
+                        % (f.name or 'file'), 'success')
     except Exception as e:
         LOG.error('Artisan background staging failed: %s' % e)
         note = 'Background failed: %s' % e
+        # Polish round 3 (HUNT-29): the failure path only wrote
+        # the note line while the batch import handler toasts
+        # its failures; toast here too, through the choke
+        # point, so a bad file is equally visible either way.
+        core.show_toast(self, note, 'error')
     try:
         self.view.custom.bgNote = note
     except Exception:
@@ -8085,12 +8124,26 @@ def _computed_for(profile, timex, temp1, temp2, ti, mode, doc):
         c['coolphasetime'] = times['COOL'] - times['DROP']
     if 'DROP' in times:
         c['totaltime'] = times['DROP']
+    # HUNT-81: the turning point scan used to need a Dry End
+    # stamp (it scanned charge to the dry index), so a batch
+    # with a real dip but no Dry End event exported no TP at
+    # all and its AUC started at charge. Artisan findTPint
+    # needs no Dry End: it scans charge to DROP, capped at FC
+    # Start when one is stamped. Mirror that here: the cap is
+    # the FC Start index when set, else the drop index, else
+    # the end of the curve. The forward scan with a strict
+    # less-than keeps the earliest sample holding the minimum,
+    # as Artisan's backward scan does.
     tp_idx = None
-    if ti[0] is not None and ti[0] >= 0 and len(ti) > 1 \
-            and ti[1] and ti[1] > ti[0]:
-        lo, hi = int(ti[0]), int(ti[1])
+    if ti[0] is not None and ti[0] >= 0 and len(temp2) > 0:
+        lo = int(ti[0])
+        hi = len(temp2)
+        if len(ti) > 6 and ti[6]:
+            hi = min(hi, int(ti[6]))
+        if len(ti) > 2 and ti[2]:
+            hi = min(hi, int(ti[2]))
         best = None
-        for i in range(lo, min(hi + 1, len(temp2))):
+        for i in range(lo, hi):
             if _proper(temp2[i]) and (best is None
                                       or temp2[i] < temp2[best]):
                 best = i
@@ -8118,6 +8171,16 @@ def _computed_for(profile, timex, temp1, temp2, ti, mode, doc):
         avg = (float(temp2[i]) + float(temp2[i + 1])) / 2.0 - base
         if avg > 0:
             auc += avg * dt_min
+    # HUNT-79: the loop above integrates in the profile mode
+    # units (F when mode is F), but Artisan's AUC is always
+    # in C-min: calcAUC converts the temps to C first and ts()
+    # is documented "always in C", and the comparator reads
+    # this cached value and labels it C*min. A Fahrenheit
+    # integral overstates it by 9/5, so convert on export
+    # when the mode is F. The base stays in mode units
+    # (212.0 in F), as Artisan writes it.
+    if mode == 'F':
+        auc = auc * 5.0 / 9.0
     c['AUC'] = int(round(auc))
     meta = doc.get('metadata') or {}
     win = _num(meta.get('ChargeWeightG'))
@@ -8125,9 +8188,32 @@ def _computed_for(profile, timex, temp1, temp2, ti, mode, doc):
     if win > 0 and wout > 0:
         c['weightin'] = win
         c['weightout'] = wout
-        c['weight_loss'] = (win - wout) * 100.0 / win
-        c['total_loss'] = c['weight_loss']
-        c['total_yield'] = wout * 100.0 / win
+        # HUNT-79: the weight block wrote Artisan's keys with
+        # the wrong math. weight_loss did the raw arithmetic,
+        # so a roasted weight over the green weight read
+        # negative (Artisan weight_loss returns 0 there, and
+        # the comparator shows this cached value as-is).
+        # total_yield was a percent (wout * 100 / win) where
+        # Artisan writes grams (weight out minus defects:
+        # computedProfileInformation, main.py:16889). And
+        # total_loss just copied weight_loss, ignoring the
+        # defects loss Artisan adds in (main.py:13317 and
+        # 16890: total_loss is weight_loss over the yield
+        # weight, res = wout - defects). All three now use
+        # batches._weight_loss, the guarded Artisan shape,
+        # and roast_defects_loss is written with them.
+        wl = batches._weight_loss(win, wout)
+        if wl:
+            c['weight_loss'] = round(wl, 1)
+        defects = _num(meta.get('DefectsWeightG'))
+        res = wout - defects
+        dl = batches._weight_loss(wout, res) if defects > 0 else 0.0
+        if dl:
+            c['roast_defects_loss'] = round(dl, 1)
+        c['total_yield'] = round(res, 1)
+        tl = batches._weight_loss(win, res)
+        if tl:
+            c['total_loss'] = round(tl, 1)
     return c
 
 
@@ -8387,6 +8473,8 @@ def export_download(self):
         return
     filename, text = build_alog_text(int(number))
     system.perspective.download(filename, text)
+    core.show_toast(self, 'Batch %d .alog downloaded' % int(number),
+                    'success')
 '''
 
 

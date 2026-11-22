@@ -8855,3 +8855,611 @@ charge, PressCaptureMode Group, PeriscopeAvailable True,
 background cleared, PhaseFromBg False), PressSlots empty,
 0 events stable after a 60 s idle wait, gateway RUNNING,
 trial about 4347 s at close.
+
+### Polish round 11: ARTISAN_CODE resync (worker A, 2026-11-21)
+
+Record-copy staleness fix, not an app defect. No live app
+file was changed, nothing was rebuilt, and the gateway tree
+and lab database were not touched. Method follows round 10
+worker E exactly. The repo project tree is canonical; the
+live artisan code.py agreed between the repo tree and the
+gateway tree before the edit (both md5
+9cb340c9f32450aef868f3fa3680723f, diff zero), so there was
+no conflict to resolve.
+
+Before: builder ARTISAN_CODE 47,240 chars, md5
+6300568f3b8ae5f644e84a7b7da9cb4c; live artisan code.py
+48,038 chars, md5 9cb340c9f32450aef868f3fa3680723f.
+Unified diff 64 lines, 21 added lines, 4 removed lines
+(3 changed docstring lines plus context). All of it the
+toast additions to import_upload (success, warning, and
+error toasts through a toast accumulator), the docstring
+move and success and error toasts in
+stage_background_upload, and the success toast in
+export_download. The ARTISAN_CODE literal was replaced
+with the live file contents by AST span (old span lines
+7112 to 8390, new span lines 7112 to 8407). Literal
+safety was checked before the edit: the live file
+contains no triple-quote sequence, no carriage returns,
+ends with a newline, and holds 55 backslashes, so the raw
+literal parses to exactly the live bytes. The builder
+file compiles (py_compile passes). After: builder
+ARTISAN_CODE 48,038 chars, md5
+9cb340c9f32450aef868f3fa3680723f, exact match. Git diff
+for the builder is 20 insertions and 3 deletions, all
+inside the ARTISAN_CODE literal.
+
+Extraction proof, same method as worker E: the builder
+module cannot be imported (the module-level FORM_SCHEMA
+load needs scripts/knowledge/schemas-2027, which is not
+in the repo), and main() must never run against the live
+tree, so ARTISAN_CODE, CORE_CODE, BATCHES_CODE,
+STYLESHEET_CSS, STYLE_CLASSES, write_library, and
+write_styles were AST-extracted and executed with PROJ
+pointed at the scratch dir
+~/workspace/ignition-lab/r11a-scratch/proj, never at the
+gateway tree. The proof script is kept at
+~/workspace/ignition-lab/r11a-scratch/proof.py, and the
+emitted proj tree was removed after the run. Results, all
+byte-identical to live (diff zero): artisan/code.py
+48,038 chars, md5 9cb340c9f32450aef868f3fa3680723f;
+core/code.py 176,491 chars, md5
+376ad2620fac84295a79521c091c5233; batches/code.py
+102,293 chars, md5 1504c244d7a890b5f9130f579f0a9713;
+stylesheet.css 15,436 chars, md5
+4952c4beb425ab49d7ea05d3aaf1b0f9. Library and stylesheet
+resource.json files all identical. Style classes: 92
+emitted, same set as live, parsed JSON identical for all
+92 style.json files. Byte diffs are the known trailing
+newline only (the builder's json.dump writes no trailing
+newline, the live files end with one). The 7 differing
+style-class resource.json files break down as 4 with the
+gateway-stamped lastModificationSignature of "" in live
+where the builder emits attributes {} (roast-btn-compact,
+roast-gear-btn, roast-tab-active, roast-tab-item, the
+same 4 worker E reported) plus 3 that differ only by the
+trailing newline (roast-btn-dock, roast-btn-dock-lead,
+roast-btn-nowrap, live attributes {} matching the emitted
+{}). None of this is style content, and none of it was
+touched by this worker. STYLESHEET_CSS, CORE_CODE, and
+BATCHES_CODE still extract byte-identical after this
+edit, so no stale overwrite has recurred. The lab builder
+copy ~/workspace/ignition-lab/build_roastery_v4.py was
+left alone, as worker E did; it is even staler. The
+builder still carries the duplicated `if __name__ ==
+'__main__': main()` guard at the end of the file,
+pre-existing and harmless, noted by worker E and left
+alone here too.
+
+Note: worker D's HUNT-78, HUNT-79, and HUNT-81 fixes
+landed in the live artisan/code.py after this resync,
+so the builder went stale again at once; worker E
+re-resynced both literals at the end of the round (see
+below).
+
+### Polish round 11: BatchNumber restore in r7 and r8 freshhunt (worker B, 2026-11-21)
+
+Suite-only fix, no app change. Closes the latent HUNT-77
+gap in the r7 and r8 freshhunt suites (r9 was fixed in
+round 10). The r8 suite had the same live defect as r9:
+live_roast_360 saves as NEXT_BATCH (next after the
+seeded max, never hardcoded 1049), Reset leaves that
+number in the BatchNumber tag, and the finally block
+deleted the fixture batch but never restored the tag.
+In the finally block, after the NEXT_BATCH and 1050
+fixture deletes, it now writes BatchNumber 1042 with a
+comment in the r9 wording, adapted to name the r9 and
+r10 freshhunt phase checks as the following suites, and
+after the 'theme restored' check at the tail it adds the
+same 'batch number restored to 1042' check r9 uses.
+Files: ~/workspace/ignition-lab/verify_r8_freshhunt.py
+and ~/workspace/ignition-coffee-lab/roastery/scripts/verify_r8_freshhunt.py,
+verified identical with diff after copying the lab file
+to the repo. Both compile clean.
+
+The r7 suite has no live roast section and never writes
+BatchNumber. Its walk only stages batch 1042 through
+R5.stage_one, which calls the gateway library
+stage_detail and sets SelectedBatchNumber, not
+CurrentBatch/BatchNumber. Its other writes are
+RoRDeltaSpanSec, BackgroundLabel, BackgroundCurveJson,
+and ThemeMode. So r7 does not carry the live defect,
+only the latent exposure: a stale BatchNumber left by a
+concurrent worker would break the phase checks in later
+suites, and r7's counts-only 'lab clean' check would not
+catch it. Change, defensive and matching the r9 shape:
+in the tail cleanup, next to the ThemeMode System write,
+it now writes BatchNumber 1042 with a comment saying
+so, and after the 'theme restored' check it adds the
+same 'batch number restored to 1042' check r9 uses.
+File: ~/workspace/ignition-lab/verify_r7_freshhunt.py
+only (there is no repo copy of this file). Caveat: r7's
+main has no try/finally (unlike r8 and r9), so the
+restore sits in the tail cleanup, not in a finally
+block. A mid-run exception would skip it, exactly as it
+already skips the theme restore today. Wrapping r7 in
+try/finally was out of scope for this fix; the write is
+defensive because r7 never changes the tag itself.
+
+The other half of HUNT-77 (editor_save reload recovery)
+was checked and is not applicable to either suite. The
+reload recovery lives in the shared helper editor_save in
+verify_roastery_polish3.py. Neither
+verify_r7_freshhunt.py nor verify_r8_freshhunt.py calls
+editor_save or imports polish3 (both import
+verify_roastery_polish2 and verify_r5_detail_span only;
+grep confirms zero editor_save references in either
+file). Any future suite that calls polish3.editor_save
+gets the recovery automatically from the shared helper.
+Live verification came from the closing battery: both
+suites green, with the new 'batch number restored to
+1042' check passing in each (r7 42 passes, r8 76
+passes).
+
+### Polish round 11: fresh hunting pass, HUNT-78 to HUNT-82 (worker D, 2026-11-21)
+
+New suite verify_r11_freshhunt.py, mirrored from the lab
+to roastery/scripts/verify_r11_freshhunt.py. Five fixes,
+all live in the Ignition library plus one expression tag.
+
+#### HUNT-78 (minor, fixed): the Artisan import path computed weight loss with raw arithmetic
+
+`profile_to_batch` in roastery/artisan/code.py computed
+the imported batch weight loss as ((charge_w minus
+out_w) * 100.0 / charge_w), so an .alog whose roasted
+weight exceeds the green weight imported with a negative
+loss. Artisan `weight_loss` returns 0 in exactly that
+case (main.py:26047), and batches._weight_loss is that
+function (the HUNT-74 fix in build_document); the import
+path was the one place still using the raw form.
+Evidence: static, _weight_loss(200, 250) is 0.0 while
+the old formula gives -25.0. Live: the Log page upload
+of a crafted .alog (the sample fixture with the out
+weight raised to 250 g and a fresh roastUUID) imported
+as batch 1049; the stored document read weightLossPct
+0.0 with no -25 anywhere in the document, and the Loss
+section carried no weight loss key. Fix:
+profile_to_batch now uses batches._weight_loss(charge_w,
+out_w) with the same out_w > 0 and charge_w > 0 guard
+build_document uses, so a missing roasted weight still
+reads 0, not 100 percent.
+
+#### HUNT-79 (minor, fixed): the .alog export computed block wrote Artisan's keys with the wrong math
+
+`_computed_for` in the same artisan library wrote four
+values wrong in the exported .alog `computed` block:
+weight_loss did the raw arithmetic, so it went negative
+when the roasted weight exceeded the green weight;
+total_yield was a percent (wout * 100.0 / win) where
+Artisan writes grams, weight out minus defects
+(computedProfileInformation, main.py:16889), so batch
+1042 exported 86.0 where Artisan writes 172.0;
+total_loss just copied weight_loss, ignoring the defects
+loss Artisan adds in (main.py:13317 and 16890: total
+loss is weight_loss over the yield weight, res = wout
+minus defects), so with 200 g in, 184 g out and 10 g
+defects, Artisan writes 13.0 and the export wrote 8.0;
+AUC was integrated in F-min where Artisan's AUC is
+always in C-min: calcAUC converts the temps to C first
+and ts() is documented "always in C" (main.py:24513,
+24554), and the comparator reads this cached value and
+labels it C*min (comparator.py:348-350), so a
+Fahrenheit integral overstates it by 9/5. The base stays
+in mode units (212.0 in F), as Artisan writes it. Fix:
+_computed_for now uses batches._weight_loss for
+weight_loss, roast_defects_loss (newly written, as
+Artisan writes it when nonzero), and total_loss (over
+res = wout minus defects); total_yield is res in grams;
+AUC is converted to C-min (x5/9) when the mode is F and
+left alone in C mode. Loss percents and the yield are
+rounded to 1 decimal, as Artisan's float2float does.
+Proof: static checks in verify_r11_freshhunt.py
+(over-green, defects, no-defects, and C-mode cases)
+plus the live export of batch 1042 through the detail
+page Export .alog button.
+
+CORRECTION to the round 10 record: Artisan does NOT
+rebuild the .alog `computed` block on load. The only
+profile['computed'] assignment is in getProfile, the
+save path (main.py:17225); on load Artisan reads the
+cached block directly (comparator weight_loss and AUC,
+the HTML report template dsd['computed'][fld], and
+computed['TP_time'] in loadFile). The round 10 note
+saying the block "is recomputed on import" was wrong.
+The export computed block must therefore carry correct
+values, which is why these were real file-level defects.
+Note: the sample fixture itself carries total_yield
+85.7 (a percent), so the fixture is not authoritative
+for that key; the Artisan source is. The fixture was
+built with the same percent convention the export used.
+
+#### HUNT-80 (minor, fixed): the create path dropped typed event times
+
+`_create_submit` in roastery/batches/code.py never
+called `_apply_events`, so a manually created batch
+with typed event times saved with no events, no total
+time, no phases and drop_temp_f 0.0. The form invites
+the typing: the create-mode editor shows the same event
+fields as edit mode (Charge through Drop time and temp,
+form fields 47-60), and the typed values were silently
+discarded. The update path applies them through
+_apply_events. Evidence: static, _apply_events on a
+create-shape document with Dry End 04:30, FC Start
+08:00, Drop 10:00 at 415 F. Live: the Log New Batch flow
+with the same typed values saved batch 1049; before the
+fix the stored document would have carried no events
+(proven by the code path: _create_submit never called
+_apply_events). Fix: _create_submit now calls
+_apply_events(doc, event) after _apply_form, rejects
+with the visible note and saves nothing on an error (the
+same shape as _update_submit), and the insert carries
+doc.get('dropTempF') or 0.0 instead of a hardcoded 0.0.
+With no events typed nothing changes: the phases stay
+empty and the total stays 0.
+
+#### HUNT-81 (minor, fixed): the export turning point scan needed a Dry End stamp
+
+The turning point scan in `_computed_for` scanned
+charge to the dry index and required a Dry End stamp
+(ti[1] set and greater than charge), so a batch with a
+real dip but no Dry End event exported no TP at all and
+its AUC started at charge. Artisan findTPint
+(util.py:974) needs no Dry End: it scans charge to DROP,
+capped at FC Start when one is stamped. Evidence:
+static, on a dipping curve (390 F at charge, 340 F at
+60 s, rising to 415 F) with no Dry End and no FC Start
+stamped. Before the fix the computed block carried no
+TP keys and the AUC integrated from charge (968 C-min);
+after the fix it carries TP_idx 1, TP_time 60.0,
+TP_BT 340.0 and AUC 883 C-min. Found when the suite's
+export proof hit a missing TP_idx on batch 1042; for
+1042 itself the TP sits at the first sample, so the old
+code and the new code agree there and 1042 does not
+prove the divergence. Fix: the scan cap is now the FC
+Start index when set, else the drop index, else the end
+of the curve, mirroring findTPint. The forward scan with
+a strict less-than keeps the earliest sample holding
+the minimum, as Artisan's backward scan does.
+
+#### HUNT-82 (minor, fixed): the BatchDetail calculator showed -25.0% loss for an over-green batch
+
+The "Loss from out (%)" readout on BatchDetail is bound
+to the expression tag
+[default]Roastery/Calculator/ActualLossPct, whose
+expression was the raw arithmetic if({[.]ChargeG} > 0,
+({[.]ChargeG} minus {[.]OutG}) * 100.0 / {[.]ChargeG},
+0). For the imported over-green batch (200 g in, 250 g
+out) it read -25.0, while the Weight Loss tile on the
+same page read 0.0 (the HUNT-78 fix). Found by the
+suite's detail page check in run 4: the page body
+contained '-25.0' from this readout, not from a loss
+value in the document. Evidence: live, with the
+calculator inputs written to 200/250 the tag read
+-25.0; at 200/184 it read 8.0. The fixture's own
+computed RoR values are all positive, so the readout
+was the only source. Fix: the expression now clamps at
+0, if({[.]ChargeG} > 0, max(0, ({[.]ChargeG} minus
+{[.]OutG}) * 100.0 / {[.]ChargeG}), 0), matching
+batches._weight_loss. The repo source of truth is
+roastery/scripts/setup_roastery_v4_tags.py (the script
+itself is destructive by design and was NOT run against
+the live lab). The live tag was updated by exporting
+the Calculator folder, patching the one expression, and
+importing it back with collisionPolicy Overwrite at the
+parent path Roastery. The first import attempt used path
+Roastery/Calculator and nested a duplicate
+Calculator/Calculator folder instead of updating the tag;
+that folder was deleted and the import redone at the
+parent path, after which the live expression and the
+200/250 value (0.0) verified. No other expression tag in
+the Roastery tree does unclamped loss math (checked the
+whole tree).
+
+#### Suite runs and the regression net
+
+Suite: roastery/scripts/verify_r11_freshhunt.py (lab
+copy ~/workspace/ignition-lab/verify_r11_freshhunt.py).
+Run 1 (2026-11-21): died in the HUNT-79 live export
+proof with KeyError: 'TP_idx' on batch 1042, which is
+how HUNT-81 was found. Everything before it passed,
+including the HUNT-79 export values (total_yield 172.0,
+weight_loss 14.0, total_loss 14.0, AUC 6 C-min) and the
+four-page walk plus settings sweep. The lab was left
+clean (7 batches, 101 series, 0 events, Idle,
+BatchNumber 1042) except ThemeMode Light, since the
+exception skipped the theme restore; the rerun restores
+it. Run 2: died in the HUNT-80 live create proof: the
+form fill hung on field 51, which does not exist. The
+create editor carries 51 fields with the event times at
+37-50 (Charge 37/38, Dry End 39/40, FC Start 41/42, FC
+End 43/44, SC Start 45/46, SC End 47/48, Drop 49/50),
+not the 61-field order the first probe saw, so the
+suite's fixed indices were wrong for create mode. The
+suite now fills by label. The lab was left clean
+(7/101/0, Idle, BatchNumber 1042) except ThemeMode Light
+again. Run 3: 125 passes, 2 failures, both from an over
+broad substring check in the HUNT-78 import proof: the
+imported document's only '-25' is the Artisan timezone
+offset -25200 s (UTC-7) in the artisan identity
+subdocument, and the detail page renders the same
+offset. Neither is a loss value; the loss itself reads
+0.0 and the Loss section carries no weight loss key. The
+checks now exclude the loss renderings (-25.0 and -25%)
+and assert the offset is the only '-25' in the document.
+Run 4: 127 passes, 1 failure: the detail page check
+found '-25.0' in the BatchDetail body for the imported
+over-green batch. That was not a check artifact: the
+calculator's Loss from out readout showed -25.0%, which
+is HUNT-82. The import proof's doc checks all passed,
+and the only '-25' in the document is the Artisan
+timezone offset -25200 s. Run 5: 135 passes, 0 failures,
+exit 0. The full battery: 37 static checks (HUNT-78,
+HUNT-79, HUNT-80, HUNT-81, HUNT-82), the four-page walk
+at 1360px and 360px in light and dark (no overflow, no
+clipped leaf text), the Settings sweep at 360px dark,
+the live 1042 export, the live create with typed events,
+the live over-green import, and the live calculator tag
+values. Lab left clean: Idle, 7 batches, 101 series, 0
+events, ThemeMode System, BatchNumber 1042, calculator
+reseeded to 200/172 (14.0%).
+
+The regression net: the suite re-runs the four-page walk
+(Roast, Log, BatchDetail staged 1042, Settings) at 1360px
+and 360px, light and dark, measuring horizontal overflow
+and clipped leaf text, plus the Settings scroll sweep at
+360px dark. The walk and sweep contributed 53 of the 135
+checks with no overflow and no clipped leaf text on any
+page at either width in either theme, and detail 1042
+stats shares summed to 100.
+
+Items checked and dismissed, no HUNT filed: Roast degree
+boundaries have no Artisan 5.0.0 source for the names, so
+the mapping is Roastery's own (same as round 10). The
+360px Roast page shows two Charge buttons and two
+stepper sets in the button list, but only one set is on
+screen: the phone dock is sticky at the bottom and the
+desktop ROAST CONTROLS card sits in the page flow below
+the fold. At 1360px only the desktop card renders. That
+is the settled dual layout, not a duplicate control.
+`_fan_heat_series` `level_at` uses the first slider
+event's level for samples before the first event; that
+matches the app's own background convention (the first
+row sets the starting levels). The export computed block
+still omits volume_gain, moisture_loss, organic_loss and
+the densities, which Artisan writes when present.
+Consumers read those keys with defaults, so the omission
+is a gap, not a wrong value; left alone to keep the
+HUNT-79 fix to the values that were wrong. The app's own
+AUC tags and documents stay in F-min per the round 10
+decision. Only the exported .alog computed block
+converts to C-min, because that block is Artisan's key
+shape consumed by Artisan code that labels it C-min.
+TIME axis retest and HUNT-46 were not retested
+(beta-gated). The press path, the HUNT-58 r4hunt chain
+and the builder files were not touched by this worker.
+HUNT-53 still needs Eric's direction.
+
+Files changed (this worker): roastery/project/Roastery/ignition/script-python/roastery/artisan/code.py
+(HUNT-78, HUNT-79, HUNT-81),
+roastery/project/Roastery/ignition/script-python/roastery/batches/code.py
+(HUNT-80), roastery/scripts/setup_roastery_v4_tags.py
+(HUNT-82), roastery/scripts/verify_r11_freshhunt.py (the
+suite, mirrored from the lab). The library files were
+copied to the gateway tree (repo and gateway copies
+identical by md5) and POST /scan/projects returned 200.
+The HUNT-82 tag fix is not a file copy: tags live in the
+gateway tag provider, so the live
+Roastery/Calculator/ActualLossPct expression was updated
+through the tag export/import API (verified by a fresh
+export and by the tag value at 200/250 reading 0.0).
+
+### Polish round 11: ARTISAN_CODE and BATCHES_CODE resync (worker E, 2026-11-21)
+
+Record-copy staleness fix, not an app defect. Worker D's
+HUNT fixes re-staled the builder after worker A's
+resync, so both literals were re-resynced at the end of
+the round. Method follows round 10 worker E exactly and
+the round 11 worker A notes. The repo project tree is
+canonical; the live files agreed between the repo tree
+and the gateway tree before the edit (artisan both md5
+62440fefcbcbc94a148d0990f7fbae84, batches both md5
+7a0d7cac2119a2aaa002d55524c7e3f7, diff zero), so there
+was no conflict to resolve.
+
+Before: builder ARTISAN_CODE 48,038 chars, md5
+9cb340c9f32450aef868f3fa3680723f (span lines 7112 to
+8407); live artisan code.py 50,982 chars, md5
+62440fefcbcbc94a148d0990f7fbae84. Builder BATCHES_CODE
+102,293 chars, md5 1504c244d7a890b5f9130f579f0a9713
+(span lines 4606 to 7019); live batches code.py 102,901
+chars, md5 7a0d7cac2119a2aaa002d55524c7e3f7. ARTISAN_CODE
+diff 100 lines, 67 added, 9 removed, all of it the
+worker D HUNT fixes: HUNT-78 (import_upload now calls
+batches._weight_loss), HUNT-81 (turning point scan
+mirrors findTPint), HUNT-79 (AUC converted to C-min
+when the mode is F, weight block uses _weight_loss for
+weight_loss, total_loss, and the new
+roast_defects_loss, total_yield in grams). BATCHES_CODE
+diff 26 lines, 14 added, 1 removed, all of it HUNT-80
+(_create_submit calls _apply_events, insert carries the
+edited drop temp instead of a hardcoded 0.0). Both
+literals were replaced with the live file contents by
+AST span (BATCHES_CODE old span lines 4606 to 7019, new
+span lines 4606 to 7032; ARTISAN_CODE old span lines
+7112 to 8407, new span lines 7125 to 8478). Both stay
+raw r''' literals. Literal safety was checked before the
+edit: neither live file contains a triple-quote sequence
+or a carriage return, both end with a newline, the live
+artisan file holds 53 backslashes and the live batches
+file holds 0, so the raw literals parse to exactly the
+live bytes. The builder file compiles (py_compile
+passes). After: builder ARTISAN_CODE 50,982 chars, md5
+62440fefcbcbc94a148d0990f7fbae84; builder BATCHES_CODE
+102,901 chars, md5 7a0d7cac2119a2aaa002d55524c7e3f7.
+Exact match on both. Git diff for the builder is 101
+insertions and 13 deletions, all inside the two
+literals.
+
+Extraction proof, same method as worker E and worker A:
+AST-extracted and executed with PROJ pointed at the
+scratch dir ~/workspace/ignition-lab/r11e-scratch/proj,
+never at the gateway tree. The proof script is kept at
+~/workspace/ignition-lab/r11e-scratch/proof.py, and the
+emitted proj tree was removed after the run. Results,
+all byte-identical to live (diff zero), against both the
+repo tree and the gateway tree: artisan/code.py 50,982
+chars, md5 62440fefcbcbc94a148d0990f7fbae84; core/code.py
+176,491 chars, md5 376ad2620fac84295a79521c091c5233;
+batches/code.py 102,901 chars, md5
+7a0d7cac2119a2aaa002d55524c7e3f7; stylesheet.css 15,436
+chars, md5 4952c4beb425ab49d7ea05d3aaf1b0f9. Library and
+stylesheet resource.json files all identical. Style
+classes: 92 emitted, same set as live, parsed JSON
+identical for all 92 style.json files. Byte diffs are
+the known trailing newline only, in 13 files. The 7
+differing style-class resource.json files break down as
+4 with the gateway-stamped lastModificationSignature of
+"" in live where the builder emits attributes {}
+(roast-btn-compact, roast-gear-btn, roast-tab-active,
+roast-tab-item, the same 4 worker E and worker A
+reported) plus 3 that differ only by the trailing
+newline (roast-btn-dock, roast-btn-dock-lead,
+roast-btn-nowrap, live attributes {} matching the emitted
+{}). None of this is style content, and none of it was
+touched by this worker. CORE_CODE and STYLESHEET_CSS
+still extract byte-identical after this edit, so no stale
+overwrite has recurred. The lab builder copy was left
+alone, as worker E and worker A did; it is even staler.
+The builder still carries the duplicated `if __name__ ==
+'__main__': main()` guard at the end of the file,
+pre-existing and harmless, noted by worker E and worker
+A and left alone here too.
+
+### HUNT-83 (harness, no app change): cleanup_workspace hardening after the 22:17 UTC recovery
+
+During the 22:17 UTC recovery on 2026-11-21, the Dry End
+click did not take on the fresh boot with 1.2 s waits,
+the Drop click timed out after 20 s, and the roast was
+left Roasting with 1 Charge row. The coordinator finished
+the roast through the UI, cleared 6 press rows with the
+HUNT-53 guard, restored defaults, and hardened
+cleanup_workspace.py (visible-only button matching, wait
+up to 15 s for the next button, one reload retry).
+Hardened cleanup tested end to end: exit 0, lab clean
+7/101/0. Note: the Reset button text at Complete is
+'Reset / New Roast', not 'Reset'. Helper scripts
+r11-finish-roast.py and r11-restore-defaults.py in
+~/workspace/ignition-lab/ were used during that recovery
+and removed at close.
+
+### Polish round 11: closing battery, 45 of 45 green
+
+The battery is ~/workspace/ignition-lab/run_r11_battery.sh,
+45 suites: the 44 from round 10 plus the new
+verify_r11_freshhunt.py. Results in
+~/workspace/ignition-lab/r11-battery/results.txt. First
+run started 2026-11-21 22:27 UTC and got 30 DONE before
+a VM replacement at about 00:20 UTC 2026-11-22 killed it
+mid-suite (verify_r11_freshhunt running, no DONE line):
+30 green rc=0, 3 rc=1 failures, ALL ENVIRONMENTAL, none
+rerun yet at that point: validate_roastery_artisan rc=1
+at 22:28:37, the single hits entry is the known
+PressEvents boot-minute warning (gateway started before
+Postgres existed; the validator requires zero hits);
+verify_r10_auc rc=1 at 00:12:19, 42 PASS, 1 FAIL
+'gateway trial healthy (over 600 s left)' (trial nearly
+expired); verify_r10_freshhunt rc=1 at 00:19:20,
+TimeoutError on .psc-roast-gear-btn:visible as the VM
+was dying (HUNT-46 class). Resume after the recovery
+ran the remaining 15 suites: 13 green, then the same
+two suites failed again at 00:34:55, both environmental
+in a new way. The validator failed again on the same
+PressEvents boot warning, because the gateway had booted
+at 00:21 and the validator scans warnings from the last
+15 minutes (SINCE defaults to now minus 900 s), so a
+fresh boot always trips it. verify_r10_auc failed on
+'lab at clean Idle, batch 1042, System theme' with the
+theme reading Light: the failed r10_freshhunt run had
+left ThemeMode Light, the cleanup does not restore
+ThemeMode, and the value survived the gateway restart.
+Both were rerun clean after the next recovery (gateway
+booted 02:20 UTC, trial 6399 s): the auc rerun passed
+43/43 at 02:28:51 with ThemeMode System (the fresh boot
+restored the System default), and the validator rerun
+passed at 02:39:04, more than 15 minutes after the boot
+so the warning had aged out of its window. Final:
+45/45, all rc=0. Headline counts: verify_r11_freshhunt
+135 passes, verify_r10_freshhunt 134, verify_r10_auc
+43, verify_r7_freshhunt 42, verify_r8_freshhunt 76,
+verify_r9_freshhunt 88, validator VALIDATION PASS, UDT
+diff 0 differences (RoastBatch 203 plus Sources folder,
+RoasterSource 7).
+
+The r11_freshhunt first rerun flake: after the round 11
+close work, the suite was rerun once more and came back
+134 passes, 1 failure 'HUNT-80 created batch shows in
+the Log table' (2 s wait too short for the table to
+render); a second rerun came back 135/0 green. Recorded
+as a timing flake in the suite, not fixed.
+
+HUNT-58 live proof: still simulation-only. No VM
+replacement hit the r4hunt A-to-B chain during the
+battery; the replacements hit before the battery and
+during r11_freshhunt instead.
+
+VM replacements during the round: about 20:17 UTC,
+about 22:17 UTC, about 00:20 UTC, about 02:17 UTC, and
+about 04:17 UTC 2026-11-22. Each recovery followed the
+proven path (gateway restart, Postgres install via the
+os-intent replay, role and database creation, DDL,
+reseed to 7/101/0, HUNT-53 press guard, hardened
+cleanup, 60 s stability check). The 04:17 replacement
+came after the battery had closed at 02:39; the lab was
+recovered again at 04:19-04:20 (gateway RUNNING, trial
+7070 s, 7/101/0, cleanup exit 0) and left clean for
+round 12.
+
+Stylesheet and library md5 check at close: live
+advanced stylesheet, repo copy, and builder
+STYLESHEET_CSS are all md5
+4952c4beb425ab49d7ea05d3aaf1b0f9, 15,436 chars,
+byte-identical. CORE_CODE 176,491 chars, md5
+376ad2620fac84295a79521c091c5233, byte-identical to live.
+BATCHES_CODE 102,901 chars, md5
+7a0d7cac2119a2aaa002d55524c7e3f7, byte-identical to live.
+ARTISAN_CODE 50,982 chars, md5
+62440fefcbcbc94a148d0990f7fbae84, byte-identical to live.
+Repo and gateway library md5s match on all three
+packages. The builder is now fully resynced; do not
+rebuild from it until the next round's library changes
+are resynced the same way.
+
+Commits, local only, no push: da9b652 (HUNT-78 to HUNT-82
+fixes and the new r11 freshhunt suite), 7321163 (builder
+ARTISAN_CODE and BATCHES_CODE resync), 196bf31 (r8
+freshhunt BatchNumber restore), plus the docs section in
+this commit. Remote head is dbfe20758 (round 10); round
+11 stays local until Eric's word.
+
+Held for round 12: HUNT-53 app fix still needs Eric's
+direction, lab mitigation stays in effect; timezone TIME
+axis and HUNT-46 retest are beta-gated on the next
+Ignition beta; Docker boot test is Eric-side only;
+HUNT-58 live proof is still simulation-only (no VM
+replacement hit the r4hunt A-to-B chain during this
+battery); the r11_freshhunt timing flake (2 s wait for
+the Log table to render) is recorded, not fixed;
+cleanup_workspace.py does not restore ThemeMode, so a
+suite that leaves it Light can fail the next suite's
+clean-state check until a gateway restart resets it;
+next HUNT number is HUNT-84.
+
+Lab left clean at 7 batches (1042-1048), 101 series, 0
+events, defaults restored (FanLevel 5, HeatLevel 5,
+BatchNumber 1042, ActiveSource Simulated, Mode Off,
+ThemeMode System, DispAxisFormat m:ss, CompareAlignEvent
+charge, PressCaptureMode Group, PeriscopeAvailable True,
+background cleared, PhaseFromBg False), PressSlots empty,
+0 events stable after a 60 s idle wait, gateway RUNNING,
+trial about 7070 s at the 04:20 UTC recovery.
+

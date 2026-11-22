@@ -526,6 +526,14 @@ def main():
                        'batch_number = %d' % NEXT_BATCH[0])
             P.psql('DELETE FROM batches WHERE '
                    'batch_number = 1050')
+            # The live roast section saves as the next batch
+            # number, and Reset leaves that number in the
+            # BatchNumber tag. The suites that run after this
+            # one (r9, r10 freshhunt phase checks) expect the
+            # lab back at the seeded baseline, BatchNumber
+            # 1042, so restore it here; the counts checks
+            # below do not cover the tag.
+            P.write_tags([(B + '/BatchNumber', 1042)])
         except Exception as e:
             print('emergency cleanup failed:', str(e)[:150],
                   flush=True)
@@ -542,6 +550,9 @@ def main():
           % (P.psql('SELECT COUNT(*) FROM batches'),
              P.psql('SELECT COUNT(*) FROM batch_series'), BASE))
     check('theme restored', P.tag(TM) == 'System')
+    check('batch number restored to 1042',
+          P.tag(B + '/BatchNumber') == 1042,
+          P.tag(B + '/BatchNumber'))
     print()
     print('PASSES:', PASSES[0])
     print('FAILURES:', FAILS if FAILS else 'none')

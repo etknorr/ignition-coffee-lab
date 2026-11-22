@@ -606,11 +606,24 @@ def _create_submit(self, event):
            'totalSec': 0, 'phases': {}, 'events': {}, 'metadata': {},
            'manualEntry': True}
     doc = _apply_form(doc, event)
+    # HUNT-80: the create path never applied the event fields
+    # the form invites the user to type, so a manually created
+    # batch with typed event times saved with no events, no
+    # total time, no phases and drop_temp_f 0.0. The update
+    # path applies them through _apply_events; create does the
+    # same, and the insert carries the edited drop temp. With
+    # no events typed nothing changes: _apply_events leaves
+    # the phases empty and the total at 0.
+    err = _apply_events(doc, event)
+    if err:
+        self.view.custom.editNote = err
+        return
     _recompute_loss(doc)
     now = system.date.now()
     _run(NQ_INSERT, {
         'batch_number': number, 'roast_start': now, 'roast_end': now,
-        'bean_name': doc.get('beanName') or '', 'drop_temp_f': 0.0,
+        'bean_name': doc.get('beanName') or '',
+        'drop_temp_f': doc.get('dropTempF') or 0.0,
         'data': system.util.jsonEncode(doc)})
     self.view.custom.editNote = 'Created batch %d.' % number
     core.show_toast(self, 'Batch %d created' % number, 'success')

@@ -460,8 +460,19 @@ def profile_to_batch(p, batch_number):
     charge_temp = charge_ev['tempF'] if charge_ev else None
     charge_w = _weight_g(p, 0)
     out_w = _weight_g(p, 1)
-    loss = ((charge_w - out_w) * 100.0 / charge_w) \
-        if out_w > 0 and charge_w > 0 else 0.0
+    # HUNT-78: the raw arithmetic ((green - roasted) / green)
+    # went negative when the roasted weight exceeded the green
+    # weight (a bad scale entry: 250 g out on a 200 g charge
+    # read -25%). Artisan weight_loss returns 0 in exactly
+    # that case, and batches._weight_loss is that function
+    # (the HUNT-74 fix in build_document); the import path
+    # used the raw form, so an imported batch showed a
+    # negative Weight Loss tile while its Loss section
+    # (loss_yield_density, guarded) showed none. The out_w
+    # guard stays: with no roasted weight recorded the loss
+    # is 0, not 100%.
+    loss = (batches._weight_loss(charge_w, out_w)
+            if out_w > 0 and charge_w > 0 else 0.0)
 
     meta = dict((m, '' if m not in core.FORM_INTS
                  and m not in core.FORM_FLOATS else 0)
@@ -989,12 +1000,26 @@ def _computed_for(profile, timex, temp1, temp2, ti, mode, doc):
         c['coolphasetime'] = times['COOL'] - times['DROP']
     if 'DROP' in times:
         c['totaltime'] = times['DROP']
+    # HUNT-81: the turning point scan used to need a Dry End
+    # stamp (it scanned charge to the dry index), so a batch
+    # with a real dip but no Dry End event exported no TP at
+    # all and its AUC started at charge. Artisan findTPint
+    # needs no Dry End: it scans charge to DROP, capped at FC
+    # Start when one is stamped. Mirror that here: the cap is
+    # the FC Start index when set, else the drop index, else
+    # the end of the curve. The forward scan with a strict
+    # less-than keeps the earliest sample holding the minimum,
+    # as Artisan's backward scan does.
     tp_idx = None
-    if ti[0] is not None and ti[0] >= 0 and len(ti) > 1 \
-            and ti[1] and ti[1] > ti[0]:
-        lo, hi = int(ti[0]), int(ti[1])
+    if ti[0] is not None and ti[0] >= 0 and len(temp2) > 0:
+        lo = int(ti[0])
+        hi = len(temp2)
+        if len(ti) > 6 and ti[6]:
+            hi = min(hi, int(ti[6]))
+        if len(ti) > 2 and ti[2]:
+            hi = min(hi, int(ti[2]))
         best = None
-        for i in range(lo, min(hi + 1, len(temp2))):
+        for i in range(lo, hi):
             if _proper(temp2[i]) and (best is None
                                       or temp2[i] < temp2[best]):
                 best = i
@@ -1022,6 +1047,16 @@ def _computed_for(profile, timex, temp1, temp2, ti, mode, doc):
         avg = (float(temp2[i]) + float(temp2[i + 1])) / 2.0 - base
         if avg > 0:
             auc += avg * dt_min
+    # HUNT-79: the loop above integrates in the profile mode
+    # units (F when mode is F), but Artisan's AUC is always
+    # in C-min: calcAUC converts the temps to C first and ts()
+    # is documented "always in C", and the comparator reads
+    # this cached value and labels it C*min. A Fahrenheit
+    # integral overstates it by 9/5, so convert on export
+    # when the mode is F. The base stays in mode units
+    # (212.0 in F), as Artisan writes it.
+    if mode == 'F':
+        auc = auc * 5.0 / 9.0
     c['AUC'] = int(round(auc))
     meta = doc.get('metadata') or {}
     win = _num(meta.get('ChargeWeightG'))
@@ -1029,9 +1064,32 @@ def _computed_for(profile, timex, temp1, temp2, ti, mode, doc):
     if win > 0 and wout > 0:
         c['weightin'] = win
         c['weightout'] = wout
-        c['weight_loss'] = (win - wout) * 100.0 / win
-        c['total_loss'] = c['weight_loss']
-        c['total_yield'] = wout * 100.0 / win
+        # HUNT-79: the weight block wrote Artisan's keys with
+        # the wrong math. weight_loss did the raw arithmetic,
+        # so a roasted weight over the green weight read
+        # negative (Artisan weight_loss returns 0 there, and
+        # the comparator shows this cached value as-is).
+        # total_yield was a percent (wout * 100 / win) where
+        # Artisan writes grams (weight out minus defects:
+        # computedProfileInformation, main.py:16889). And
+        # total_loss just copied weight_loss, ignoring the
+        # defects loss Artisan adds in (main.py:13317 and
+        # 16890: total_loss is weight_loss over the yield
+        # weight, res = wout - defects). All three now use
+        # batches._weight_loss, the guarded Artisan shape,
+        # and roast_defects_loss is written with them.
+        wl = batches._weight_loss(win, wout)
+        if wl:
+            c['weight_loss'] = round(wl, 1)
+        defects = _num(meta.get('DefectsWeightG'))
+        res = wout - defects
+        dl = batches._weight_loss(wout, res) if defects > 0 else 0.0
+        if dl:
+            c['roast_defects_loss'] = round(dl, 1)
+        c['total_yield'] = round(res, 1)
+        tl = batches._weight_loss(win, res)
+        if tl:
+            c['total_loss'] = round(tl, 1)
     return c
 
 

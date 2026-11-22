@@ -818,7 +818,7 @@ INSTANCE_FOLDER = {'name': 'Roastery', 'tagType': 'Folder', 'tags': [
         mem('OutG', 'Float8', 170.0),
         {'name': 'ActualLossPct', 'tagType': 'AtomicTag',
          'valueSource': 'expr', 'dataType': 'Float8',
-         'expression': 'if({[.]ChargeG} > 0, ({[.]ChargeG} - {[.]OutG}) * 100.0 / {[.]ChargeG}, 0)'},
+         'expression': 'if({[.]ChargeG} > 0, max(0, ({[.]ChargeG} - {[.]OutG}) * 100.0 / {[.]ChargeG}), 0)'},
         mem('TempF', 'Float8', 415.0),
         {'name': 'TempC', 'tagType': 'AtomicTag',
          'valueSource': 'expr', 'dataType': 'Float8',
