@@ -9463,3 +9463,264 @@ background cleared, PhaseFromBg False), PressSlots empty,
 0 events stable after a 60 s idle wait, gateway RUNNING,
 trial about 7070 s at the 04:20 UTC recovery.
 
+### Polish round 12: fresh hunting pass, HUNT-84 and HUNT-85 (worker B, 2026-11-22)
+
+New suite verify_r12_freshhunt.py, mirrored from the lab
+to roastery/scripts/verify_r12_freshhunt.py. Two fixes, both
+live in roastery/batches/code.py, plus Settings UI
+write/read-back proofs and the four-page regression walk.
+
+#### HUNT-84 (minor, fixed): the compare caption named the reference slot twice
+
+`align_compare_slots` appended the reference slot to
+fallbacks in its ref_t fallback branch AND again in the
+per-slot loop, so with slot A seeded (no FCe) and alignment
+on FCe the caption read "A has no FCe, charge aligned, A
+has no FCe, charge aligned, B has no FCe, charge aligned".
+Evidence: static, on seeded-shape slot data (fallbacks
+[('A', 1042), ('A', 1042), ('B', 1043)]); live, on /log
+before the fix, the same doubled caption. Fix: the branch
+now only falls back the reference time; the loop records
+every slot lacking the event, the reference included, so
+each slot is named once. The shifts and the reference line
+are unchanged (ref shift 0, ref line on the B event at
+390 s). Proven live after the fix: the caption reads "A =
+Batch 1048 Ethiopia Guji - B = Batch 1047 Ethiopia Guji -
+Aligned on FCe (A has no FCe, charge aligned, B has no
+FCe, charge aligned)".
+
+#### HUNT-85 (minor, fixed): clearing a stamped Drop left the derived data stale
+
+`_apply_events` recomputed totalSec, phases, drop temp and
+degree only when a drop time was present, so blanking the
+Drop time in the slide over editor (the event time fields
+are not required in the form, so blanking is reachable)
+saved the removal but left totalSec 600, phases 270/210/120
+with DTR 20 percent, dropTempF 415 and roastDegree Full
+City in the document. Evidence: static, on a 1042-shape
+document; live, on a created batch 1049 with typed events
+(Dry End 04:30, FC Start 08:00, Drop 10:00 at 415 F), whose
+stored document still read totalSec 600 with phases
+270/210/120 after the Drop was cleared and saved. Fix: when
+a stamped drop is cleared, the derived data recomputes
+from the remaining events (total is the last stamped event,
+480 s here; phases 270/210/0 with DTR 0.0; roastEnd
+cleared). dropTempF and roastDegree keep the tag's drop
+temp, the same convention build_document uses for a live
+save with no drop stamped. Guarded on a drop having been
+stamped before the edit, so a batch that never had one
+keeps its stored total and phases exactly, and an empty
+create still leaves phases empty (the HUNT-80 contract).
+Proven live after the fix: the cleared 1049 document reads
+totalSec 480, phases 270/210/0 with DTR 0.0, roastEnd
+null, Drop event null, then the scratch batch deletes
+through the Log UI.
+
+#### Settings write/read-back through the UI
+
+The Display axis format dropdown (Artisan (m:ss) to Padded
+(mm:ss) and back) and the compare alignment dropdown
+(CHARGE to FCe and back) and the Projection mode dropdown
+were each flipped through the Settings page and read back
+from their tags, then restored. The alignment dropdown is
+the same CompareAlignEvent tag the HUNT-84 live proof sets,
+so the round trip also proves the Log compare row and the
+Settings Display dropdown agree. Harness note: a JS
+.click() on a dropdown's outer div never opens its list
+(the open handler lives on the inner container), so the
+suite clicks through the Playwright locator; and the
+phrase 'No Connection' in a Settings page body is
+legitimate page text (the Roaster source status area), not
+a session banner, so it must not be used as a connectivity
+check.
+
+#### Suite runs
+
+Suite: roastery/scripts/verify_r12_freshhunt.py (lab copy
+~/workspace/ignition-lab/verify_r12_freshhunt.py). Run 1:
+died in the Settings write-back probe with a 20 s timeout
+on the 'Padded (mm:ss)' option (the JS .click() cause
+above). Everything before it passed, including the
+HUNT-84 and HUNT-85 static and live proofs. Run 2: died
+in the same probe, the option list still never opening.
+Run 3: 79 passes, 0 failures, died in the 360-dark walk
+when stage_one(1042) failed three times with empty output,
+while a concurrent verify_r11_freshhunt run (started
+06:23 UTC by another process) shared the lab: its scratch
+runner writes the same r5_stage_one.jy file, ScratchV3
+view and Probe/Results tag, and one of its runs printed
+into this run's stage log (staged n:1049 in the 360-light
+walk). Run 4, after the concurrent run finished and the
+lab verified clean: 96 passes, 0 failures, exit 0. The
+full battery: 17 static checks (HUNT-84 fallbacks and
+shifts, HUNT-85 recompute plus the HUNT-80 regressions),
+the HUNT-84 live caption, the HUNT-85 live create/clear/
+delete, the Settings dropdown round trips, the four-page
+walk at 1360px and 360px in light and dark (no overflow,
+no clipped leaf text), the Settings scroll sweep at 360px
+dark, and the detail 1042 stats shares summing to 100
+(26/37/37). Log: ~/workspace/ignition-lab/r12-freshhunt.log.
+Screenshots: ~/workspace/ignition-lab/showcase/shots/r12-fresh-*.png.
+
+Regression reruns after the fixes, all green: the r11
+suite 135 passes (HUNT-78 to HUNT-82 intact), the r8
+suite 76 passes (compare alignment intact), the r10 suite
+134 passes (phase analysis and shares intact).
+
+Items checked and dismissed, no HUNT filed: the Artisan
+SLOT_DOC order matches the timeindex order (CHARGE, DRY,
+FCs, FCe, SCs, SCe, DROP, COOL), so imports map SC events
+correctly. loss_yield_density matches Artisan (weight_loss
+and volume_increase guards, calc_organic_loss returning
+(0, 0) unless both losses are nonzero, total yield as
+weight out minus defects). The DRY phase RoR branches
+match Artisan RoR() (greens temp first, else the turning
+point). bt_similarity matches Artisan curveSimilarity in
+shape (RMSE over DRY to DROP with DROP aligned); Artisan
+locates its dry start by scanning back from DROP for the
+phase boundary temp while Roastery uses the recorded Dry
+End event, a documented adaptation. _plan_at and
+validate_target_plan cover their edges (single point
+falls back to the last temp, first point must be at 0,
+strictly increasing). The alarm latch clears in
+_reset_live_analytics, so a Message alarm cannot leak
+into the next roast. parse_mmss accepts seconds of 60 or
+more inside mm:ss (04:60 reads 300 s); no Artisan source
+contradicts it and the ordering check still rejects
+nonsense, so it stays. The live stats line shows Dev
+--:-- when FC was never stamped even after Drop, while a
+saved document records development 0 s; the two agree
+that the duration is unknown, so it stays. TIME axis
+retest and HUNT-46 were not retested (beta-gated). The
+press path, HUNT-53, HUNT-58 and the builder files were
+not touched by this worker. HUNT-53 still needs Eric's
+direction.
+
+Files changed (this worker, uncommitted):
+`roastery/project/Roastery/ignition/script-python/roastery/batches/code.py`
+(HUNT-84, HUNT-85; 32 insertions, 1 deletion),
+`roastery/scripts/verify_r12_freshhunt.py` (the suite, new
+file), `roastery/docs/coffee-roaster-app.md` (this
+section). The library file was copied to the gateway tree
+(repo and gateway copies identical by md5, be7dd651...)
+and POST /scan/projects returned 200. The builder's
+BATCHES_CODE literal is now stale by this change (same
+position as rounds 10 and 11); it needs the resync pass
+before anyone rebuilds from build_roastery_v4.py, or the
+fixes will be lost. Not committed, no push, per the
+brief. The working tree also carries a
+`roastery/scripts/verify_r11_freshhunt.py` modification
+(the round 12 Log table poll fix) that is not this
+worker's; it was already present when this round started.
+
+Lab left clean at 7 batches (1042-1048), 101 series, 0
+events, defaults restored (FanLevel 5, HeatLevel 5,
+BatchNumber 1042, ActiveSource Simulated, Mode Off,
+ThemeMode System, DispAxisFormat m:ss, CompareAlignEvent
+charge, ProjectionMode Linear, PeriscopeAvailable True,
+background cleared, PhaseFromBg False), PressSlots empty,
+0 events stable, gateway RUNNING. Next HUNT number is
+HUNT-86.
+
+### Polish round 12: closing battery, 46 of 46 green
+
+The battery is ~/workspace/ignition-lab/run_r12_battery.sh,
+46 suites: the 45 from round 11 plus the new
+verify_r12_freshhunt.py. Results in
+~/workspace/ignition-lab/r12-battery/results.txt. The run
+was interrupted twice by VM replacements and resumed twice
+from the DONE lines, then five suites were rerun after the
+HUNT-86 fix below.
+
+First run started 2026-11-22 07:25 UTC and got 5 DONE,
+all green, before a VM replacement at about 07:44 UTC
+killed it mid tier3a. Resume 1 ran tier3a through
+r10_auc, 32 DONE total, all green, before a second VM
+replacement at about 09:25 UTC killed it mid
+r10_freshhunt. Resume 2 ran r10_freshhunt through
+r7_udt_diff and finished the 46 DONE lines with 41 green
+and 5 failures, all cascade from one crash: r10_freshhunt
+rc=1, r11_freshhunt rc=2, r12_freshhunt rc=1,
+r6_abc rc=1, r6_abc2 rc=1. The r11, r12, and both abc
+failures were all a single clean-state check each (the
+lab was left at Complete with a stray batch), because the
+r10 crash left the workspace dirty.
+
+HUNT-86 (major, found in the close, fixed): the r10 live
+roast took batch 1049, then saved as 1050. The suite
+clicks New Roast exactly once, and the saved 1050
+document carries the r10 roast itself (charge 09:39:23,
+drop 09:39:42), so a second new_roast invocation moved
+the tag mid-roast. The mechanism was proven with a
+scratch repro (r12_newroast_repro.py): two New Roast
+clicks took 1049 then 1050 with nothing saved. The
+platform re-delivers button clicks (HUNT-27 precedent),
+and new_roast computed max(max_db, cur) + 1
+unconditionally, so a re-delivered press bumped the
+number twice. Fix in batches/code.py: when the current
+tag is above every batch in the database, the number was
+already taken by an earlier New Roast and not yet saved,
+so the call reuses it; a saved batch always raises
+max_db to at least the tag, so a genuine next roast still
+increments. Repro rerun after the fix: both clicks hold
+1049. New checks in verify_r12_freshhunt.py (2 static, 5
+live including the press row cleanup): 7 checks, all
+passing, suite total 103. The stray batch 1050 and its 17
+series rows were deleted by hand; the r10 finally
+cleanup deletes only NEXT_BATCH (1049), so it had missed
+them. The builder BATCHES_CODE literal was resynced after
+the fix (105,263 chars, md5 290a398b), all four literals
+byte-identical to live again.
+
+Rerun of the five failed suites (10:36 to 11:14 UTC):
+r10_freshhunt rc=0, r11_freshhunt rc=0,
+r12_freshhunt rc=0, r6_abc rc=0, r6_abc2 rc=0. Final:
+46/46, all rc=0. Headline counts: verify_r12_freshhunt
+103 passes, verify_r11_freshhunt 135,
+verify_r10_freshhunt 134, verify_r9_freshhunt 88,
+verify_r8_freshhunt 76, verify_r7_freshhunt 42,
+verify_r10_auc 43/43, verify_r9_style 34/34, axis suite
+all passed, validator VALIDATION PASS, UDT diff 0
+differences (RoastBatch 204, RoasterSource 7).
+
+Round 12 held items, all closed: the r11_freshhunt 2 s
+Log table wait is now a real poll for the created batch
+row (worker A, suite green twice at 135/0);
+cleanup_workspace.py restores ThemeMode to System
+(worker A, proven by setting Light first); the same
+script now clears all 16 PressSlots after deleting press
+rows (worker A, proven end to end with 0 slots nonempty
+and 0 events stable after 60 s). That last fix mattered
+at once: at round start the coordinator found a stale
+press slot left by a concurrent recovery worker's cleanup
+run, exactly the hazard it closes.
+
+Open observations, not defects: worker A noted the
+passing HUNT-80 check prints a body starting "No
+Connection to Gateway" (a transient Perspective reconnect
+banner, worth a look by whoever owns the Log page), and
+the r11 suite still shows intermittent flakes in steps
+the fix did not touch (an export download timeout once,
+a staging transient once). HUNT-58 live proof is still
+simulation-only: no replacement hit the r4hunt A-to-B
+chain during this battery.
+
+VM replacements during the round: about 07:44 UTC and
+about 09:25 UTC 2026-11-22, plus one at about 05:45 UTC
+just before the round started. Each recovery followed
+the proven path (gateway restart, Postgres 16 via the
+os-intent replay, role and database creation, DDL,
+reseed to 7/101/0, HUNT-53 press guard, 60 s stability
+check).
+
+Lab left clean: gateway RUNNING, 7 batches (1042-1048),
+101 series, 0 events, defaults restored, PressSlots
+empty, ThemeMode System, trial 696 s at close (low, the
+watch resets it on expiry). Next HUNT number is HUNT-87.
+
+Held for round 13: HUNT-53 app fix still needs Eric's
+direction, lab mitigation stays in effect; timezone TIME
+axis retest and HUNT-46 retest stay beta-gated on the
+next Ignition beta; Docker boot test stays Eric-side
+only; HUNT-58 live proof still rests on the wipe
+simulation only.

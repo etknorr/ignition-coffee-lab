@@ -5505,8 +5505,14 @@ def align_compare_slots(slot_data, align_key):
     ref_t = ref['events'].get(align_key)
     fallbacks = []
     if ref_t is None:
+        # HUNT-84: the reference slot itself lacked the event,
+        # so this branch used to append it to fallbacks AND the
+        # loop below appended it again, and the caption named
+        # slot A twice ("A has no FCe, charge aligned, A has no
+        # FCe, charge aligned"). The loop records every slot
+        # lacking the event, the reference included, so this
+        # branch only falls back the reference time.
         ref_t = 0.0
-        fallbacks.append((ref['slot'], ref['number']))
     shifts = {}
     for sd in slot_data:
         own = sd['events'].get(align_key)
@@ -5759,6 +5765,31 @@ def _apply_events(doc, payload):
         if drop_ev.get('tempF') is not None:
             doc['dropTempF'] = drop_ev['tempF']
             doc['roastDegree'] = roast_degree(drop_ev['tempF'])
+    else:
+        # HUNT-85: clearing a stamped Drop used to leave the
+        # derived data stale (totalSec, phases and roastEnd
+        # all kept the dropped values even though the event
+        # was gone), so the detail page showed a 10:00 total
+        # for a batch whose last event was FC Start at 08:00.
+        # Recompute from the remaining events: the total is
+        # the last stamped event, development is 0 with no
+        # drop, and there is no roast end. dropTempF and
+        # roastDegree keep the tag's drop temp, the same
+        # convention build_document uses for a live save with
+        # no drop stamped. Guarded on a drop having been
+        # stamped before the edit, so a batch that never had
+        # a drop keeps its stored total and phases exactly.
+        if events.get('drop') is not None:
+            last = [new_events[k]['t'] for k in order
+                    if new_events.get(k)]
+            doc['totalSec'] = max(last) if last else 0
+            doc['phases'] = {
+                'dryingSec': dry if dry is not None else 0,
+                'maillardSec': (fc - dry) if (fc is not None
+                                              and dry is not None) else 0,
+                'developmentSec': 0,
+                'dtrPct': 0.0}
+            doc['roastEnd'] = None
     start_iso = doc.get('roastStart')
     if start_iso:
         try:
@@ -6618,14 +6649,29 @@ def detail_startup(self):
 def new_roast(self):
     """NEW ROAST action: zero the workspace, take the next batch
     number (max of the database and the current tag, plus one),
-    and land on the Roast page."""
+    and land on the Roast page.
+
+    HUNT-86 (polish round 12): a second call while the
+    workspace still holds an untaken number must reuse it.
+    The platform re-delivers button clicks (HUNT-27
+    precedent), and the old unconditional +1 turned one
+    re-delivered New Roast press into two numbers: the
+    round 12 battery took 1049, then saved as 1050 because
+    the tag had already moved. A number counts as taken
+    when the current tag is above every batch in the
+    database, which means no batch with that number exists
+    yet; a saved batch always raises max_db to at least the
+    tag, so a genuine next roast still increments."""
     try:
         ds = _run(NQ_MAX_NUMBER)
         max_db = int(ds.getValueAt(0, 'max_number') or 0)
     except Exception:
         max_db = 0
     cur = core.read_members(['BatchNumber'])['BatchNumber'] or 0
-    nxt = max(max_db, int(cur)) + 1
+    if int(cur) > max_db:
+        nxt = int(cur)
+    else:
+        nxt = max(max_db, int(cur)) + 1
     core.reset_batch()
     core.write_members([('BatchNumber', nxt)])
     system.perspective.navigate(page='/')

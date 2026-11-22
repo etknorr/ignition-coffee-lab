@@ -682,10 +682,14 @@ def create_batch_live(pw):
           (doc.get('dropTempF'), doc.get('roastDegree')))
     pg.goto(P.BASE + '/log', wait_until='networkidle',
             timeout=60000)
-    pg.wait_for_timeout(2000)
+    # Round 12: the old fixed 2 s wait flaked once (134/1);
+    # poll until the created row renders, 30 s ceiling.
+    ok = P.wait_until(
+        lambda: 'R11 create test' in
+        pg.locator('body').inner_text(), 30)
     body = pg.locator('body').inner_text()
     check('HUNT-80 created batch shows in the Log table',
-          'R11 create test' in body, body[:200])
+          bool(ok), body[:200])
     delete_batch_ui(pg, nxt)
     b.close()
 
