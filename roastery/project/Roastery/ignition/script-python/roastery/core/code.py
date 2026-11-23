@@ -1049,7 +1049,12 @@ def _track_turning_point(temp, elapsed):
                          'TurningPointTempF'])
     min_t = vals['_TpMinTempF']
     min_e = vals['_TpMinElapsedSec']
-    if min_e is None or min_e < 0 or temp < min_t:
+    # HUNT-89: the old strict less-than kept the EARLIEST
+    # sample holding the minimum; Artisan findTPint scans
+    # backward, so the LATEST tied sample is the turning
+    # point. Less-than-or-equal keeps the latest, matching
+    # the offline read in _computed_for and _phase_analysis.
+    if min_e is None or min_e < 0 or temp <= min_t:
         min_t, min_e = temp, elapsed
         write_members([('_TpMinTempF', min_t),
                        ('_TpMinElapsedSec', min_e)])
@@ -4121,19 +4126,17 @@ def update_plan_deviation(temp):
 #   DROP to CHARGE duration).
 # - bottom_temp_f: the minimum BT in S; the bottom is the
 #   FIRST sample holding that minimum, at time t_b.
-# - RoR span: span = the library RoR delta span (the
-#   RoRDeltaSpanSec tag through ror_params, default 20 s; a
-#   span of 0 falls back to 20 for this math), the same span
-#   convention core.compute_ror_series differentiates over.
-# - ror_in_f_min: the slope approaching the bottom over the
-#   span, (bottom - BT at max(t_first, t_b - span)) times 60
-#   divided by (t_b - that start time), with BT interpolated
-#   linearly between samples; 0.0 when the bottom is the
-#   first sample (no approach exists).
-# - ror_out_f_min: the slope leaving the bottom over the
-#   span, (BT at min(t_last, t_b + span) - bottom) times 60
-#   divided by (that end time - t_b), interpolated the same
-#   way; 0.0 when the bottom is the last sample.
+# - ror_in_f_min: the average slope from the first sample
+#   (DROP) to the bottom, (bottom - BT at t_first) times 60
+#   divided by (t_b - t_first); 0.0 when the bottom is the
+#   first sample (no approach exists). HUNT-87: this used to
+#   be the slope over the RoR delta span before the bottom;
+#   Artisan calcBBPMetrics averages the whole leg, so it does
+#   now too.
+# - ror_out_f_min: the average slope from the bottom to the
+#   last sample (CHARGE), (BT at t_last - bottom) times 60
+#   divided by (t_last - t_b); 0.0 when the bottom is the
+#   last sample.
 
 
 def _bbp_read(members):
@@ -4209,25 +4212,20 @@ def _bbp_capture(temp, now, now_ms):
     _bbp_write([('SampleCount', ds.rowCount)])
 
 
-def _bbp_interp(points, t):
-    if t <= points[0][0]:
-        return points[0][1]
-    if t >= points[-1][0]:
-        return points[-1][1]
-    for i in range(len(points) - 1):
-        t0, v0 = points[i]
-        t1, v1 = points[i + 1]
-        if t0 <= t <= t1:
-            if t1 <= t0:
-                return v1
-            return v0 + (v1 - v0) * (t - t0) / (t1 - t0)
-    return points[-1][1]
-
-
 def bbp_compute(points):
     """The four BBP metrics from staged samples (definitions
     in the section note), or None when the window cannot
-    support them (fewer than 2 samples or no duration)."""
+    support them (fewer than 2 samples or no duration).
+    HUNT-87: the RoRs used to be span slopes (the last 20 s
+    before the bottom and the first 20 s after it). Artisan
+    calcBBPMetrics and the profile quality BBP report compute
+    both as full-leg averages over the whole leg, so that is
+    what these are now: ror_in is the average slope from the
+    first sample (DROP) to the bottom, ror_out from the bottom
+    to the last sample (CHARGE). On a realistic cool-down the
+    two definitions differ by an order of magnitude (a 415 F
+    drop to a 180 F bottom at 120 s reads -117.5 F/min as a
+    full-leg average, about -30 as a 20 s span slope)."""
     if len(points) < 2:
         return None
     t_first = points[0][0]
@@ -4236,19 +4234,14 @@ def bbp_compute(points):
         return None
     bottom = min(v for _t, v in points)
     t_b = [t for t, v in points if v == bottom][0]
-    span = float(ror_params()['span'] or 20)
-    if span <= 0:
-        span = 20.0
     if t_b > t_first:
-        ta = max(t_first, t_b - span)
-        ror_in = ((bottom - _bbp_interp(points, ta)) * 60.0
-                  / (t_b - ta))
+        ror_in = ((bottom - points[0][1]) * 60.0
+                  / (t_b - t_first))
     else:
         ror_in = 0.0
     if t_last > t_b:
-        te = min(t_last, t_b + span)
-        ror_out = ((_bbp_interp(points, te) - bottom) * 60.0
-                   / (te - t_b))
+        ror_out = ((points[-1][1] - bottom) * 60.0
+                   / (t_last - t_b))
     else:
         ror_out = 0.0
     return {'time_sec': t_last - t_first,

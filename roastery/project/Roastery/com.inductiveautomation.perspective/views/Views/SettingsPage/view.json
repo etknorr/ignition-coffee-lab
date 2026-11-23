@@ -44,6 +44,11 @@
                 "classes": "roast-gap-12"
               }
             },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            },
             "children": [
               {
                 "type": "ia.container.flex",

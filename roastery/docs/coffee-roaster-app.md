@@ -9724,3 +9724,634 @@ axis retest and HUNT-46 retest stay beta-gated on the
 next Ignition beta; Docker boot test stays Eric-side
 only; HUNT-58 live proof still rests on the wipe
 simulation only.
+
+### Polish round 13: fresh hunting pass, HUNT-87 to HUNT-91 (worker A, 2026-11-22)
+
+New suite verify_r13_freshhunt.py, mirrored from the lab
+to roastery/scripts/verify_r13_freshhunt.py. Final run:
+211 PASS, 0 FAIL. Five fixes, all Artisan math or
+import/export fidelity, each proven statically on crafted
+data and live in a session, plus the four-page regression
+walk at 1360px and 360px, light and dark, and the Settings
+scroll sweep.
+
+#### HUNT-87 (minor, fixed): BBP RoRs used the 20 s RoR span window, not Artisan's full-leg averages
+
+`roastery.core.bbp_compute` computed ror_in as the slope
+over the last RoRDeltaSpanSec (default 20 s) before the
+bottom and ror_out as the slope over the first 20 s after
+it. Artisan calcBBPMetrics and the profile quality BBP
+report compute both as full-leg averages: begin-to-bottom
+is 60 * (bottom - temp at begin) / (time at bottom - time
+at begin), and bottom-to-charge is 60 * (temp at charge -
+bottom) / (time at charge - time at bottom). Evidence:
+static, on a synthetic window (415 F drop, 180 F bottom
+at 120 s, 392 F charge at 150 s reads -117.5 in and 424.0
+out) plus bottom-first, bottom-last and single-point
+edges; live, a curved falling then rising window through
+the WebSocket source (14 samples, bottom 328 F at 10.642
+s), where the staged metrics (ror_in -428.49, ror_out
+178.48) match an independent full-leg recompute to all
+decimals and differ from the old span-6 slopes (-246.71,
+105.90) by 182 and 73. The span setting no longer affects
+BBP, and the now-unused `_bbp_interp` helper is removed.
+Note for future BBP proofs: the window finalizes at
+CHARGE by appending a final sample (the bean temp at
+CHARGE, at the staged TimeSec) and then clears the
+samples dataset, so the recompute must use the pre-CHARGE
+samples plus that final sample; a post-CHARGE
+BbpSamplesDS read comes back empty.
+
+#### HUNT-88 (minor, fixed): the .alog export computed block ignored the AucBegin and AucBaseFromEvent settings
+
+`_computed_for` hardcoded AUCbase 212.0 (100.0 in C),
+AUCbegin 'TP', AUCfromeventflag 1, and always integrated
+the AUC from the turning point. Artisan
+computedProfileInformation writes all three from the
+settings. Evidence: static, for the default, Charge, Dry
+End with fromEvent (base becomes the Dry End temp 380.0,
+AUC 96), FC Start with fromEvent (base 405.0, AUC 17),
+and C mode cases; live, the batch 1042 export now
+carries AUCfromeventflag 0 with AUCbase 212.0 and the
+same AUC value (6). `build_document` now stores
+'fromEvent' in the saved aucDetail; seeded batches carry
+no aucDetail, so their exports are unchanged except the
+flag. The begin maps to the charge/TP/dry/FCs index, the
+base is the bean temp at the begin event when fromEvent
+is set and the saved fixed base otherwise (converted to
+mode units for C-mode profiles), and the AUC integral
+starts at the begin index, falling back to charge when
+the begin event has not happened (mirroring Artisan
+profileAUC's index 0 fallback).
+
+#### HUNT-89 (minor, fixed): the turning point scan kept the earliest minimum on ties; Artisan's findTPint keeps the latest
+
+Artisan util.py findTPint scans backward from DROP/FCs
+with a strict less-than, so on tied minima the LATEST
+sample holding the minimum wins. Roastery's export scan
+in `_computed_for` scanned forward with a strict
+less-than, so the EARLIEST tied sample won; the HUNT-81
+note claimed the two agree, and they do not on ties. The
+same earliest-wins rule lived in the live tracker
+(`_track_turning_point`, `temp < min_t`) and in the
+`_phase_analysis` offline fallback scan. Evidence:
+static, on a flat-bottomed curve (minimum tied at two
+samples) for the export scan and the phase analysis
+fallback (TP 340 F at 01:30, Drying RoR 33.3 from the
+later point), plus the tracker rule by source; live, a
+crafted .alog with the fixture minimum tied at indices
+36 and 37 imports and exports with TP_idx 37 and
+TP_time 96.0. Batch 1042 is unaffected (its curve is
+monotonic, TP at the first sample either way). Fix: all
+three scans now keep the latest sample holding the
+minimum (`<=`).
+
+#### HUNT-90 (minor, fixed): the BatchDetail calculator could show a negative expected out and a loss over 100 percent
+
+The Calculator/ExpectedOutG expression was ChargeG *
+(1 - LossPct/100) with no guard, so a LossPct over 100
+(typable: the input has no min/max) read a negative
+expected weight. Calculator/ActualLossPct was clamped
+at 0 by HUNT-82 but not at 100, so a negative OutG read
+a loss over 100 percent; Artisan's weight_loss caps at
+100 (roasted weight 0). Evidence: live, the tags read
+0.0 at 200/150 and 100.0 at 200/-10, and 200.0 at a -10%
+loss. Fix: ExpectedOutG clamps the loss percent to
+0..100 inside the expression, so the readout stays in
+[0, ChargeG]; ActualLossPct clamps to 0..100. Both
+expressions updated in setup_roastery_v4_tags.py (the
+source of truth) and on the live tags by the same
+export/import route HUNT-82 used (15 tags, 0 failures).
+
+#### HUNT-91 (minor, fixed): the .alog export computed block omitted keys Artisan writes
+
+Artisan's computedProfileInformation writes
+volume_gain, moisture_loss, organic_loss, volumein,
+volumeout, roast_defects_weight, green_density,
+roasted_density, set_density, the phase RoRs and delta
+temps, total_ror, fcs_ror, the per-phase AUCs and
+total_ts_BT. The export wrote none of them (round 11
+noted the omission as a gap). Evidence: static, on a
+crafted batch covering all the new keys (weight_loss
+14.0, total_yield 162.0 g, total_loss 19.0, volume_gain
+30.0, densities 400.0/264.6 g/L, moisture_loss 9.5,
+organic_loss 4.5, dry/mid/finish RoRs 103.3/8.3/3.5,
+phase AUCs 250/303/446, total_ts_BT 999); live, the
+batch 1042 export carries the always-written keys
+(volumein/volumeout/defects weight 0.0) and no phase
+RoRs (its turning point sits at the first sample, so
+Artisan's TP/DRY gate skips the block), and the imported
+tie batch export carries phase RoRs 50.7/25.1/12.8/28.9
+and phase AUCs 41/243/201 matching the independent
+recompute. The phase RoR block follows Artisan's guard
+(written only when the TP and Dry End indices are both
+past the first sample); total_ror and fcs_ror sit inside
+that same gate, verified against main.py
+computedProfileInformation. A phase AUC is written only
+when both of its bounding events are stamped; Artisan
+falls back to the DROP end when one is missing, which
+would mislabel a charge to drop area as a phase area,
+so the gating is a deliberate difference.
+
+#### Round 13 suite run history (honest)
+
+Run 1 crashed in bbp_live opening the mobile page in a
+second context of the single-process browser
+(TargetClosedError, twice); the fix is two separate
+browsers, one context each. Run 3 got roast 1 charged
+but the Drop click timed out: the phase-aware dock
+offers Drop only after FC End, so the flow now stamps
+Dry End, FC Start and FC End first (tier3c's
+dock_prereq, copied verbatim). Run 4 failed the Drop
+for the same missing-prerequisite reason. Run 5
+completed with 206 pass and 5 fail: the post-CHARGE
+BbpSamplesDS read came back empty (the window clears
+the dataset on finalize), so the recompute now uses the
+pre-CHARGE samples plus the final CHARGE sample. Run 6
+is the clean 211/0.
+
+Lab left clean: gateway RUNNING, 7 batches (1042-1048),
+101 series, 0 events, defaults restored, PressSlots
+empty, ThemeMode System, Calculator 200/15/172. Next
+HUNT number is HUNT-92.
+
+Held for round 14: HUNT-53 app fix still needs Eric's
+direction, lab mitigation stays in effect; timezone TIME
+axis retest and HUNT-46 retest stay beta-gated on the
+next Ignition beta; Docker boot test stays Eric-side
+only; HUNT-58 live proof still rests on the wipe
+simulation only.
+
+### Polish round 13: fresh hunting pass, UI/UX focus, HUNT-92 (worker B, 2026-11-22)
+
+New suite verify_r13_ui.py, mirrored from the lab to
+roastery/scripts/verify_r13_ui.py. One fix, in a view
+only, plus the phase-aware dock contract proven
+statically and live, and the four-page regression walk
+at 1360px and 360px, light and dark. Final run: 229
+PASS, 0 FAIL.
+
+#### HUNT-92 (minor, fixed): the Settings page HeadRow laid out at 0 height, so the Roaster card covered the Settings title, subtitle and gear button
+
+The SettingsPage HeadRow had no position config at all,
+while its siblings carry one: LogPage HeadRow and
+RoastPage HeaderBar use grow 0, shrink 0, basis auto,
+BatchDetail HeadRow uses basis 76px. Live, the Content
+children measured: HeadRow x 20, y 16, w 1320, h 0; the
+Roaster card x 20, y 16, w 1320, h 200, starting at the
+same y as the HeadRow. The title (y 16, 28 tall) and the
+gear (y 16, 40x40) overflow the zero height row, and the
+opaque card, later in paint order, covers them. Every
+screenshot of /settings in this round and in round 12
+shows the same thing: no Settings title, the Roaster
+card at the top of the viewport, as if the page loaded
+scrolled down about 90px. The gear could not be
+clicked: Playwright reports the Roaster card
+intercepting pointer events, and elementFromPoint at the
+title and gear centers returns the card. The title and
+gear are unreachable at every scroll position
+(scrollTop is already 0), so the Settings page had no
+visible title and its gear was dead; App Settings
+stayed reachable from the Roast, Log and Detail gears.
+Fix: the HeadRow now carries grow 0, shrink 0, basis
+auto, the same position as the LogPage HeadRow. Proven
+live after the fix: the HeadRow measures 45 tall, the
+gear is not covered (elementFromPoint at its center is
+the gear icon), the Settings title, subtitle and gear
+render at 1360px and 360px in light and dark, and the
+gear click opens App Settings from the Settings page.
+The suite pins the fix with a static check on the view
+JSON plus the live geometry checks.
+
+#### Suite runs
+
+Suite: roastery/scripts/verify_r13_ui.py (lab copy
+~/workspace/ignition-lab/verify_r13_ui.py). Run 1: 152
+passes, died in the alarms Load read-back when the
+Settings gear click timed out (the HUNT-92 symptom),
+so the alarms proof, the 360 dark editor probe and the
+live roast dock stages never ran. The 17 failures in
+run 1 were all suite bugs: the customIndex check
+required 0 on the Fan Boost custom (it correctly
+carries its slot index 1), and the reconnect banner
+check read the dormant platform banner text from
+body inner_text (see the dismissed item below). Run 2:
+227 PASS, 2 FAIL, both suite bugs in the alarms
+helper: the plain 'Load' role name matched the Targets
+panel's 'Load Point' button first, and the caption
+helper matched the alarms table's Name and Message
+column headers before the editor captions. Run 3: 228
+PASS, 1 FAIL: the message read returned 'on', the
+alarms table's select-all checkbox under the Message
+column header. Run 4: 227 PASS, 0 FAIL on the checks,
+but the run died in teardown when the Maker trial
+expired at 13:29:19 (SQL Historian Demo_Expired, SQL
+Bridge projects disabled) and the Perspective session
+WebSocket closed at 13:27:28, so the roast page gear
+click timed out; the lab watch reset the trial at
+13:30:07 (7200 s). A wrong turn during the diagnosis:
+tag reads with the bare path 'Roastery/State' failed
+with "Tag provider '' not found", which looked like a
+dead provider, but the real path is
+'[default]Roastery/CurrentBatch/State' (the core tags
+are members of the RoastBatch UDT instance
+CurrentBatch); with the right paths the tags read fine
+(Idle, 1042, Dark, Simulated, 5, 5, Off, Periscope
+True) and the DB was 7/101/0. The gateway was restarted
+anyway (stop, then start-gateway with
+GW_DIR=gateway-2027-maker; StatusPing RUNNING); the
+restart was unnecessary but harmless. Run 5, after the
+suite hardened set_theme_ui to reload the page once
+and retry the gear click when the first click times
+out: 229 PASS, 0 FAIL, exit 0. The full battery: the
+static dock contract (18 checks: Idle, Complete,
+Dropped, Cooling and all Roasting stamped-event
+combinations, lead and kind, customs hidden when
+unnamed or disabled), the HUNT-92 static and live
+checks, the four-page walk at 1360px and 360px in
+light and dark (no horizontal overflow, no clipped
+leaf text, no inner horizontal scroller, no visible
+reconnect banner), the Settings scroll sweep at 360px
+dark, the compare dropdown option list inside the
+360px viewport, the compare caption naming each slot
+once, the calculator edit (Expected out 170.0 to 212.5
+and back), the alarms Load read-back ('High bean
+temp', 'Bean temperature high', count 3), the slide
+over batch editor at 360px dark, and the live roast at
+360px dark through every dock stage (Idle Charge only,
+Dry End, FC Start, FC End plus Drop, SC Start, SC
+End, Drop only, Dropped Cool and Finish, Cooling
+Finish only, Complete Charge and Reset) with the
+banner alarm firing mid-roast and clearing after
+Finish (the HUNT-76 regression) and stats phase
+shares summing to 100 after Drop. Logs:
+~/workspace/ignition-lab/r13-ui-run1.log through
+r13-ui-run5.log. Screenshots:
+~/workspace/ignition-lab/showcase/shots/r13-ui-*.png.
+
+Regression scope note: the fix touches only the
+SettingsPage view, so no other suite was rerun; the
+four-combo Settings walk and the HUNT-92 regression
+checks inside run 5 are the targeted regression proof
+for this change. The closing battery is the place for
+the cross-suite check.
+
+Items checked and dismissed, no HUNT filed: the Roast
+1360 header clock looked clipped at small scale, but a
+2x crop shows ROAST TIME and 00:00 fully visible. The
+stats line "Mai" is a deliberate short form in
+stats_line_text, matching "Dry" and "Dev". The body
+text "No Connection to Gateway" is a dormant platform
+banner element parked above the viewport (y -28,
+connection-banner banner-inactive), present in
+inner_text but never rendered; the suite now probes
+the banner element's viewport position instead of the
+body text, which closes the round 12 open observation
+about the transient reconnect banner. TIME axis retest
+and HUNT-46 were not retested (beta-gated). The press
+path, HUNT-53, HUNT-58 and the builder files were not
+touched by this worker. HUNT-53 still needs Eric's
+direction.
+
+Files changed (this worker, uncommitted):
+`roastery/project/Roastery/com.inductiveautomation.perspective/views/Views/SettingsPage/view.json`
+(HUNT-92; the HeadRow position only),
+`roastery/scripts/verify_r13_ui.py` (the suite, new
+file), `roastery/docs/coffee-roaster-app.md` (this
+section). The view file was copied to the gateway tree
+(repo and gateway copies identical by md5, a88bb130...)
+and POST /scan/projects returned 200. The builder's
+view literals are now stale by this change (same
+position as rounds 10 to 12); they need the resync
+pass before anyone rebuilds from build_roastery_v4.py,
+or the fix will be lost. Not committed, no push, per
+the brief.
+
+Lab left clean at 7 batches (1042-1048), 101 series, 0
+events, defaults restored (FanLevel 5, HeatLevel 5,
+BatchNumber 1042, ActiveSource Simulated, Mode Off,
+ThemeMode System, DispAxisFormat m:ss, CompareAlignEvent
+charge, ProjectionMode Linear, PeriscopeAvailable True,
+background cleared, PhaseFromBg False), PressSlots empty,
+0 events stable, gateway RUNNING (restarted 13:33
+after the trial expiry, trial reset 13:30 with 7200 s).
+Next HUNT number is HUNT-93.
+
+### Polish round 13: observations and builder resync (worker C, 2026-11-22)
+
+Two round 12 open observations closed, two harness HUNTs
+filed for suite staleness worker A's round 13 fixes left
+behind, and the builder resynced for workers A and B. No
+app change in this worker's scope, no push, changes left
+uncommitted for the coordinator.
+
+#### Observation (a): the HUNT-80 body starting "No Connection to Gateway" (closed)
+
+Confirmed independently, live, with a probe script
+(/tmp/r13c_banner.py, the same BANNER_JS worker B's suite
+uses) on the Roast and Settings pages at 1360px. Both
+pages: body inner_text starts with 'No Connection to
+Gateway', and the banner element measures x 16, y -28,
+w 203, h 24, so its bottom is -4, fully above the
+viewport, inViewport False, class 'connection-banner
+banner-inactive no-print'. The banner is display flex,
+visibility visible, opacity 1, so it is the off-viewport
+parking, not CSS hiding, that keeps it unrendered. Worker
+B's conclusion stands: the text in body inner_text proves
+nothing, and the HUNT-80 check's printed body head is the
+dormant platform banner, not a live disconnect. No HUNT
+filed, nothing built. Side note: the Settings body now
+starts 'Settings / Standing configuration for', so the
+HUNT-92 title fix is visible in the same probe.
+
+#### Observation (b): r11 suite flakes (not reproduced)
+
+The round 12 flakes (an export download timeout once, a
+staging transient once) did not reproduce in any run
+below. Four runs total, all after the HUNT-93 and HUNT-94
+harness fixes: run 2 went 133 pass and 2 fail (the stale
+AUC expectations only), runs 3 and 4 are clean 135/0.
+Nothing was hardened, because there was nothing to harden:
+no timeout and no staging transient appeared, and the
+suite already polls with real waits. Logs:
+~/workspace/ignition-lab/r11-c-run1.log through
+r11-c-run4.log.
+
+#### HUNT-93 (harness, no app change): the r11 BatchesStub lacked _volume_increase after HUNT-91
+
+Worker A's HUNT-91 fix added a batches._volume_increase
+call to artisan._computed_for, but the r11 suite's
+static_computed_for stub only carried _weight_loss, so run
+1 crashed before any live step with AttributeError: type
+object 'BatchesStub' has no attribute '_volume_increase'
+(artisan/code.py line 1262). Deterministic, not one of the
+round 12 flakes. Fix: the stub now extracts
+_volume_increase from the real batches code.py too, the
+same shape as worker A's r13 suite stub. Lab and repo
+copies verified identical with diff after the copy.
+
+#### HUNT-94 (harness, no app change): the r11 AUC expectations went stale under HUNT-88 and HUNT-89
+
+Run 2 failed only the two AUC checks in the same static
+section: F-mode AUC 440 against an expected 489, C-mode
+450 against 500. The app is right and the expectations
+were stale. The TP scan now keeps the LATEST tied
+minimum, so on the flat 300 F fixture the TP is index 1,
+not index 0, and the AUC integrates from the TP (the
+default begin), so 9 segments instead of 10: 9 x 88 F-min
+x 5/9 = 440 C-min in F mode (the unconverted total from
+index 1 would be 792, not 880), 9 x 50 = 450 C-min in C
+mode. Recomputed by hand from the current _computed_for
+source and confirmed against the live run values; the
+HUNT-81 check in the same function still passes at 883.
+The two expectations now read 440 and 450, with the
+recompute in a comment.
+
+#### Suite runs
+
+Run 1: crashed in static_computed_for on the HUNT-93
+stub gap, 5 passes before the crash. Run 2, after the
+HUNT-93 fix: 133 PASS, 2 FAIL, the HUNT-94 AUC
+expectations only. Run 3, after both fixes: 135 PASS, 0
+FAIL, exit 0. Run 4, repeat: 135 PASS, 0 FAIL, exit 0.
+The r11 suite covers the HUNT-78 to HUNT-82 fixes plus
+the four-page walk at 1360px and 360px, light and dark,
+the Settings scroll sweep, the 1042 export, the live
+create flow, the over-green import, and the calculator
+loss guard. Lab left clean after each run by the suite's
+own finally block and tail checks.
+
+#### Builder resync
+
+Repo builder roastery/scripts/build_roastery_v4.py (the lab
+copy was left alone, as in rounds 10 to 12; it is even
+staler). Method: AST span replacement per literal, then
+the extraction proof (proof script kept at
+~/workspace/ignition-lab/r13c-scratch/proof.py, log
+r13c-scratch/proof.log, same method as the round 11 worker
+E proof: AST-extract the literals and writers, execute
+with PROJ pointed at scratch, never at the gateway tree).
+Proof result: 16 checks, 0 failures. The emitted proj
+tree was removed after the run.
+
+CORE_CODE: old 176,491 chars, md5
+376ad2620fac84295a79521c091c5233 (span lines 212 to
+4604); new 176,655 chars, md5
+b7d437abab035c3af346bc5277d5e1d7, byte-identical to live
+core/code.py. ARTISAN_CODE: old 50,982 chars, md5
+62440fefcbcbc94a148d0990f7fbae84 (span lines 7164 to
+8517); new 59,384 chars, md5
+17a91dc538ec7589a1ebd8b408801bea, byte-identical to live
+artisan/code.py. BATCHES_CODE: old 105,263 chars, md5
+290a398b8f9eaacf679d31a0a6856562 (span lines 4599 to
+7071); new 105,859 chars, md5
+aab70b12196ce5bc1c661cd1d53f2bba, byte-identical to live
+batches/code.py. STYLESHEET_CSS: unchanged, still
+byte-identical, 15,437 chars, md5
+4952c4beb425ab49d7ea05d3aaf1b0f9 (the builder's
+write_styles emits the trailing newline, so emitted and
+live agree exactly). All three live files contain no
+triple-quote sequence, no carriage returns, end with a
+newline, and do not end with a backslash, so the raw
+literals parse to exactly the live bytes.
+
+The SettingsPage view literal was stale by more than
+worker B's HUNT-92 position. settings_page_view had no
+HeadRow wrapper, no GearButton, no HeadCol position, no
+SettingsBackgroundEmbed, and no page onStartup event; all
+of those were added in the Designer in polish phase 4 and
+round 1 phase 2 and never carried in the builder. The
+function now builds the HeadRow (row flex, alignItems
+flex-start, classes roast-gap-12, position grow 0 shrink
+0 basis auto), the HeadCol with position grow 1 shrink 1
+basis 0px, the GearButton (material/settings 22x22,
+roast-btn roast-btn-ghost roast-gear-btn, basis 40px,
+script event roastery.core.toggle_app_settings), the
+Background section last, and the onStartup event
+(roastery.core.page_startup). Two key-order notes, both
+needed for byte identity: the HeadRow is a literal dict
+because the gateway serializes that Designer-edited
+component with position before children while flex()
+emits children first (the order the rest of the live views
+use), and the events entry sits after root in the
+returned dict because that is the live file's order
+(BatchDetail carries events before root). The button()
+helper gained an optional image parameter (props order
+text, image, style, matching live). Proof: the emitted
+SettingsPage view.json is byte-identical to live, 8,045
+chars, md5 a88bb1301330273039f0242679f7265f (the md5
+worker B reported for the live file). Also proven
+identical: the core, batches, artisan, stylesheet and
+SettingsPage resource.json files, and all 92 style
+classes (same set, parsed JSON identical).
+
+The builder file compiles (py_compile passes). The
+duplicated `if __name__ == '__main__': main()` guard at
+the end of the file, noted by rounds 11 and 12, was left
+alone. Nothing was rebuilt from the builder; the repo
+project tree stays the source of truth.
+setup_roastery_v4_tags.py (the HUNT-90 calculator clamps)
+is not a builder literal; it is the tag source of truth
+and the live tags already carry the fix, so no resync
+applies there.
+
+Files changed (this worker, uncommitted):
+`roastery/scripts/verify_r11_freshhunt.py` (HUNT-93 stub
+and HUNT-94 expectations, mirrored lab to repo),
+`roastery/scripts/build_roastery_v4.py` (the three library
+literals and the SettingsPage view literal),
+`roastery/docs/coffee-roaster-app.md` (this section). The
+lab copy of verify_r11_freshhunt.py matches the repo copy
+(diff zero). The builder's view literals are now current
+for SettingsPage; the other views were not touched, and
+the builder's remaining view functions are as stale as
+they were before this pass where the Designer has since
+edited them (SettingsPage was the only view worker A or
+B changed). Not committed, no push, per the brief.
+
+Lab left clean at 7 batches (1042-1048), 101 series, 0
+events, defaults restored, PressSlots empty, gateway
+RUNNING. Next HUNT number is HUNT-95.
+
+Held for round 14: HUNT-53 app fix still needs Eric's
+direction, lab mitigation stays in effect; timezone TIME
+axis retest and HUNT-46 retest stay beta-gated on the
+next Ignition beta; Docker boot test stays Eric-side
+only; HUNT-58 live proof still rests on the wipe
+simulation only.
+### Polish round 13: closing battery, 48 of 48 green
+
+Battery: 48 suites, all rc=0, about 2,046 individual
+PASS lines, 0 FAIL. New suites: verify_r13_freshhunt
+211 PASS, 0 FAIL; verify_r13_ui 229 PASS, 0 FAIL.
+Tier1 42 checks, tier3c 69 checks, tier2 87 checks.
+Local commits: 0ee31b2 (worker A, HUNT-87 to HUNT-91), e9d5c06 (worker B, HUNT-92), 31a89fd (worker C and close, HUNT-93 to HUNT-96), docs commit below.
+
+HUNT-95 (harness, no app change, two parts): tier3c BBP
+expectations went stale under HUNT-87. Part 1, the
+recompute now uses full-leg averages, interp helper
+removed. Part 2, found by the battery itself: the app
+finalizes the window at CHARGE by capturing the current
+BeanTempF as the last sample
+(roastery.core._bbp_finalize_charge calls _bbp_capture
+with the current temp), so the recompute must append
+that final sample (samples[0][0] plus staged TimeSec,
+BeanTempF at CHARGE) before recomputing. Proven
+standalone: staged and recomputed RoRs match exactly
+(in -453.37, out 235.22), document matches staged
+matches recompute.
+
+HUNT-96 (harness, no app change, ten suites): New Roast
+expectations did not implement the HUNT-86 reuse rule.
+The app's batches.new_roast reuses the current tag when
+it is above every batch in the database (an untaken
+number) and only increments otherwise; the suites
+expected max(DB max, tag) + 1 unconditionally, or
+DB max + 1 outright. The battery found the tier1 case
+first (stale tag 1049, DB max 1048, app correctly set
+1049, suite expected 1050), then the tier3c case the
+same way, and a sweep then found the same stale formula
+in eight more places before they could bite: tier2 (two
+places), v4, pressfault, and the r8, r9, r10, r13_ui
+freshhunt suites. All ten now mirror the rule. Tier1
+proven standalone on the reuse path (1049, 1049).
+
+HUNT-53: still not built. Needs Eric's explicit
+direction. The lab mitigation held through every
+recovery this round: cleanup_workspace clears all 16
+PressSlots and deletes press rows after every reseed,
+0 events confirmed stable.
+
+Incidents during the close. (1) VM write lock about
+15:09 to 15:22 UTC killed the first battery pass at 19
+DONE lines. Suites died rc=120 instantly with 0-byte
+logs, because CPython exits 120 when its stdout flush
+fails at shutdown; the lock is environmental, not a
+suite failure. (2) A 0-byte data/commissioning.json
+left by the lock blocked gateway startup with
+java.lang.IllegalStateException: Not a JSON Object:
+null; repaired by writing the 2027 gateway template
+(isCommissioned COMMISSIONED, connections.useSsl false,
+catalystAcknowledgment.accepted true, eulaSetup.eula
+B3RM3rHPH6fHm8owWAEx/YnCk04FsYkXTDX8DOl4zQI=). Check
+commissioning.json is valid JSON after every recovery
+from now on. (3) Three VM replacements during the
+close: about 17:13, 19:05, and 21:07 UTC. Each recovery
+used the fast path: Postgres 16 from the local apt
+cache with dpkg in one shot, cluster start, role/db,
+DDL, gateway start, reseed to 7 batches (1042-1048)
+and 101 series, HUNT-53 guard, trial reset. The 21:07
+replacement landed mid r4hunt_d; the battery resumed
+from its DONE lines. (4) r4hunt_b failed in the third
+pass on a Drop button click timeout at 21:05:45, the
+minute the Maker trial expired (trialSecondsLeft 6937
+at the 19:05 recovery, expiry about 21:05:37); the
+suite immediately after it passed with no code change,
+and r4hunt_b passed on rerun. Trial expiry mid-suite,
+same pattern as round 9, environmental.
+
+HUNT-58 live proof: still simulation-only. No VM
+replacement hit the r4hunt A-to-B chain during any
+round 13 battery pass.
+
+Round 12 observations: (a) closed, the "No
+Connection to Gateway" body text is a dormant
+platform banner parked above the viewport (y -28,
+connection-banner banner-inactive), never rendered;
+the suite now probes the banner element's viewport
+position. (b) flakes not reproduced in 4 r11 runs;
+two real harness defects found and fixed instead
+(HUNT-93 stub, HUNT-94 stale AUC expectations).
+
+Builder resync (worker C, extraction proof, 16 checks,
+0 failures): CORE_CODE 176,655 chars md5
+b7d437abab035c3af346bc5277d5e1d7; ARTISAN_CODE 59,384
+chars md5 17a91dc538ec7589a1ebd8b408801bea; BATCHES_CODE
+105,859 chars md5 aab70b12196ce5bc1c661cd1d53f2bba;
+STYLESHEET_CSS unchanged, 15,437 chars, md5
+4952c4beb425ab49d7ea05d3aaf1b0f9; SettingsPage view
+emitted byte-identical to live, 8,045 chars, md5
+a88bb1301330273039f0242679f7265f. Nothing was rebuilt
+from the builder; the repo project tree stays the
+source of truth.
+
+Files changed (round 13, local only, no push):
+`roastery/docs/coffee-roaster-app.md` (workers A, B, C
+and this closing section),
+`roastery/project/Roastery/ignition/script-python/roastery/core/code.py`
+(HUNT-87, HUNT-89),
+`roastery/project/Roastery/ignition/script-python/roastery/artisan/code.py`
+(HUNT-88, HUNT-91),
+`roastery/project/Roastery/ignition/script-python/roastery/batches/code.py`
+(HUNT-90, HUNT-91),
+`roastery/project/Roastery/com.inductiveautomation.perspective/views/Views/SettingsPage/view.json`
+(HUNT-92),
+`roastery/scripts/build_roastery_v4.py` (library and
+SettingsPage literals resynced),
+`roastery/scripts/setup_roastery_v4_tags.py` (HUNT-90
+calculator clamps),
+`roastery/scripts/verify_r13_freshhunt.py` (new),
+`roastery/scripts/verify_r13_ui.py` (new),
+`roastery/scripts/verify_r11_freshhunt.py` (HUNT-93,
+HUNT-94),
+`roastery/scripts/verify_roastery_tier1.py` (HUNT-96),
+`roastery/scripts/verify_roastery_tier2.py` (HUNT-96),
+`roastery/scripts/verify_roastery_tier3c.py` (HUNT-95,
+HUNT-96),
+`roastery/scripts/verify_roastery_v4.py` (HUNT-96),
+`roastery/scripts/verify_roastery_pressfault.py`
+(HUNT-96), `roastery/scripts/verify_r8_freshhunt.py`
+(HUNT-96), `roastery/scripts/verify_r9_freshhunt.py`
+(HUNT-96), `roastery/scripts/verify_r10_freshhunt.py`
+(HUNT-96).
+
+Lab left clean at 7 batches (1042-1048), 101 series, 0
+events, defaults restored, PressSlots empty, gateway
+RUNNING, trial fresh. Next HUNT number is HUNT-97.
+
+Held for round 14: HUNT-53 app fix still needs Eric's
+direction, lab mitigation stays in effect; timezone
+TIME axis retest and HUNT-46 retest stay beta-gated on
+the next Ignition beta; Docker boot test stays
+Eric-side only; HUNT-58 live proof still rests on the
+wipe simulation only.

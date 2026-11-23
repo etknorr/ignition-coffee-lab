@@ -231,9 +231,13 @@ def main():
             dismiss(p)
         check('no overlays at start',
               overlays(desk) == 0 and overlays(mob) == 0)
-        expected = max(
-            int(psql('SELECT MAX(batch_number) FROM batches')),
-            int(tag(B + '/BatchNumber'))) + 1
+        # HUNT-96: mirror the app's HUNT-86 new_roast rule. A
+        # current tag above every batch in the database is an
+        # untaken number and is reused, not incremented.
+        _max_db = int(psql('SELECT MAX(batch_number) FROM batches'))
+        _cur_no = int(tag(B + '/BatchNumber'))
+        expected = (_cur_no if _cur_no > _max_db
+                    else max(_max_db, _cur_no) + 1)
         desk.get_by_role('button', name='New Roast').first.click()
         desk.wait_for_timeout(3000)
         check('new roast opens a fresh workspace',

@@ -583,8 +583,13 @@ def main():
         # ---------- items 9 + 10a: the live roast ----------------
         desk.goto(BASE + '/log', wait_until='networkidle', timeout=60000)
         desk.wait_for_timeout(4000)
-        expected = max(int(psql('SELECT MAX(batch_number) FROM batches')),
-                       int(tag(B + '/BatchNumber'))) + 1
+        # HUNT-96: mirror the app's HUNT-86 new_roast rule. A
+        # current tag above every batch in the database is an
+        # untaken number and is reused, not incremented.
+        _max_db = int(psql('SELECT MAX(batch_number) FROM batches'))
+        _cur_no = int(tag(B + '/BatchNumber'))
+        expected = (_cur_no if _cur_no > _max_db
+                    else max(_max_db, _cur_no) + 1)
         desk.get_by_role('button', name='New Roast').first.click()
         desk.wait_for_timeout(3000)
         roast_no = int(tag(B + '/BatchNumber'))
@@ -843,8 +848,11 @@ def main():
         desk.goto(BASE + '/log', wait_until='networkidle',
                   timeout=60000)
         desk.wait_for_timeout(4000)
-        expected2 = max(int(psql('SELECT MAX(batch_number) FROM batches')),
-                        int(tag(B + '/BatchNumber'))) + 1
+        # HUNT-96: same HUNT-86 reuse rule as above.
+        _max_db = int(psql('SELECT MAX(batch_number) FROM batches'))
+        _cur_no = int(tag(B + '/BatchNumber'))
+        expected2 = (_cur_no if _cur_no > _max_db
+                     else max(_max_db, _cur_no) + 1)
         desk.get_by_role('button', name='New Roast').first.click()
         desk.wait_for_timeout(3000)
         roast2_no = int(tag(B + '/BatchNumber'))

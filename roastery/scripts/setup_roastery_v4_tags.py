@@ -811,14 +811,27 @@ INSTANCE_FOLDER = {'name': 'Roastery', 'tagType': 'Folder', 'tags': [
         mem('LossPct', 'Float8', 15.0),
         {'name': 'ExpectedOutG', 'tagType': 'AtomicTag',
          'valueSource': 'expr', 'dataType': 'Float8',
-         'expression': '{[.]ChargeG} * (1 - {[.]LossPct} / 100.0)'},
+         # HUNT-90: the loss percent is clamped to 0..100
+         # inside the expression (the input has no min/max),
+         # so a loss over 100 can no longer read a negative
+         # expected weight and a negative loss can no longer
+         # read an expected out above the charge.
+         'expression': '{[.]ChargeG} * (1 - max(0, min(100, '
+                       '{[.]LossPct})) / 100.0)'},
         {'name': 'ExpectedOutOz', 'tagType': 'AtomicTag',
          'valueSource': 'expr', 'dataType': 'Float8',
          'expression': '{[.]ExpectedOutG} / 28.349523125'},
         mem('OutG', 'Float8', 170.0),
         {'name': 'ActualLossPct', 'tagType': 'AtomicTag',
          'valueSource': 'expr', 'dataType': 'Float8',
-         'expression': 'if({[.]ChargeG} > 0, max(0, ({[.]ChargeG} - {[.]OutG}) * 100.0 / {[.]ChargeG}), 0)'},
+         # HUNT-82 clamped the low end at 0; HUNT-90 clamps
+         # the high end at 100 too (a negative out weight
+         # read a loss over 100 percent; Artisan's
+         # weight_loss caps at 100, when the roasted weight
+         # is 0).
+         'expression': 'if({[.]ChargeG} > 0, min(100, max(0, '
+                       '({[.]ChargeG} - {[.]OutG}) * 100.0 / '
+                       '{[.]ChargeG})), 0)'},
         mem('TempF', 'Float8', 415.0),
         {'name': 'TempC', 'tagType': 'AtomicTag',
          'valueSource': 'expr', 'dataType': 'Float8',

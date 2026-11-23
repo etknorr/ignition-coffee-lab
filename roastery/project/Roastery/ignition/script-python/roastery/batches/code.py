@@ -202,7 +202,7 @@ def build_document():
                 'TargetDropSec', 'TargetDropTempF']
     members += ['TurningPointElapsedSec', 'TurningPointTempF',
                 'AucLiveFMin', 'AucSinceFcFMin', 'AucBaseTempF',
-                'AucBegin', 'AucTargetFMin']
+                'AucBegin', 'AucTargetFMin', 'AucBaseFromEvent']
     vals = core.read_members(members)
     total = vals['DropElapsedSec'] or 0
     dry = vals['DryEndElapsedSec']
@@ -241,6 +241,12 @@ def build_document():
                       'sinceFcFMin': vals['AucSinceFcFMin'],
                       'baseF': vals['AucBaseTempF'],
                       'begin': vals['AucBegin'],
+                      # HUNT-88: the export needs the flag to
+                      # write AUCfromeventflag and the event
+                      # base correctly; seeded documents lack
+                      # aucDetail entirely and default to a
+                      # fixed TP base on export.
+                      'fromEvent': bool(vals['AucBaseFromEvent']),
                       'targetFMin': vals['AucTargetFMin']},
         'turningPoint': (
             {'t': vals['TurningPointElapsedSec'],
@@ -1710,7 +1716,11 @@ def _phase_analysis(doc, points):
                 break
             if dry_t is None and total and t > total * 0.5:
                 break
-            if tp is None or bt < tp[1]:
+            # HUNT-89: less-than-or-equal keeps the LATEST
+            # sample holding the minimum, matching Artisan
+            # findTPint (the old strict less-than kept the
+            # earliest tied sample).
+            if tp is None or bt <= tp[1]:
                 tp = (t, bt)
     # AUC base: the saved AUC detail base when present, else
     # the charge temp (the base curve_auc uses for the batch).

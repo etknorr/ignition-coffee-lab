@@ -496,8 +496,13 @@ def live_roast_360_dark(pw):
         'action': 'Banner'}])
     try:
         set_theme_ui(pg, 'Dark')
-        NEXT_BATCH[0] = int(P.psql(
-            'SELECT MAX(batch_number) FROM batches')) + 1
+        # HUNT-96: mirror the app's HUNT-86 new_roast rule. A
+        # current tag above every batch in the database is an
+        # untaken number and is reused, not incremented.
+        _max_db = int(P.psql('SELECT MAX(batch_number) FROM batches'))
+        _cur_no = int(P.tag(B + '/BatchNumber'))
+        NEXT_BATCH[0] = (_cur_no if _cur_no > _max_db
+                         else _max_db + 1)
         nxt = NEXT_BATCH[0]
         click_btn(pg, 'New Roast')
         check('new roast takes next batch number',

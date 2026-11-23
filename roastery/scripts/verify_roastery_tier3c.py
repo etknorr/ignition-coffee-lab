@@ -220,35 +220,22 @@ def plan_at(pts, s):
     return pts[-1][1]
 
 
-def interp(pts, t):
-    if t <= pts[0][0]:
-        return pts[0][1]
-    if t >= pts[-1][0]:
-        return pts[-1][1]
-    for i in range(len(pts) - 1):
-        t0, v0 = pts[i]
-        t1, v1 = pts[i + 1]
-        if t0 <= t <= t1:
-            return v1 if t1 <= t0 else v0 + (v1 - v0) * (t - t0) / (t1 - t0)
-    return pts[-1][1]
-
-
-def bbp_expected(samples, span=6.0):
+def bbp_expected(samples):
     """Independent recompute of the four BBP metrics from the
     staged samples, following the definitions documented in
     roastery.core (bottom is the first minimum; RoR in and out
-    are span slopes with linear interpolation)."""
+    are full-leg averages, HUNT-87: ror_in from the first
+    sample to the bottom, ror_out from the bottom to the last
+    sample, matching Artisan calcBBPMetrics)."""
     bottom = min(v for _t, v in samples)
     tb = [t for t, v in samples if v == bottom][0]
     t_first, t_last = samples[0][0], samples[-1][0]
     if tb > t_first:
-        ta = max(t_first, tb - span)
-        ror_in = (bottom - interp(samples, ta)) * 60.0 / (tb - ta)
+        ror_in = (bottom - samples[0][1]) * 60.0 / (tb - t_first)
     else:
         ror_in = 0.0
     if t_last > tb:
-        te = min(t_last, tb + span)
-        ror_out = (interp(samples, te) - bottom) * 60.0 / (te - tb)
+        ror_out = (samples[-1][1] - bottom) * 60.0 / (t_last - tb)
     else:
         ror_out = 0.0
     return {'time_sec': t_last - t_first, 'bottom_temp_f': bottom,
@@ -459,8 +446,14 @@ def main():
 
         # ---------- item 20 setup: controlled BT source ---------
         write_tags([(B + '/RoRDeltaSpanSec', 6)])
-        expected_no = max(int(psql('SELECT MAX(batch_number) FROM batches')),
-                          int(tag(B + '/BatchNumber'))) + 1
+        # HUNT-96: mirror the app's HUNT-86 new_roast rule. A
+        # current tag above every batch in the database is an
+        # untaken number and is reused, not incremented; only a
+        # tag at or below the database max takes max + 1.
+        _max_db = int(psql('SELECT MAX(batch_number) FROM batches'))
+        _cur_no = int(tag(B + '/BatchNumber'))
+        expected_no = (_cur_no if _cur_no > _max_db
+                       else max(_max_db, _cur_no) + 1)
         desk.goto(BASE + '/log', wait_until='networkidle', timeout=60000)
         desk.wait_for_timeout(4000)
         dismiss(desk)
@@ -585,7 +578,6 @@ def main():
               samples and min(v for _t, v in samples) == 328.0,
               samples)
         mob.screenshot(path=SHOTS + '/roastery-tier3c-bbp-window-360.png')
-        expected = bbp_expected(samples, span=6.0)
 
         # Close roast 1 through its real flow (Cool, then
         # Finish): Charge is only enabled from Idle or Complete,
@@ -611,15 +603,25 @@ def main():
         staged = read_tags([BBP + '/HasMetrics', BBP + '/TimeSec',
                             BBP + '/BottomTempF', BBP + '/RorInFMin',
                             BBP + '/RorOutFMin', BBP + '/WindowActive'])
+        # HUNT-95, second half: the app finalizes the window at
+        # CHARGE by capturing the current bean temp as the last
+        # sample (roastery.core._bbp_finalize_charge), so the
+        # independent recompute needs that final sample too:
+        # its offset is the first sample offset plus the staged
+        # duration, its temp is the bean temp at CHARGE.
+        samples.append((samples[0][0] + staged[1],
+                        float(tag(B + '/BeanTempF'))))
+        samples.sort()
+        expected = bbp_expected(samples)
         check('metrics staged at CHARGE and the window closed',
               staged[0] is True and staged[5] is False, staged)
         check('staged bottom temp matches the recompute',
               approx(staged[2], expected['bottom_temp_f'], 0.01), staged)
-        check('staged RoR in matches the span slope recompute',
+        check('staged RoR in matches the full-leg recompute',
               approx(staged[3], expected['ror_in_f_min'],
                      max(8.0, abs(expected['ror_in_f_min']) * 0.08)),
               (staged[3], expected['ror_in_f_min']))
-        check('staged RoR out matches the span slope recompute',
+        check('staged RoR out matches the full-leg recompute',
               approx(staged[4], expected['ror_out_f_min'],
                      max(8.0, abs(expected['ror_out_f_min']) * 0.08)),
               (staged[4], expected['ror_out_f_min']))

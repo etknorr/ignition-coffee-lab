@@ -1007,9 +1007,16 @@ def _computed_for(profile, timex, temp1, temp2, ti, mode, doc):
     # needs no Dry End: it scans charge to DROP, capped at FC
     # Start when one is stamped. Mirror that here: the cap is
     # the FC Start index when set, else the drop index, else
-    # the end of the curve. The forward scan with a strict
-    # less-than keeps the earliest sample holding the minimum,
-    # as Artisan's backward scan does.
+    # the end of the curve. HUNT-89: the scan used a strict
+    # less-than, keeping the EARLIEST sample holding the
+    # minimum, but Artisan findTPint scans backward with a
+    # strict less-than, so the LATEST tied sample wins there.
+    # The forward scan now uses less-than-or-equal, which
+    # keeps the latest tied sample, matching findTPint; on a
+    # flat-bottomed curve (common in imported .alog files,
+    # whose temps are often 0.1 F quantized) the old form
+    # exported a TP_time a few seconds early and started the
+    # AUC at the wrong sample.
     tp_idx = None
     if ti[0] is not None and ti[0] >= 0 and len(temp2) > 0:
         lo = int(ti[0])
@@ -1021,7 +1028,7 @@ def _computed_for(profile, timex, temp1, temp2, ti, mode, doc):
         best = None
         for i in range(lo, hi):
             if _proper(temp2[i]) and (best is None
-                                      or temp2[i] < temp2[best]):
+                                      or temp2[i] <= temp2[best]):
                 best = i
         tp_idx = best
     if tp_idx is not None:
@@ -1030,37 +1037,179 @@ def _computed_for(profile, timex, temp1, temp2, ti, mode, doc):
         c['TP_BT'] = float(temp2[tp_idx])
         if tp_idx < len(temp1) and _proper(temp1[tp_idx]):
             c['TP_ET'] = float(temp1[tp_idx])
-    base = 212.0 if mode == 'F' else 100.0
+    # HUNT-88: the AUC settings come from the saved batch's
+    # aucDetail (begin, fixed base, from-event flag), falling
+    # back to the old TP / 212 F defaults when the document
+    # has none (seeded batches carry no aucDetail, so their
+    # exports keep the same AUC and base and only the flag
+    # changes, from the wrong 1 to 0). Artisan
+    # computedProfileInformation writes AUCbegin in its own
+    # spelling ('CHARGE', 'TP', 'DE', 'FCs'), AUCbase in mode
+    # units (the BT at the begin event when the flag is set,
+    # else the fixed base), and AUCfromeventflag as the flag
+    # itself. The integral starts at the begin index, not
+    # always at the turning point.
+    detail = doc.get('aucDetail') or {}
+    begin_name = detail.get('begin') or 'TP'
+    from_event = bool(detail.get('fromEvent'))
+    if begin_name == 'Charge':
+        begin_idx = int(ti[0]) if ti[0] is not None \
+            and ti[0] >= 0 else 0
+        begin_key = 'CHARGE'
+    elif begin_name == 'Dry End':
+        begin_idx = int(ti[1]) if len(ti) > 1 and ti[1] else None
+        begin_key = 'DE'
+    elif begin_name == 'FC Start':
+        begin_idx = int(ti[2]) if len(ti) > 2 and ti[2] else None
+        begin_key = 'FCs'
+    else:
+        begin_idx = tp_idx
+        begin_key = 'TP'
+    if begin_idx is None:
+        # Artisan profileAUC falls back to index 0 when the
+        # begin event has not happened; the first sample is
+        # the charge sample on a Roastery curve.
+        begin_idx = int(ti[0]) if ti[0] is not None \
+            and ti[0] >= 0 else 0
+    if (from_event and begin_idx < len(temp2)
+            and _proper(temp2[begin_idx])):
+        base = float(temp2[begin_idx])
+    elif detail.get('baseF') is not None:
+        base = _from_f(float(detail['baseF']), mode)
+    else:
+        base = 212.0 if mode == 'F' else 100.0
     c['AUCbase'] = base
-    c['AUCbegin'] = 'TP'
-    c['AUCfromeventflag'] = 1
-    start = tp_idx if tp_idx is not None else (
-        int(ti[0]) if ti[0] is not None and ti[0] >= 0 else 0)
+    c['AUCbegin'] = begin_key
+    c['AUCfromeventflag'] = 1 if from_event else 0
+    start = begin_idx
     end = int(ti[6]) if len(ti) > 6 and ti[6] else len(temp2) - 1
-    auc = 0.0
-    for i in range(start, min(end, len(temp2) - 1)):
-        if not (_proper(temp2[i]) and _proper(temp2[i + 1])):
-            continue
-        dt_min = (float(timex[i + 1]) - float(timex[i])) / 60.0
-        if dt_min <= 0:
-            continue
-        avg = (float(temp2[i]) + float(temp2[i + 1])) / 2.0 - base
-        if avg > 0:
-            auc += avg * dt_min
-    # HUNT-79: the loop above integrates in the profile mode
+    # HUNT-79: the loop below integrates in the profile mode
     # units (F when mode is F), but Artisan's AUC is always
     # in C-min: calcAUC converts the temps to C first and ts()
     # is documented "always in C", and the comparator reads
     # this cached value and labels it C*min. A Fahrenheit
     # integral overstates it by 9/5, so convert on export
-    # when the mode is F. The base stays in mode units
-    # (212.0 in F), as Artisan writes it.
-    if mode == 'F':
-        auc = auc * 5.0 / 9.0
-    c['AUC'] = int(round(auc))
+    # when the mode is F. The base stays in mode units, as
+    # Artisan writes it.
+    def _auc_int(a, b):
+        """Trapezoid area above base over sample indices
+        [a, b], in C-min (the main AUC shape, reused for the
+        per-phase AUCs and total_ts_BT below)."""
+        tot = 0.0
+        for i in range(a, min(b, len(temp2) - 1)):
+            if not (_proper(temp2[i]) and _proper(temp2[i + 1])):
+                continue
+            dt_min = (float(timex[i + 1]) - float(timex[i])) / 60.0
+            if dt_min <= 0:
+                continue
+            avg = (float(temp2[i]) + float(temp2[i + 1])) / 2.0 - base
+            if avg > 0:
+                tot += avg * dt_min
+        if mode == 'F':
+            tot = tot * 5.0 / 9.0
+        return int(round(tot))
+
+    c['AUC'] = _auc_int(start, end)
+    # HUNT-91: the phase RoRs, delta temps, total RoR, FCs
+    # RoR, per-phase AUCs and total_ts_BT that
+    # computedProfileInformation writes and the export
+    # omitted. All follow Artisan exactly: the phase RoRs are
+    # Artisan RoR() (the DRY phase measured from the greens
+    # temp when one is recorded, else from the turning
+    # point), the block is written only when the TP and Dry
+    # End indices are both past the first sample (Artisan
+    # gates on TP_time_idx and DRY_time_idx being truthy),
+    # total_ror is the TP to DROP slope, fcs_ror is the RoR
+    # series value at the FC Start sample (the stored
+    # phaseAnalysis value, converted to mode units for C
+    # mode), and the phase AUCs are ts() ranges above the
+    # same base as the main AUC. A phase AUC is written only
+    # when both of its bounding events are stamped; Artisan
+    # falls back to the DROP end when one is missing, which
+    # would mislabel a charge to drop area as a phase area.
+    dry_idx = int(ti[1]) if len(ti) > 1 and ti[1] else None
+    fc_idx = int(ti[2]) if len(ti) > 2 and ti[2] else None
+    drop_idx = int(ti[6]) if len(ti) > 6 and ti[6] else None
+    charge_idx = int(ti[0]) if ti[0] is not None \
+        and ti[0] >= 0 else 0
+    if tp_idx and dry_idx:
+        dry_temp = float(temp2[dry_idx]) \
+            if _proper(temp2[dry_idx]) else None
+        greens = 0.0
+        _gf = _num((doc.get('metadata') or {}).get('GreensTempF'))
+        if _gf:
+            greens = _from_f(_gf, mode)
+        rc1 = rc2 = rc3 = 0.0
+        dt1 = dt2 = dt3 = -1.0
+        if dry_temp is not None and greens > 0:
+            lp = greens
+            div = float(timex[dry_idx]) - float(timex[charge_idx])
+        elif (dry_temp is not None and dry_idx
+              and tp_idx is not None
+              and -1 < tp_idx < dry_idx < len(temp2)):
+            lp = float(temp2[tp_idx])
+            div = float(timex[dry_idx]) - float(timex[tp_idx])
+        else:
+            lp = None
+            div = 0.0
+        if (dry_temp is not None and lp is not None and div != 0
+                and _proper(dry_temp)):
+            rc1 = (dry_temp - lp) / div * 60.0
+            dt1 = dry_temp - lp
+        if fc_idx:
+            fc_temp = float(temp2[fc_idx]) \
+                if _proper(temp2[fc_idx]) else None
+            mid_time = float(timex[fc_idx]) - float(timex[dry_idx])
+            if (dry_temp is not None and fc_temp is not None
+                    and mid_time):
+                rc2 = (fc_temp - dry_temp) / mid_time * 60.0
+                dt2 = fc_temp - dry_temp
+            if drop_idx:
+                drop_temp = float(temp2[drop_idx]) \
+                    if _proper(temp2[drop_idx]) else None
+                fin_time = float(timex[drop_idx]) \
+                    - float(timex[fc_idx])
+                if (drop_temp is not None and fc_temp is not None
+                        and fin_time):
+                    rc3 = (drop_temp - fc_temp) / fin_time * 60.0
+                    dt3 = drop_temp - fc_temp
+        c['dry_phase_ror'] = round(rc1, 1)
+        c['mid_phase_ror'] = round(rc2, 1)
+        c['finish_phase_ror'] = round(rc3, 1)
+        if dt1 != -1:
+            c['dry_phase_delta_temp'] = round(dt1, 1)
+        if dt2 != -1:
+            c['mid_phase_delta_temp'] = round(dt2, 1)
+        if dt3 != -1:
+            c['finish_phase_delta_temp'] = round(dt3, 1)
+        if (drop_idx is not None and tp_idx is not None
+                and _proper(temp2[drop_idx])
+                and _proper(temp2[tp_idx])
+                and float(timex[drop_idx]) != float(timex[tp_idx])):
+            c['total_ror'] = round(
+                (float(temp2[drop_idx]) - float(temp2[tp_idx]))
+                / (float(timex[drop_idx]) - float(timex[tp_idx]))
+                * 60.0, 1)
+        if fc_idx:
+            _pa = doc.get('phaseAnalysis') or {}
+            _fcs = _pa.get('fcsRorFMin')
+            if _fcs is not None:
+                _fcs = float(_fcs) * 5.0 / 9.0 \
+                    if mode == 'C' else float(_fcs)
+                c['fcs_ror'] = round(_fcs, 1)
+    if dry_idx and fc_idx:
+        c['dry_phase_AUC'] = _auc_int(charge_idx, dry_idx)
+        c['mid_phase_AUC'] = _auc_int(dry_idx, fc_idx)
+    if fc_idx and drop_idx:
+        c['finish_phase_AUC'] = _auc_int(fc_idx, drop_idx)
+    if drop_idx:
+        c['total_ts_BT'] = _auc_int(charge_idx, drop_idx)
     meta = doc.get('metadata') or {}
     win = _num(meta.get('ChargeWeightG'))
     wout = _num(meta.get('WeightOutG'))
+    defects = _num(meta.get('DefectsWeightG'))
+    wl = batches._weight_loss(win, wout) \
+        if win > 0 and wout > 0 else 0.0
     if win > 0 and wout > 0:
         c['weightin'] = win
         c['weightout'] = wout
@@ -1078,10 +1227,8 @@ def _computed_for(profile, timex, temp1, temp2, ti, mode, doc):
         # weight, res = wout - defects). All three now use
         # batches._weight_loss, the guarded Artisan shape,
         # and roast_defects_loss is written with them.
-        wl = batches._weight_loss(win, wout)
         if wl:
             c['weight_loss'] = round(wl, 1)
-        defects = _num(meta.get('DefectsWeightG'))
         res = wout - defects
         dl = batches._weight_loss(wout, res) if defects > 0 else 0.0
         if dl:
@@ -1090,6 +1237,41 @@ def _computed_for(profile, timex, temp1, temp2, ti, mode, doc):
         tl = batches._weight_loss(win, res)
         if tl:
             c['total_loss'] = round(tl, 1)
+    # HUNT-91: the remaining computedProfileInformation keys
+    # the export omitted (round 11 noted the gap). Volume in
+    # liters and defects weight in grams are written always,
+    # as Artisan writes them (0.0 when absent); densities in
+    # g/L at 1 decimal when their inputs exist; volume_gain
+    # from the guarded volume increase; moisture_loss as
+    # Artisan's raw greens minus roasted subtraction when
+    # both are recorded (the computed-block side keeps the raw
+    # value; the HUNT-73 clamping is the dialog side, on
+    # BatchDetail); organic_loss as weight_loss minus
+    # moisture_loss when weight_loss is nonzero; set_density
+    # from the stored DensityGL (the profile 'density' list
+    # ratio in g/L).
+    vin = _num(meta.get('VolumeInMl'))
+    vout = _num(meta.get('VolumeOutMl'))
+    c['volumein'] = round(vin / 1000.0, 4)
+    c['volumeout'] = round(vout / 1000.0, 4)
+    c['roast_defects_weight'] = round(defects, 1)
+    if vin > 0 and win > 0:
+        c['green_density'] = round(win / (vin / 1000.0), 1)
+    if vout > 0 and wout > 0:
+        c['roasted_density'] = round(wout / (vout / 1000.0), 1)
+    vg = batches._volume_increase(vin, vout)
+    if vg:
+        c['volume_gain'] = round(vg, 1)
+    gmoist = _num(meta.get('MoisturePct'))
+    rmoist = _num(meta.get('RoastedMoisturePct'))
+    if gmoist and rmoist:
+        ml = gmoist - rmoist
+        c['moisture_loss'] = round(ml, 1)
+        if wl:
+            c['organic_loss'] = round(wl - ml, 1)
+    dens = _num(meta.get('DensityGL'))
+    if dens > 0:
+        c['set_density'] = round(dens, 1)
     return c
 
 

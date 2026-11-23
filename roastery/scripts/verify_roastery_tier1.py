@@ -411,8 +411,13 @@ def main():
         desk.goto(BASE + '/log', wait_until='networkidle',
                   timeout=60000)
         desk.wait_for_timeout(4000)
-        expected = max(int(psql('SELECT MAX(batch_number) FROM batches')),
-                       int(tag(B + '/BatchNumber'))) + 1
+        # HUNT-96: mirror the app's HUNT-86 new_roast rule. A
+        # current tag above every batch in the database is an
+        # untaken number and is reused, not incremented; only a
+        # tag at or below the database max takes max + 1.
+        max_db = int(psql('SELECT MAX(batch_number) FROM batches'))
+        cur_no = int(tag(B + '/BatchNumber'))
+        expected = cur_no if cur_no > max_db else max(max_db, cur_no) + 1
         desk.get_by_role('button', name='New Roast').first.click()
         desk.wait_for_timeout(3000)
         roast_no = int(tag(B + '/BatchNumber'))

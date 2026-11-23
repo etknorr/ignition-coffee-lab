@@ -217,11 +217,16 @@ def static_weight_loss_guard():
 def static_computed_for():
     """HUNT-79: _computed_for on crafted inputs, run from the
     real library source with a stub batches module carrying
-    the real _weight_loss."""
-    bns = extract_fns(BATCHES, ['_weight_loss'])
+    the real _weight_loss and _volume_increase."""
+    bns = extract_fns(BATCHES, ['_weight_loss', '_volume_increase'])
 
     class BatchesStub(object):
         _weight_loss = staticmethod(bns['_weight_loss'])
+        # HUNT-93 (harness, no app change): HUNT-91 added a
+        # batches._volume_increase call to _computed_for, so
+        # the stub needs the real function too, same shape as
+        # the r13 suite's stub.
+        _volume_increase = staticmethod(bns['_volume_increase'])
 
     ns = extract_fns(ARTISAN, ['_computed_for', '_num', '_proper'],
                      extra={'batches': BatchesStub})
@@ -249,8 +254,16 @@ def static_computed_for():
           c.get('total_yield') == 240.0, c)
     check('HUNT-79 over green total_loss is absent, not -25.0',
           'total_loss' not in c, c)
-    check('HUNT-79 F-mode AUC converts to C-min (489, not 880)',
-          c.get('AUC') == 489, c.get('AUC'))
+    # HUNT-94 (harness, no app change): the AUC expectations
+    # below went stale under HUNT-88 and HUNT-89. The TP scan
+    # now keeps the LATEST tied minimum, so on this flat 300 F
+    # fixture the TP is index 1, not index 0, and the AUC
+    # integrates from the TP (the default begin), so 9 segments
+    # instead of 10: 9 x 88 F-min x 5/9 = 440 C-min in F mode,
+    # 9 x 50 = 450 C-min in C mode. The unconverted F total
+    # from index 1 would be 792, not 880.
+    check('HUNT-79 F-mode AUC converts to C-min (440, not 792)',
+          c.get('AUC') == 440, c.get('AUC'))
     check('HUNT-79 AUC base stays 212.0 in F mode',
           c.get('AUCbase') == 212.0, c.get('AUCbase'))
     c2 = run(200.0, 184.0, 10.0)
@@ -272,8 +285,8 @@ def static_computed_for():
           c3.get('total_loss') == 14.0, c3)
     c4 = run(200.0, 172.0, 0.0, mode='C',
              temps=[150.0] * len(timex))
-    check('HUNT-79 C-mode AUC needs no conversion (500)',
-          c4.get('AUC') == 500, c4.get('AUC'))
+    check('HUNT-79 C-mode AUC needs no conversion (450)',
+          c4.get('AUC') == 450, c4.get('AUC'))
     check('HUNT-79 C-mode AUC base is 100.0',
           c4.get('AUCbase') == 100.0, c4.get('AUCbase'))
 
