@@ -2255,8 +2255,9 @@ def event_reference_lines_compact():
     per second, so two labels in the top band need roughly
     175 s of separation not to touch. An event closer than
     that to the previous labeled event keeps its line and
-    drops its label; the events strip directly under the
-    phone chart names every event, so nothing is lost."""
+    drops its label; the name still lives in the events
+    strip further down the phone scroll column and in the
+    phase line, so nothing is lost."""
     return _ref_items(_live_events(), top_gap=175.0)
 
 
@@ -4766,17 +4767,32 @@ def roast_degree(drop_temp_f):
     return 'Italian'
 
 
-def curve_auc(points, charge_temp_f):
+def curve_auc(points, charge_temp_f, end_sec=None):
     """Trapezoid area between the bean curve and the charge temp, in
-    degree F minutes (same definition as the v2 roast log save)."""
+    degree F minutes (same definition as the v2 roast log save).
+    HUNT-112 (polish round 16): when end_sec is given the area
+    stops there, with the crossing segment clipped by linear
+    interpolation. build_document passes the Drop elapsed time:
+    curve capture keeps appending through Cooling, and the saved
+    AUC used to include that post Drop tail while the live AUC
+    (core.update_live_auc) and the Artisan export both end at
+    Drop, so the BatchDetail AUC tile disagreed with both."""
     auc = 0.0
     base = charge_temp_f or 0.0
     for i in range(len(points) - 1):
         a, b = points[i], points[i + 1]
-        dt_min = (b['t'] - a['t']) / 60.0
+        t1, t2, bt2 = a['t'], b['t'], b['bt']
+        if end_sec is not None:
+            if t1 >= end_sec:
+                continue
+            if t2 > end_sec:
+                frac = (float(end_sec) - t1) / float(t2 - t1)
+                bt2 = a['bt'] + (b['bt'] - a['bt']) * frac
+                t2 = end_sec
+        dt_min = (t2 - t1) / 60.0
         if dt_min <= 0:
             continue
-        avg = (a['bt'] + b['bt']) / 2.0
+        avg = (a['bt'] + bt2) / 2.0
         if avg > base:
             auc += (avg - base) * dt_min
     return auc
@@ -4856,7 +4872,8 @@ def build_document():
         'phases': {'dryingSec': dry, 'maillardSec': fc - dry,
                    'developmentSec': total - fc,
                    'dtrPct': ((total - fc) * 100.0 / total) if total > 0 else 0.0},
-        'auc': curve_auc(core.curve_points(), vals['ChargeTempF']),
+        'auc': curve_auc(core.curve_points(), vals['ChargeTempF'],
+                      vals['DropElapsedSec']),
         'aucDetail': {'valueFMin': vals['AucLiveFMin'],
                       'sinceFcFMin': vals['AucSinceFcFMin'],
                       'baseF': vals['AucBaseTempF'],
@@ -5006,6 +5023,7 @@ def save_current_batch(self):
     connection heals saves completely; when a save did land,
     the already saved guard below still answers the retry."""
     number = None
+    partial = {'kept': False}
     try:
         vals = core.read_members(['BatchNumber', 'BeanName', 'ChargeTime',
                                   'DropTime', 'DropTempF'])
@@ -5030,7 +5048,32 @@ def save_current_batch(self):
             'bean_name': vals['BeanName'],
             'drop_temp_f': vals['DropTempF'],
             'data': system.util.jsonEncode(doc)})
-        _insert_series(vals['BatchNumber'], core.curve_points())
+        # HUNT-111 (polish round 16): a fault DURING the series
+        # write used to leave the batch row in the log with no
+        # curve while the note below claimed nothing was
+        # written, and the already saved guard then blocked
+        # every retry. In library capture mode the series write
+        # is the only write after the Insert, so a failure there
+        # deletes the just inserted row again (best effort) and
+        # a retry saves cleanly. In Group capture mode the
+        # transaction group already wrote the series rows live
+        # and _insert_series only reads them back, so there is
+        # nothing partial to compensate.
+        _mode = core.read_members(
+            ['SeriesCaptureMode'])['SeriesCaptureMode']
+        if _mode == 'Group':
+            _insert_series(vals['BatchNumber'], core.curve_points())
+        else:
+            try:
+                _insert_series(vals['BatchNumber'],
+                               core.curve_points())
+            except:
+                try:
+                    _run(NQ_DELETE, {
+                        'batch_number': vals['BatchNumber']})
+                except:
+                    partial['kept'] = True
+                raise
         # The staged BBP metrics were written into this batch
         # document by build_document; consume them so a later
         # save cannot inherit them (Tier 3 item 20).
@@ -5045,10 +5088,17 @@ def save_current_batch(self):
         # runNamedQuery throws a Java exception on a faulted
         # connection, which except Exception does not catch
         # in Jython (see roastery.core.record_press).
-        msg = ('Save failed: batch %s was not saved. The database '
-               'connection failed, so nothing was written. Try '
-               'again once the connection is back.'
-               % (number if number is not None else '?'))
+        if partial['kept']:
+            msg = ('Save failed partway: batch %s is in the log '
+                   'without its curve. Delete it from the Log '
+                   'tab, then save again.'
+                   % (number if number is not None else '?'))
+        else:
+            msg = ('Save failed: batch %s was not saved. The '
+                   'database connection failed, so nothing was '
+                   'written. Try again once the connection is '
+                   'back.'
+                   % (number if number is not None else '?'))
         try:
             self.view.custom.saveNote = msg
         except:
@@ -5203,10 +5253,28 @@ def _update_submit(self, event):
         self.view.custom.editNote = err
         return
     _recompute_loss(doc)
+    # HUNT-116 (polish round 16): the Update query never
+    # maintained the relational roast_end, so an edit that
+    # moved Drop left the JSON export header (build_json_text
+    # reads the relational columns) showing the pre edit end.
+    # The document is the source of truth after _apply_events:
+    # a present roastEnd wins, an explicit None (Drop cleared)
+    # clears the column, and a document without the key keeps
+    # the stored value.
+    end_param = batch['roastEnd']
+    if doc.get('roastEnd'):
+        try:
+            end_param = system.date.parse(
+                doc['roastEnd'], "yyyy-MM-dd'T'HH:mm:ss")
+        except Exception:
+            pass
+    elif 'roastEnd' in doc:
+        end_param = None
     _run(NQ_UPDATE, {
         'batch_number': batch_number,
         'bean_name': doc.get('beanName'),
         'drop_temp_f': doc.get('dropTempF'),
+        'roast_end': end_param,
         'data': system.util.jsonEncode(doc)})
     self.view.custom.editNote = 'Saved batch %d.' % batch_number
     core.show_toast(self, 'Batch %d saved' % batch_number, 'success')
@@ -5232,6 +5300,15 @@ def _create_submit(self, event):
            'totalSec': 0, 'phases': {}, 'events': {}, 'metadata': {},
            'manualEntry': True}
     doc = _apply_form(doc, event)
+    # HUNT-116 (polish round 16): a created batch carried no
+    # roastStart at all, so _apply_events could not derive the
+    # event timestamps or roastEnd from the typed times, and
+    # the insert below stamped roast_start = roast_end = the
+    # creation instant next to a typed totalSec. Seed the
+    # start as the creation moment BEFORE the events are
+    # applied; the insert then carries the derived end.
+    now = system.date.now()
+    doc['roastStart'] = _iso(now)
     # HUNT-80: the create path never applied the event fields
     # the form invites the user to type, so a manually created
     # batch with typed event times saved with no events, no
@@ -5245,9 +5322,16 @@ def _create_submit(self, event):
         self.view.custom.editNote = err
         return
     _recompute_loss(doc)
-    now = system.date.now()
+    end_param = now
+    if doc.get('roastEnd'):
+        try:
+            end_param = system.date.parse(
+                doc['roastEnd'], "yyyy-MM-dd'T'HH:mm:ss")
+        except Exception:
+            end_param = now
     _run(NQ_INSERT, {
-        'batch_number': number, 'roast_start': now, 'roast_end': now,
+        'batch_number': number, 'roast_start': now,
+        'roast_end': end_param,
         'bean_name': doc.get('beanName') or '',
         'drop_temp_f': doc.get('dropTempF') or 0.0,
         'data': system.util.jsonEncode(doc)})
@@ -5713,8 +5797,19 @@ def parse_mmss(text):
         parts = s.split(':')
         if len(parts) != 2:
             raise ValueError('bad time')
-        return int(parts[0]) * 60 + int(float(parts[1]))
-    return int(float(s))
+        minutes = int(parts[0])
+        seconds = float(parts[1])
+        # HUNT-117 (polish round 16): range check the parts.
+        # '04:90' used to parse as 330 (silently read as 5:30)
+        # and '-1:30' as -30, and the create path has no charge
+        # anchor, so a negative event time could be saved.
+        if minutes < 0 or seconds < 0 or seconds >= 60:
+            raise ValueError('bad time')
+        return minutes * 60 + int(seconds)
+    total = int(float(s))
+    if total < 0:
+        raise ValueError('bad time')
+    return total
 
 
 def _apply_events(doc, payload):
@@ -5760,6 +5855,10 @@ def _apply_events(doc, payload):
                                'tempF': temp}
     new_events['custom'] = events.get('custom') or []
     seq = [(k, new_events[k]['t']) for k in order if new_events.get(k)]
+    for _k, _t in seq:
+        if _t < 0:
+            return ('Event times cannot be negative. '
+                    'Nothing was saved.')
     for i in range(len(seq) - 1):
         if seq[i][1] >= seq[i + 1][1]:
             return ('%s must come before %s. Nothing was saved.'
@@ -6329,12 +6428,19 @@ def _phase_analysis(doc, points):
         # offline curve scan below.
         tp = (saved_tp['t'], saved_tp['tempF'])
     else:
+        # HUNT-118 (polish round 16): the scan used to stop
+        # at Dry End (or at half the roast with no Dry End) and
+        # skip the charge sample, so a monotonic imported curve
+        # (minimum at charge) found no turning point at all on
+        # the detail page while the same batch's .alog export
+        # reported the charge point. Artisan findTPint scans
+        # charge to FC Start, capped at Drop, charge sample
+        # included; mirror that, as _computed_for already does.
+        cap = drop_t
+        if fc_t is not None:
+            cap = fc_t if cap is None else min(cap, fc_t)
         for (t, bt) in points:
-            if t <= 0:
-                continue
-            if dry_t is not None and t >= dry_t:
-                break
-            if dry_t is None and total and t > total * 0.5:
+            if cap is not None and t > cap:
                 break
             # HUNT-89: less-than-or-equal keeps the LATEST
             # sample holding the minimum, matching Artisan
@@ -7146,7 +7252,11 @@ NQ_INT4, NQ_FLOAT8, NQ_STRING, NQ_DATETIME = 2, 5, 7, 8
 
 NAMED_QUERIES = [
     ('Roastery/Batches/SelectAll', 'Query',
-     "SELECT id, batch_number, roast_start, roast_end, bean_name, drop_temp_f,\n"
+     "SELECT id, batch_number, roast_start, roast_end,\n"
+     "       CASE WHEN data->>'seedNote' IS NOT NULL\n"
+     "            THEN bean_name || ' (stub)'\n"
+     "            ELSE bean_name END AS bean_name,\n"
+     "       drop_temp_f,\n"
      "       data->>'roastDegree' AS roast_degree,\n"
      "       (data->'phases'->>'dtrPct')::double precision AS dtr_pct,\n"
      "       (data->'metadata'->>'ChargeWeightG')::double precision AS charge_g,\n"
@@ -7169,10 +7279,12 @@ NAMED_QUERIES = [
       ('drop_temp_f', NQ_FLOAT8), ('data', NQ_STRING)]),
     ('Roastery/Batches/Update', 'UpdateQuery',
      "UPDATE batches SET bean_name = :bean_name, drop_temp_f = :drop_temp_f,\n"
+     "       roast_end = :roast_end,\n"
      "       data = CAST(:data AS jsonb), updated_at = now()\n"
      "WHERE batch_number = :batch_number",
      [('batch_number', NQ_INT4), ('bean_name', NQ_STRING),
-      ('drop_temp_f', NQ_FLOAT8), ('data', NQ_STRING)]),
+      ('drop_temp_f', NQ_FLOAT8), ('roast_end', NQ_DATETIME),
+      ('data', NQ_STRING)]),
     ('Roastery/Batches/Delete', 'UpdateQuery',
      "DELETE FROM batches WHERE batch_number = :batch_number",
      [('batch_number', NQ_INT4)]),
@@ -7191,15 +7303,20 @@ NAMED_QUERIES = [
      "SELECT COALESCE(MAX(batch_number), 0) AS max_number FROM batches",
      []),
     ('Roastery/Events/InsertPress', 'UpdateQuery',
-     "INSERT INTO batch_events (batch_number, action, t_offset_sec, bean_temp_f, rate_of_rise_f, fan_level, heat_level)\n"
-     "VALUES (:batch_number, :action, :t_offset_sec, :bean_temp_f, :rate_of_rise_f, :fan_level, :heat_level)",
+     "INSERT INTO batch_events (batch_number, action, t_offset_sec, bean_temp_f, rate_of_rise_f, fan_level, heat_level, press_counter)\n"
+     "VALUES (:batch_number, :action, :t_offset_sec, :bean_temp_f, :rate_of_rise_f, :fan_level, :heat_level, :press_counter)\n"
+     "ON CONFLICT (batch_number, press_counter) DO NOTHING",
      [('batch_number', NQ_INT4), ('action', NQ_STRING),
       ('t_offset_sec', NQ_INT4), ('bean_temp_f', NQ_FLOAT8),
       ('rate_of_rise_f', NQ_FLOAT8), ('fan_level', NQ_INT4),
-      ('heat_level', NQ_INT4)]),
+      ('heat_level', NQ_INT4), ('press_counter', NQ_INT4)]),
+    # HUNT-115 (polish round 16): roast order, not insertion
+    # order. pressed_at is the write time, so a press the
+    # reconcile path recovered late used to sort after presses
+    # that happened after it in the roast.
     ('Roastery/Events/SelectByBatch', 'Query',
      "SELECT id, batch_number, action, t_offset_sec, bean_temp_f, rate_of_rise_f, fan_level, heat_level, pressed_at\n"
-     "FROM batch_events WHERE batch_number = :batch_number ORDER BY pressed_at, id",
+     "FROM batch_events WHERE batch_number = :batch_number ORDER BY t_offset_sec, press_counter, id",
      [('batch_number', NQ_INT4)]),
 ]
 
@@ -7325,7 +7442,15 @@ IDENTITY_KEYS = (
 
 GRAMS = {'g': 1.0, 'kg': 1000.0, 'lb': 453.59237,
          'lbs': 453.59237, 'oz': 28.349523125}
-VOLUMES = {'ml': 1.0, 'l': 1000.0, 'oz': 29.5735,
+# HUNT-113 (polish round 16): Artisan's volume_units are
+# ('l', 'gal', 'qt', 'pt', 'cup', 'ml') (artisanlib util.py);
+# 'oz' is not an Artisan volume unit at all, and gal/qt/pt/cup
+# used to fall through to a factor of 1.0, so a profile with
+# volume [0.5, 0.65, 'gal'] imported as 0.5 ml instead of
+# 1892.7 ml. US liquid measures, in millilitres.
+VOLUMES = {'ml': 1.0, 'l': 1000.0, 'gal': 3785.411784,
+           'qt': 946.352946, 'pt': 473.176473,
+           'cup': 236.5882365, 'oz': 29.5735,
            'fl oz': 29.5735, 'floz': 29.5735}
 DEFECT_FIELDS = (
     ('DefectHeavyFC', 'heavyFC'), ('DefectLowFC', 'lowFC'),
@@ -7528,7 +7653,11 @@ def _density_from_list(d):
     amount = _num(d[0]) * GRAMS.get(str(d[1]).lower(), 1.0)
     vol = _num(d[2])
     vunit = str(d[3]).lower()
-    liters = vol if vunit == 'l' else vol / 1000.0
+    # HUNT-113: convert through VOLUMES like the volume fields
+    # do; every non 'l' unit used to be treated as
+    # millilitres, so [200, 'g', 1, 'cup'] read as
+    # 200000 g/L instead of about 845 g/L.
+    liters = vol * VOLUMES.get(vunit, 1.0) / 1000.0
     if amount > 0 and liters > 0:
         return amount / liters
     return 0.0
@@ -7885,7 +8014,20 @@ def import_profile(p, filename):
     number = _next_free_number()
     doc, points, params = profile_to_batch(p, number)
     batches._run(batches.NQ_INSERT, params)
-    _insert_points(number, points)
+    # HUNT-111 (polish round 16): a fault during the points
+    # write used to leave the batch row in the log with no
+    # curve while the caller reported a plain import failure,
+    # and the roastUUID dupe check then refused every retry.
+    # Delete the just inserted row (best effort) and re raise,
+    # so a retry imports cleanly.
+    try:
+        _insert_points(number, points)
+    except:
+        try:
+            batches.delete_batch(number)
+        except:
+            pass
+        raise
     src_nr = p.get('roastbatchnr')
     msg = 'Imported %s as batch %d' % (filename or 'file', number)
     if src_nr:
@@ -8646,11 +8788,21 @@ def batch_to_profile(batch):
                 int(round(_from_f(fc_t, 'C'))) if fc_t else 200,
                 230]
 
-    if settings.get('weightRaw'):
-        profile['weight'] = list(settings['weightRaw'])
-    else:
-        profile['weight'] = [_num(meta.get('ChargeWeightG')),
-                             _num(meta.get('WeightOutG')), 'g']
+    # HUNT-114 (polish round 16): the imported weight list
+    # (settings weightRaw) used to be written back verbatim,
+    # silently discarding editor changes to ChargeWeightG and
+    # WeightOutG, while the computed block in the same file
+    # used the edited values. The metadata is the current
+    # truth, as it already was for batches never imported.
+    profile['weight'] = [_num(meta.get('ChargeWeightG')),
+                         _num(meta.get('WeightOutG')), 'g']
+    # Same staleness for the imported density list, which the
+    # settings copy above carries verbatim: rebuild it from
+    # the stored DensityGL (a 1 litre list at that many grams
+    # is exactly that density in g/L) when one is recorded.
+    if _num(meta.get('DensityGL')) > 0:
+        profile['density'] = [_num(meta.get('DensityGL')), 'g',
+                              1000.0, 'ml']
     if 'RoasterType' in meta:
         profile['roastertype'] = str(meta.get('RoasterType')
                                       or '')
@@ -9060,6 +9212,21 @@ STYLESHEET_CSS = """/* Roastery advanced stylesheet.
 .psc-roast-stats-line { white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; }
 
+/* Alarm and prompt banner text (polish round 16, HUNT-119):
+   the banner strip is a reserved 38px slot, part of the
+   nothing-moves-during-a-roast design, but its text is every
+   active alarm joined with ' | ', and with the default alarm
+   set near Drop that is an 81 character string which wrapped
+   to two lines at 360px and grew the strip, shifting the
+   whole page in the last minute of the roast (measured live:
+   two full lines in the strip). Single line with an ellipsis
+   keeps the strip exactly one line tall in both themes; the
+   first alarms stay readable and the full set remains on the
+   Alarms settings section. min-width 0 lets the flex item
+   actually shrink below its content size. */
+.psc-roast-banner-text { white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; min-width: 0; }
+
 /* Phase bar segments size by percentage widths that must sum
    to the bar. Two sizing traps, both proven at 360px on
    2026-11-13: content-box sizing added the segments' padding
@@ -9327,6 +9494,16 @@ STYLESHEET_CSS = """/* Roastery advanced stylesheet.
 .psc-roast-cell-hidden { display: none !important; }
 """
 
+# Four live style-class resource.json files carry the gateway's
+# lastModificationSignature attribute; the rest carry empty
+# attributes. Three others end with a trailing newline. These
+# sets reproduce the live files byte for byte (round 16 resync).
+STYLE_RESOURCE_SIGNATURE = frozenset(
+    ('roast-btn-compact', 'roast-gear-btn', 'roast-tab-active',
+     'roast-tab-item'))
+STYLE_RESOURCE_TRAILING_NEWLINE = frozenset(
+    ('roast-btn-dock', 'roast-btn-dock-lead', 'roast-btn-nowrap'))
+
 def write_styles():
     base = os.path.join(PROJ, 'com.inductiveautomation.perspective',
                         'style-classes')
@@ -9335,10 +9512,15 @@ def write_styles():
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, 'style.json'), 'w') as f:
             json.dump({'base': {'style': style}}, f, indent=2)
+        attrs = ({'lastModificationSignature': ''}
+                 if name in STYLE_RESOURCE_SIGNATURE else {})
         r = {'scope': 'G', 'version': 1, 'restricted': False,
-             'overridable': True, 'files': ['style.json'], 'attributes': {}}
+             'overridable': True, 'files': ['style.json'],
+             'attributes': attrs}
         with open(os.path.join(d, 'resource.json'), 'w') as f:
             json.dump(r, f, indent=2)
+            if name in STYLE_RESOURCE_TRAILING_NEWLINE:
+                f.write('\n')
     sd = os.path.join(PROJ, 'com.inductiveautomation.perspective',
                       'stylesheet')
     os.makedirs(sd, exist_ok=True)
@@ -14970,7 +15152,7 @@ def _chart_card(basis, legend_on=True, trace_basis='250px',
                           [chart_title, bg_chip], align='flex-start',
                           classes='roast-gap-8',
                           position={'grow': 0, 'shrink': 0,
-                                    'basis': '44px'})
+                                    'basis': 'auto'})
     else:
         chart_head = flex('ChartHead', 'row', [chart_title, bg_chip],
                           justify='space-between', align='center',
@@ -19004,7 +19186,7 @@ def roast_page_view():
                     "position": {
                       "grow": 0,
                       "shrink": 0,
-                      "basis": "44px"
+                      "basis": "auto"
                     }
                   },
                   {
@@ -27486,6 +27668,44 @@ def write_view(path_parts, doc):
 OLD_VIEWS = ('Log', 'BatchCard', 'StatTile', 'ControlPanel', 'Settings',
              'Probe', 'Main', 'Config', 'Batches')
 
+def write_page_config():
+    pc = os.path.join(PROJ, 'com.inductiveautomation.perspective',
+                      'page-config')
+    os.makedirs(pc, exist_ok=True)
+    editor_dock = {'id': 'batchEditor', 'viewPath': 'Views/BatchEdit',
+                   'size': 480, 'show': 'onDemand', 'content': 'cover',
+                   'anchor': 'fixed', 'handle': 'hide',
+                   'resizable': False}
+    app_settings_dock = {'id': 'appSettings',
+                         'viewPath': 'Views/AppSettings', 'size': 420,
+                         'show': 'onDemand', 'content': 'cover',
+                         'anchor': 'fixed', 'handle': 'hide',
+                         'resizable': False}
+    tab_dock = {'id': 'tabbar', 'viewPath': 'Views/TabBar', 'size': 62,
+                'show': 'visible', 'content': 'push', 'anchor': 'fixed',
+                'handle': 'hide', 'resizable': False}
+    hud_dock = {'id': 'hud', 'viewPath': 'Views/HudBar', 'size': 54,
+                'show': 'visible', 'content': 'cover', 'anchor': 'fixed',
+                'handle': 'hide', 'resizable': False}
+    pages = {'/': {'viewPath': 'Views/RoastPage',
+                   'docks': {'right': [app_settings_dock]}},
+             '/settings': {'viewPath': 'Views/SettingsPage',
+                           'docks': {'right': [app_settings_dock]}},
+             '/log': {'viewPath': 'Views/LogPage',
+                      'docks': {'right': [editor_dock,
+                                          app_settings_dock]}},
+             '/log/detail': {'viewPath': 'Views/BatchDetail',
+                             'docks': {'right': [editor_dock,
+                                                 app_settings_dock]}}}
+    config = {'pages': pages,
+              'sharedDocks': {'cornerPriority': 'top-bottom',
+                              'bottom': [tab_dock], 'top': [hud_dock]}}
+    with open(os.path.join(pc, 'config.json'), 'w') as f:
+        json.dump(config, f, indent=2)
+    r = dict(RES, files=['config.json'])
+    with open(os.path.join(pc, 'resource.json'), 'w') as f:
+        json.dump(r, f, indent=2)
+
 def main():
     views_root = os.path.join(PROJ, 'com.inductiveautomation.perspective',
                               'views', 'Views')
@@ -27526,32 +27746,7 @@ def main():
     write_view(['Views', 'Controls'], controls_view())
     write_view(['Views', 'MetaCard'], meta_card_view())
     write_view(['Views', 'Summary'], summary_view())
-    pc = os.path.join(PROJ, 'com.inductiveautomation.perspective',
-                      'page-config')
-    os.makedirs(pc, exist_ok=True)
-    editor_dock = {'id': 'batchEditor', 'viewPath': 'Views/BatchEdit',
-                   'size': 480, 'show': 'onDemand', 'content': 'cover',
-                   'anchor': 'fixed', 'handle': 'hide',
-                   'resizable': False}
-    tab_dock = {'id': 'tabbar', 'viewPath': 'Views/TabBar', 'size': 62,
-                'show': 'visible', 'content': 'push', 'anchor': 'fixed',
-                'handle': 'hide', 'resizable': False}
-    hud_dock = {'id': 'hud', 'viewPath': 'Views/HudBar', 'size': 54,
-                'show': 'visible', 'content': 'cover', 'anchor': 'fixed',
-                'handle': 'hide', 'resizable': False}
-    pages = {'/': {'viewPath': 'Views/RoastPage'},
-             '/settings': {'viewPath': 'Views/SettingsPage'},
-             '/log': {'viewPath': 'Views/LogPage',
-                      'docks': {'right': [editor_dock]}},
-             '/log/detail': {'viewPath': 'Views/BatchDetail',
-                             'docks': {'right': [editor_dock]}}}
-    config = {'pages': pages,
-              'sharedDocks': {'bottom': [tab_dock], 'top': [hud_dock]}}
-    with open(os.path.join(pc, 'config.json'), 'w') as f:
-        json.dump(config, f, indent=2)
-    r = dict(RES, files=['config.json'])
-    with open(os.path.join(pc, 'resource.json'), 'w') as f:
-        json.dump(r, f, indent=2)
+    write_page_config()
     write_library()
     write_named_queries()
     write_styles()

@@ -3778,7 +3778,7 @@
                     "position": {
                       "grow": 0,
                       "shrink": 0,
-                      "basis": "44px"
+                      "basis": "auto"
                     }
                   },
                   {

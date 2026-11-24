@@ -98,7 +98,15 @@ IDENTITY_KEYS = (
 
 GRAMS = {'g': 1.0, 'kg': 1000.0, 'lb': 453.59237,
          'lbs': 453.59237, 'oz': 28.349523125}
-VOLUMES = {'ml': 1.0, 'l': 1000.0, 'oz': 29.5735,
+# HUNT-113 (polish round 16): Artisan's volume_units are
+# ('l', 'gal', 'qt', 'pt', 'cup', 'ml') (artisanlib util.py);
+# 'oz' is not an Artisan volume unit at all, and gal/qt/pt/cup
+# used to fall through to a factor of 1.0, so a profile with
+# volume [0.5, 0.65, 'gal'] imported as 0.5 ml instead of
+# 1892.7 ml. US liquid measures, in millilitres.
+VOLUMES = {'ml': 1.0, 'l': 1000.0, 'gal': 3785.411784,
+           'qt': 946.352946, 'pt': 473.176473,
+           'cup': 236.5882365, 'oz': 29.5735,
            'fl oz': 29.5735, 'floz': 29.5735}
 DEFECT_FIELDS = (
     ('DefectHeavyFC', 'heavyFC'), ('DefectLowFC', 'lowFC'),
@@ -301,7 +309,11 @@ def _density_from_list(d):
     amount = _num(d[0]) * GRAMS.get(str(d[1]).lower(), 1.0)
     vol = _num(d[2])
     vunit = str(d[3]).lower()
-    liters = vol if vunit == 'l' else vol / 1000.0
+    # HUNT-113: convert through VOLUMES like the volume fields
+    # do; every non 'l' unit used to be treated as
+    # millilitres, so [200, 'g', 1, 'cup'] read as
+    # 200000 g/L instead of about 845 g/L.
+    liters = vol * VOLUMES.get(vunit, 1.0) / 1000.0
     if amount > 0 and liters > 0:
         return amount / liters
     return 0.0
@@ -658,7 +670,20 @@ def import_profile(p, filename):
     number = _next_free_number()
     doc, points, params = profile_to_batch(p, number)
     batches._run(batches.NQ_INSERT, params)
-    _insert_points(number, points)
+    # HUNT-111 (polish round 16): a fault during the points
+    # write used to leave the batch row in the log with no
+    # curve while the caller reported a plain import failure,
+    # and the roastUUID dupe check then refused every retry.
+    # Delete the just inserted row (best effort) and re raise,
+    # so a retry imports cleanly.
+    try:
+        _insert_points(number, points)
+    except:
+        try:
+            batches.delete_batch(number)
+        except:
+            pass
+        raise
     src_nr = p.get('roastbatchnr')
     msg = 'Imported %s as batch %d' % (filename or 'file', number)
     if src_nr:
@@ -1419,11 +1444,21 @@ def batch_to_profile(batch):
                 int(round(_from_f(fc_t, 'C'))) if fc_t else 200,
                 230]
 
-    if settings.get('weightRaw'):
-        profile['weight'] = list(settings['weightRaw'])
-    else:
-        profile['weight'] = [_num(meta.get('ChargeWeightG')),
-                             _num(meta.get('WeightOutG')), 'g']
+    # HUNT-114 (polish round 16): the imported weight list
+    # (settings weightRaw) used to be written back verbatim,
+    # silently discarding editor changes to ChargeWeightG and
+    # WeightOutG, while the computed block in the same file
+    # used the edited values. The metadata is the current
+    # truth, as it already was for batches never imported.
+    profile['weight'] = [_num(meta.get('ChargeWeightG')),
+                         _num(meta.get('WeightOutG')), 'g']
+    # Same staleness for the imported density list, which the
+    # settings copy above carries verbatim: rebuild it from
+    # the stored DensityGL (a 1 litre list at that many grams
+    # is exactly that density in g/L) when one is recorded.
+    if _num(meta.get('DensityGL')) > 0:
+        profile['density'] = [_num(meta.get('DensityGL')), 'g',
+                              1000.0, 'ml']
     if 'RoasterType' in meta:
         profile['roastertype'] = str(meta.get('RoasterType')
                                       or '')

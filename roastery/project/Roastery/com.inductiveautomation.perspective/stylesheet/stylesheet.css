@@ -49,6 +49,21 @@
 .psc-roast-stats-line { white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; }
 
+/* Alarm and prompt banner text (polish round 16, HUNT-119):
+   the banner strip is a reserved 38px slot, part of the
+   nothing-moves-during-a-roast design, but its text is every
+   active alarm joined with ' | ', and with the default alarm
+   set near Drop that is an 81 character string which wrapped
+   to two lines at 360px and grew the strip, shifting the
+   whole page in the last minute of the roast (measured live:
+   two full lines in the strip). Single line with an ellipsis
+   keeps the strip exactly one line tall in both themes; the
+   first alarms stay readable and the full set remains on the
+   Alarms settings section. min-width 0 lets the flex item
+   actually shrink below its content size. */
+.psc-roast-banner-text { white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; min-width: 0; }
+
 /* Phase bar segments size by percentage widths that must sum
    to the bar. Two sizing traps, both proven at 360px on
    2026-11-13: content-box sizing added the segments' padding

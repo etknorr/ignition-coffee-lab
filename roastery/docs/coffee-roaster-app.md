@@ -11094,3 +11094,182 @@ results file.
 HUNT-53's ring-clearing app fix remains unbuilt, awaiting
 Eric's word; the PressSlots lab mitigation stays in effect.
 Next HUNT number is HUNT-111.
+
+### Polish round 16: builder resync for the round 15 leftovers, fresh hunt HUNT-111 to HUNT-120, full roast axis proof (coordinator, 2026-11-24)
+
+Three work items: resync the builder for the items round 15
+flagged but did not touch, verify the round 15 vertical axis
+change through a full live roast at 360px, and a fresh hunting
+pass from HUNT-111.
+
+Builder resync (proof: the new suite verify_r16_sync.py, 102
+checks, all green). The builder's write_page_config() now
+emits the live page-config: the appSettings right dock (420,
+onDemand) on all four pages and sharedDocks cornerPriority
+"top-bottom". The SelectAll named query now carries the live
+seedNote CASE that appends " (stub)" to the bean name, and
+InsertPress carries the press_counter column and parameter
+with ON CONFLICT (batch_number, press_counter) DO NOTHING.
+write_styles() reproduces the live style-class resource.json
+formatting byte for byte: four classes (roast-btn-compact,
+roast-gear-btn, roast-tab-active, roast-tab-item) carry the
+lastModificationSignature attribute and three
+(roast-btn-dock, roast-btn-dock-lead, roast-btn-nowrap) carry
+a trailing newline. All 92 style-class resource.json files,
+the page-config pair, and the two queries are byte identical
+across builder emission, repo, and gateway. Audit note: the
+builder still has no definitions for Roastery/Events/
+SelectByCounter and Roastery/Events/DeleteByBatch, which
+exist live and are called by the library; SelectByCounter's
+live resource.json has a custom description and compact
+formatting the builder's tuple format cannot express. They
+were left as live-only resources this round rather than
+forcing the format; the two queries the round did change
+(Update, SelectByBatch, below) joined the sync suite's
+byte-identity checks.
+
+Full roast axis proof (new suite verify_r16_roast360.py, 55
+checks, all green): one simulated roast driven end to end at
+360px in Dark (New Roast, Charge, Dry End, FC Start, FC End,
+SC Start, SC End, Drop, Cool, Finish, Save Batch, Reset). At
+every stage all 14 gateway y axes keep title rotation -90 gap
+6 and label rotation -90 gap 2, the plot stays at least 150px
+wide, no horizontal overflow, no clipped leaf text, stamps
+land in order, and the lab restores to 7 batches, 101 series,
+0 events with ThemeMode System. The run's single harness fix:
+the phase line check now parses the live abbreviated shape
+("Dry 0:20 30% - Mai 0:10 15% - Dev 0:37 55% - DTR 55%")
+instead of looking for the full phase names. Screenshots in
+~/workspace/ignition-lab/r16-screenshots/ (idle, charge,
+dry-end, fc-start, fc-end, sc-start, sc-end, drop, complete).
+
+Fresh hunt (new suite verify_r16_freshhunt.py, 35 checks,
+all green; every fix proven live through gateway scratch
+snippets or the browser):
+
+- HUNT-111 (high): a fault during the series write of Save
+  Batch or of an .alog import left the batch row in the log
+  with no curve, the note claimed nothing was written, and
+  the already-saved / roastUUID guards blocked every retry.
+  Both paths now delete the just inserted row (best effort)
+  and re-raise, so a retry saves cleanly; in Group capture
+  mode the save path does not compensate (the transaction
+  group already wrote the series live, so there is nothing
+  partial). If the compensating delete also fails, the save
+  note says the batch is in the log without its curve.
+  Proven by fault injection on the import path: injected
+  series fault raises, no batch remains, retry imports with
+  its full curve.
+- HUNT-112: the saved batch AUC included post-Drop cooling
+  samples (130.5 vs 115.0 F min on the proof curve) while
+  the live AUC and the Artisan export end at Drop.
+  curve_auc now clips at the Drop elapsed time with the
+  crossing segment interpolated, and build_document passes
+  DropElapsedSec.
+- HUNT-113: Artisan import treated gal/qt/pt/cup volumes
+  as millilitres (a [0.5, 0.65, 'gal'] volume imported as
+  0.5 ml instead of 1892.7 ml) and every non-litre density
+  volume as ml ([200, 'g', 1, 'cup'] read 200,000 g/L
+  instead of about 845). VOLUMES now carries Artisan's
+  volume_units factors and _density_from_list converts
+  through it.
+- HUNT-114: .alog export wrote the imported weight list
+  back verbatim, discarding editor edits (an edited 250 g
+  charge exported as the imported 200 g while the same
+  file's computed block used 250 g), and copied the
+  imported density list from settings. Export now builds
+  weight from the edited metadata and rebuilds density
+  from the stored DensityGL.
+- HUNT-115: the BatchDetail press log ordered by
+  pressed_at (write time), so a press recovered late by
+  the reconcile path sorted after presses that happened
+  after it. Events/SelectByBatch now orders by
+  t_offset_sec, press_counter, id (roast order).
+- HUNT-116: the editor never maintained the relational
+  roast_end (the JSON export header kept the pre-edit end
+  after a Drop move), and manual create stamped
+  roast_start = roast_end = the creation instant next to
+  the typed total, with no roastStart in the document at
+  all. The Update query now carries roast_end from the
+  document, and create seeds roastStart before applying
+  events so the derived end lands in the insert.
+- HUNT-117: parse_mmss accepted '04:90' as 330 and
+  '-1:30' as -30, and the create path could save negative
+  event times. Components are range checked (seconds
+  under 60, nothing negative) and _apply_events rejects
+  negative times outright.
+- HUNT-118: the offline turning point scan in
+  _phase_analysis stopped at Dry End (or half the roast)
+  and skipped the charge sample, so a monotonic imported
+  curve showed no turning point on the detail page while
+  its .alog export reported the charge point. The scan
+  now mirrors Artisan findTPint: charge to FC Start,
+  capped at Drop, charge sample included, latest tie.
+- HUNT-119: the alarm banner text (every active alarm
+  joined with ' | ') wrapped to two lines at 360px with
+  the default alarm set near Drop and grew its reserved
+  38px strip, shifting the whole page in the last minute
+  of the roast (screenshot proof before the fix). The
+  banner text is single line with an ellipsis in the
+  advanced stylesheet (.psc-roast-banner-text), so the
+  strip stays one line tall; measured 19px after the fix.
+- HUNT-120: the phone chart head was hard sized to 44px
+  for a title plus the background (ghost) label; a ghost
+  with a realistic long bean name wrapped the label to
+  two lines and spilled 4px past the head into the
+  chart's marker label band (measured). The stacked head
+  now sizes to content (basis auto); after the fix the
+  head grows to 55px and the chip bottom equals the head
+  bottom.
+
+Probed and dismissed by measurement this round: the phone
+hunter's first three reports (Settings rows overflowing at
+360px, the Log showing one unreachable batch, the
+BatchDetail presses heading clipped) did not reproduce in
+either theme or column set (document scrollWidth 360, no
+clipped leaves, all 7 batches rendered, no vertical
+clipping); the App Settings (420) and Batch Editor (480)
+docks, which Perspective clamps to the viewport (measured
+left 0, width 360); the BatchDetail MidRow 820px stack
+(SummaryCard scrollHeight equals clientHeight); the 28px
+analyzer scrub buttons (the stylesheet's deliberate compact
+exception); and the amber marker label color in Light theme
+(recorded as a polish candidate: it needs self plumbed
+through six transform call sites, not taken this round).
+The compact marker label docstring no longer claims the
+events strip sits directly under the phone chart; it is
+further down the scroll column, and the docstring now says
+so.
+
+Lab incidents this round: three VM replacements. The
+first took the lab down before the fresh hunt ran
+(Postgres data wiped); the second and third interrupted
+the closing battery at suite 31 and at suite 53 of 54.
+Every recovery ran the proven path (PostgreSQL 16
+reinstall via the OS intent replay, recover-lab.sh,
+commissioning.json valid, gateway RUNNING, reseed to 7
+batches and 101 series, PressSlots cleared, 0 events
+stable), and the battery resumed from its results file
+each time. Two lab harness regexes
+(reseed_from_roastlog.py and verify_roastery_ror.py) still
+expected the builder's pre-r''' CORE_CODE assignment and
+were updated to match; lab tooling only, no repo change.
+
+Closing battery: 54 of 54 entries green counting two
+reruns (~/workspace/ignition-lab/r16-battery/results.txt,
+final entry 2026-11-24 15:30 UTC, ending with
+cleanup_workspace and the r7_udt_diff at 0 differences).
+Honest battery history: validate_roastery_artisan's first
+run returned CHECK REPORT (rc=1) on a single warning, the
+PressEvents "database connection is unavailable" boot
+artifact logged at that morning's gateway start and inside
+the validator's default 15 minute scan window; the rerun
+with the window opened after the boot warning is
+VALIDATION PASS with zero warnings. verify_roastery_ror
+failed its first run instantly on the stale lab extraction
+regex above and passed its rerun (ALL ROR CHECKS PASSED).
+Every other suite passed on its first run.
+
+HUNT-53's ring-clearing app fix remains unbuilt, awaiting
+Eric's word; the PressSlots lab mitigation stays in effect.
+Next HUNT number is HUNT-121.

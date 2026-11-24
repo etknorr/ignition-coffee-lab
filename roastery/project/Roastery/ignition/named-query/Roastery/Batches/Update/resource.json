@@ -27,6 +27,11 @@
       },
       {
         "type": "Parameter",
+        "identifier": "roast_end",
+        "sqlType": 8
+      },
+      {
+        "type": "Parameter",
         "identifier": "data",
         "sqlType": 7
       }

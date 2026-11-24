@@ -146,17 +146,32 @@ def roast_degree(drop_temp_f):
     return 'Italian'
 
 
-def curve_auc(points, charge_temp_f):
+def curve_auc(points, charge_temp_f, end_sec=None):
     """Trapezoid area between the bean curve and the charge temp, in
-    degree F minutes (same definition as the v2 roast log save)."""
+    degree F minutes (same definition as the v2 roast log save).
+    HUNT-112 (polish round 16): when end_sec is given the area
+    stops there, with the crossing segment clipped by linear
+    interpolation. build_document passes the Drop elapsed time:
+    curve capture keeps appending through Cooling, and the saved
+    AUC used to include that post Drop tail while the live AUC
+    (core.update_live_auc) and the Artisan export both end at
+    Drop, so the BatchDetail AUC tile disagreed with both."""
     auc = 0.0
     base = charge_temp_f or 0.0
     for i in range(len(points) - 1):
         a, b = points[i], points[i + 1]
-        dt_min = (b['t'] - a['t']) / 60.0
+        t1, t2, bt2 = a['t'], b['t'], b['bt']
+        if end_sec is not None:
+            if t1 >= end_sec:
+                continue
+            if t2 > end_sec:
+                frac = (float(end_sec) - t1) / float(t2 - t1)
+                bt2 = a['bt'] + (b['bt'] - a['bt']) * frac
+                t2 = end_sec
+        dt_min = (t2 - t1) / 60.0
         if dt_min <= 0:
             continue
-        avg = (a['bt'] + b['bt']) / 2.0
+        avg = (a['bt'] + bt2) / 2.0
         if avg > base:
             auc += (avg - base) * dt_min
     return auc
@@ -236,7 +251,8 @@ def build_document():
         'phases': {'dryingSec': dry, 'maillardSec': fc - dry,
                    'developmentSec': total - fc,
                    'dtrPct': ((total - fc) * 100.0 / total) if total > 0 else 0.0},
-        'auc': curve_auc(core.curve_points(), vals['ChargeTempF']),
+        'auc': curve_auc(core.curve_points(), vals['ChargeTempF'],
+                      vals['DropElapsedSec']),
         'aucDetail': {'valueFMin': vals['AucLiveFMin'],
                       'sinceFcFMin': vals['AucSinceFcFMin'],
                       'baseF': vals['AucBaseTempF'],
@@ -386,6 +402,7 @@ def save_current_batch(self):
     connection heals saves completely; when a save did land,
     the already saved guard below still answers the retry."""
     number = None
+    partial = {'kept': False}
     try:
         vals = core.read_members(['BatchNumber', 'BeanName', 'ChargeTime',
                                   'DropTime', 'DropTempF'])
@@ -410,7 +427,32 @@ def save_current_batch(self):
             'bean_name': vals['BeanName'],
             'drop_temp_f': vals['DropTempF'],
             'data': system.util.jsonEncode(doc)})
-        _insert_series(vals['BatchNumber'], core.curve_points())
+        # HUNT-111 (polish round 16): a fault DURING the series
+        # write used to leave the batch row in the log with no
+        # curve while the note below claimed nothing was
+        # written, and the already saved guard then blocked
+        # every retry. In library capture mode the series write
+        # is the only write after the Insert, so a failure there
+        # deletes the just inserted row again (best effort) and
+        # a retry saves cleanly. In Group capture mode the
+        # transaction group already wrote the series rows live
+        # and _insert_series only reads them back, so there is
+        # nothing partial to compensate.
+        _mode = core.read_members(
+            ['SeriesCaptureMode'])['SeriesCaptureMode']
+        if _mode == 'Group':
+            _insert_series(vals['BatchNumber'], core.curve_points())
+        else:
+            try:
+                _insert_series(vals['BatchNumber'],
+                               core.curve_points())
+            except:
+                try:
+                    _run(NQ_DELETE, {
+                        'batch_number': vals['BatchNumber']})
+                except:
+                    partial['kept'] = True
+                raise
         # The staged BBP metrics were written into this batch
         # document by build_document; consume them so a later
         # save cannot inherit them (Tier 3 item 20).
@@ -425,10 +467,17 @@ def save_current_batch(self):
         # runNamedQuery throws a Java exception on a faulted
         # connection, which except Exception does not catch
         # in Jython (see roastery.core.record_press).
-        msg = ('Save failed: batch %s was not saved. The database '
-               'connection failed, so nothing was written. Try '
-               'again once the connection is back.'
-               % (number if number is not None else '?'))
+        if partial['kept']:
+            msg = ('Save failed partway: batch %s is in the log '
+                   'without its curve. Delete it from the Log '
+                   'tab, then save again.'
+                   % (number if number is not None else '?'))
+        else:
+            msg = ('Save failed: batch %s was not saved. The '
+                   'database connection failed, so nothing was '
+                   'written. Try again once the connection is '
+                   'back.'
+                   % (number if number is not None else '?'))
         try:
             self.view.custom.saveNote = msg
         except:
@@ -583,10 +632,28 @@ def _update_submit(self, event):
         self.view.custom.editNote = err
         return
     _recompute_loss(doc)
+    # HUNT-116 (polish round 16): the Update query never
+    # maintained the relational roast_end, so an edit that
+    # moved Drop left the JSON export header (build_json_text
+    # reads the relational columns) showing the pre edit end.
+    # The document is the source of truth after _apply_events:
+    # a present roastEnd wins, an explicit None (Drop cleared)
+    # clears the column, and a document without the key keeps
+    # the stored value.
+    end_param = batch['roastEnd']
+    if doc.get('roastEnd'):
+        try:
+            end_param = system.date.parse(
+                doc['roastEnd'], "yyyy-MM-dd'T'HH:mm:ss")
+        except Exception:
+            pass
+    elif 'roastEnd' in doc:
+        end_param = None
     _run(NQ_UPDATE, {
         'batch_number': batch_number,
         'bean_name': doc.get('beanName'),
         'drop_temp_f': doc.get('dropTempF'),
+        'roast_end': end_param,
         'data': system.util.jsonEncode(doc)})
     self.view.custom.editNote = 'Saved batch %d.' % batch_number
     core.show_toast(self, 'Batch %d saved' % batch_number, 'success')
@@ -612,6 +679,15 @@ def _create_submit(self, event):
            'totalSec': 0, 'phases': {}, 'events': {}, 'metadata': {},
            'manualEntry': True}
     doc = _apply_form(doc, event)
+    # HUNT-116 (polish round 16): a created batch carried no
+    # roastStart at all, so _apply_events could not derive the
+    # event timestamps or roastEnd from the typed times, and
+    # the insert below stamped roast_start = roast_end = the
+    # creation instant next to a typed totalSec. Seed the
+    # start as the creation moment BEFORE the events are
+    # applied; the insert then carries the derived end.
+    now = system.date.now()
+    doc['roastStart'] = _iso(now)
     # HUNT-80: the create path never applied the event fields
     # the form invites the user to type, so a manually created
     # batch with typed event times saved with no events, no
@@ -625,9 +701,16 @@ def _create_submit(self, event):
         self.view.custom.editNote = err
         return
     _recompute_loss(doc)
-    now = system.date.now()
+    end_param = now
+    if doc.get('roastEnd'):
+        try:
+            end_param = system.date.parse(
+                doc['roastEnd'], "yyyy-MM-dd'T'HH:mm:ss")
+        except Exception:
+            end_param = now
     _run(NQ_INSERT, {
-        'batch_number': number, 'roast_start': now, 'roast_end': now,
+        'batch_number': number, 'roast_start': now,
+        'roast_end': end_param,
         'bean_name': doc.get('beanName') or '',
         'drop_temp_f': doc.get('dropTempF') or 0.0,
         'data': system.util.jsonEncode(doc)})
@@ -1093,8 +1176,19 @@ def parse_mmss(text):
         parts = s.split(':')
         if len(parts) != 2:
             raise ValueError('bad time')
-        return int(parts[0]) * 60 + int(float(parts[1]))
-    return int(float(s))
+        minutes = int(parts[0])
+        seconds = float(parts[1])
+        # HUNT-117 (polish round 16): range check the parts.
+        # '04:90' used to parse as 330 (silently read as 5:30)
+        # and '-1:30' as -30, and the create path has no charge
+        # anchor, so a negative event time could be saved.
+        if minutes < 0 or seconds < 0 or seconds >= 60:
+            raise ValueError('bad time')
+        return minutes * 60 + int(seconds)
+    total = int(float(s))
+    if total < 0:
+        raise ValueError('bad time')
+    return total
 
 
 def _apply_events(doc, payload):
@@ -1140,6 +1234,10 @@ def _apply_events(doc, payload):
                                'tempF': temp}
     new_events['custom'] = events.get('custom') or []
     seq = [(k, new_events[k]['t']) for k in order if new_events.get(k)]
+    for _k, _t in seq:
+        if _t < 0:
+            return ('Event times cannot be negative. '
+                    'Nothing was saved.')
     for i in range(len(seq) - 1):
         if seq[i][1] >= seq[i + 1][1]:
             return ('%s must come before %s. Nothing was saved.'
@@ -1709,12 +1807,19 @@ def _phase_analysis(doc, points):
         # offline curve scan below.
         tp = (saved_tp['t'], saved_tp['tempF'])
     else:
+        # HUNT-118 (polish round 16): the scan used to stop
+        # at Dry End (or at half the roast with no Dry End) and
+        # skip the charge sample, so a monotonic imported curve
+        # (minimum at charge) found no turning point at all on
+        # the detail page while the same batch's .alog export
+        # reported the charge point. Artisan findTPint scans
+        # charge to FC Start, capped at Drop, charge sample
+        # included; mirror that, as _computed_for already does.
+        cap = drop_t
+        if fc_t is not None:
+            cap = fc_t if cap is None else min(cap, fc_t)
         for (t, bt) in points:
-            if t <= 0:
-                continue
-            if dry_t is not None and t >= dry_t:
-                break
-            if dry_t is None and total and t > total * 0.5:
+            if cap is not None and t > cap:
                 break
             # HUNT-89: less-than-or-equal keeps the LATEST
             # sample holding the minimum, matching Artisan

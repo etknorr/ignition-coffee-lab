@@ -2042,8 +2042,9 @@ def event_reference_lines_compact():
     per second, so two labels in the top band need roughly
     175 s of separation not to touch. An event closer than
     that to the previous labeled event keeps its line and
-    drops its label; the events strip directly under the
-    phone chart names every event, so nothing is lost."""
+    drops its label; the name still lives in the events
+    strip further down the phone scroll column and in the
+    phase line, so nothing is lost."""
     return _ref_items(_live_events(), top_gap=175.0)
 
 
