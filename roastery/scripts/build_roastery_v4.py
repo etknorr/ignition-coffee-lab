@@ -9550,8 +9550,13 @@ def tile_view():
                       'props.style.classes': {'binding': prop_binding(
                           'view.params.valueClass')}})
     unit = label('UnitLabel', '', 'roast-unit',
+                 position={'grow': 0, 'shrink': 0, 'basis': 'auto'},
                  prop_config={'props.text': {'binding': prop_binding(
                      'view.params.unit')}})
+    # The live file serializes this component with position
+    # after propConfig (Designer order), not the label()
+    # helper's position before propConfig.
+    unit['position'] = unit.pop('position')
     row = flex('ValueRow', 'row', [value, unit], align='baseline',
                classes='roast-gap-8')
     root = flex('root', 'column', [accent_bar, title, row],
@@ -9621,6 +9626,12 @@ def event_embed(name, disp_name, stem, custom_idx=None):
             f"{ref(elapsed)} >= 0")}}
     if nm:
         pc['props.params.name'] = nm
+        # An unnamed custom slot hides its cell entirely (the
+        # advanced stylesheet carries .roast-cell-hidden, since
+        # the style class compiler strips display).
+        pc['props.style.classes'] = {'binding': expr_binding(
+            f"if({ref(T(f'CustomEvent{custom_idx}Name'))} = '', "
+            f"'roast-cell-hidden', '')")}
     params = {'name': disp_name, 'timeText': '--:--', 'tempText': '---',
               'done': False}
     return embed(name, 'Views/EventCell', params,
@@ -9839,76 +9850,522 @@ def stepper_big(name, caption, member, color_class):
 
 
 def controls_view():
-    """Desktop control rail: primary flow prominent and in
-    sequence, secondary events grouped and subordinate, big
-    steppers, then session actions."""
-    st = _st_expr()
-    roasting = f"{st} = 'Roasting'"
-    heading = label('Heading', 'Roaster Controls', 'roast-section-title')
-    mode = label('ModePill', 'Off', 'roast-mode-pill',
-                 prop_config={
-                     'props.text': {'binding': expr_binding(
-                         f"'MODE ' + {ref(T('Mode'))}")},
-                     'props.style.backgroundColor': {'binding': {
-                         'type': 'tag',
-                         'config': {'tagPath': T('Mode'), 'mode': 'direct',
-                                    'bidirectional': False},
-                         'transforms': [{'type': 'map',
-                             'inputType': 'scalar', 'outputType': 'color',
-                             'fallback': '#6b7280',
-                             'mappings': [
-                                 {'input': 'Off', 'output': '#6b7280'},
-                                 {'input': 'Roast', 'output': '#dc2626'},
-                                 {'input': 'Cool', 'output': '#0284c7'}]}]}}})
-    head = flex('HeadRow', 'row', [heading, mode],
-                justify='space-between', align='center')
-    primary_cap = label('PrimaryCap', 'Primary flow', 'roast-caption')
-    primary = flex('PrimaryRow', 'row', primary_event_buttons(''),
-                   wrap='wrap', classes='roast-gap-8')
-    for b in primary['children']:
-        b['position'] = {'grow': 1, 'shrink': 1, 'basis': '46%'}
-    secondary_cap = label('SecondaryCap', 'More events', 'roast-caption')
-    secondary = flex('SecondaryRow', 'row', [
-        ev_btn('FCEndButton', 'FC End', 'roast-btn-blue',
-               f"{roasting} && {_ev_expr('FirstCrackStart')} >= 0 && {_ev_expr('FirstCrackEnd')} < 0",
-               "roastery.core.stamp_event('FirstCrackEnd', 'First Crack End')"),
-        ev_btn('SCStartButton', 'SC Start', 'roast-btn-sc',
-               f"{roasting} && {_ev_expr('FirstCrackStart')} >= 0 && {_ev_expr('SecondCrackStart')} < 0",
-               "roastery.core.stamp_event('SecondCrackStart', 'Second Crack Start')"),
-        ev_btn('SCEndButton', 'SC End', 'roast-btn-sc',
-               f"{roasting} && {_ev_expr('SecondCrackStart')} >= 0 && {_ev_expr('SecondCrackEnd')} < 0",
-               "roastery.core.stamp_event('SecondCrackEnd', 'Second Crack End')")],
-        wrap='wrap', classes='roast-gap-8')
-    customs = flex('CustomRow', 'row', [
-        ev_btn(f'CustomButton{i}', f'Custom {i}', 'roast-btn-purple',
-               roasting, f'roastery.core.stamp_custom({i})')
-        for i in (1, 2, 3, 4)],
-        wrap='wrap', classes='roast-gap-8')
-    for i, comp in enumerate(customs['children'], start=1):
-        comp['propConfig']['props.text'] = {'binding': tag_binding(
-            T(f'CustomEvent{i}Name'))}
-    steppers = flex('Steppers', 'row', [
-        stepper_big('FanStepper', 'Fan', 'FanLevel', 'roast-btn-blue'),
-        stepper_big('HeatStepper', 'Heat', 'HeatLevel',
-                    'roast-btn-charge')],
-        wrap='wrap', classes='roast-gap-12')
-    actions = flex('ActionRow', 'row', [
-        ev_btn('CoolButton', 'Cool', 'roast-btn-cool',
-               f"{st} = 'Dropped'", 'roastery.core.cool()'),
-        ev_btn('FinishButton', 'Finish', 'roast-btn-green',
-               f"{st} = 'Cooling'", 'roastery.core.finish()'),
-        ev_btn('ResetButton', 'Reset', 'roast-btn-reset',
-               f"{st} != 'Idle'", 'roastery.core.reset_batch()'),
-        ev_btn('NewRoastButton', 'New Roast', 'roast-btn-primary',
-               f"{st} != 'Roasting'", 'roastery.batches.new_roast(self)')],
-        wrap='wrap', classes='roast-gap-8')
-    root = flex('root', 'column',
-                [head, primary_cap, primary, secondary_cap, secondary,
-                 customs, steppers, actions],
-                classes='roast-card roast-gap-10')
-    return {'custom': {}, 'params': {}, 'propConfig': {},
-            'props': {'defaultSize': {'width': 560, 'height': 470}},
-            'root': root}
+# Resynced 2026-11-24 (round 15): the live view is
+# Designer edited well past what the helpers in this
+# file can build, so the function returns the live
+# view.json verbatim, the same way CORE_CODE carries
+# the live library. A rebuild from the builder
+# reproduces the live file byte for byte.
+    return json.loads(r'''{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 560,
+      "height": 470
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "ControlsRoot"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-card roast-gap-10"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "HeadRow"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "center"
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "Heading"
+            },
+            "props": {
+              "text": "Roaster Controls",
+              "style": {
+                "classes": "roast-section-title"
+              }
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "ModePill"
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            },
+            "props": {
+              "text": "Off",
+              "style": {
+                "classes": "roast-mode-pill"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/Mode}"
+                  }
+                }
+              },
+              "props.style.backgroundColor": {
+                "binding": {
+                  "type": "tag",
+                  "config": {
+                    "tagPath": "[default]Roastery/CurrentBatch/Mode",
+                    "mode": "direct",
+                    "bidirectional": false
+                  },
+                  "transforms": [
+                    {
+                      "type": "map",
+                      "inputType": "scalar",
+                      "outputType": "color",
+                      "fallback": "#6b7280",
+                      "mappings": [
+                        {
+                          "input": "Off",
+                          "output": "#6b7280"
+                        },
+                        {
+                          "input": "Roast",
+                          "output": "#dc2626"
+                        },
+                        {
+                          "input": "Cool",
+                          "output": "#0284c7"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "NewRoastButton"
+            },
+            "props": {
+              "text": "New Roast",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-ghost roast-btn-nowrap"
+              }
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "{[default]Roastery/CurrentBatch/State} != 'Roasting'"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.new_roast(self)\n"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "PrimaryCap"
+        },
+        "props": {
+          "text": "Roast controls",
+          "style": {
+            "classes": "roast-caption"
+          }
+        }
+      },
+      {
+        "type": "ia.display.flex-repeater",
+        "meta": {
+          "name": "DockRepeater"
+        },
+        "props": {
+          "path": "Views/DockButton",
+          "instances": [],
+          "direction": "row",
+          "wrap": "wrap",
+          "justify": "flex-start",
+          "alignItems": "stretch",
+          "elementPosition": {
+            "grow": 1,
+            "shrink": 1,
+            "basis": "0px"
+          },
+          "useDefaultViewWidth": false,
+          "useDefaultViewHeight": false,
+          "style": {
+            "classes": "roast-gap-8"
+          }
+        },
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "auto"
+        },
+        "propConfig": {
+          "props.instances": {
+            "binding": {
+              "type": "tag",
+              "config": {
+                "tagPath": "[default]Roastery/CurrentBatch/DockActionsJson",
+                "mode": "direct",
+                "bidirectional": false
+              },
+              "bidirectional": false,
+              "transforms": [
+                {
+                  "type": "script",
+                  "code": "\timport system\n\titems = system.util.jsonDecode(value) or []\n\tout = []\n\tfor d in items:\n\t\tinst = dict(d)\n\t\tif d.get('lead'):\n\t\t\tpos = {'grow': 2, 'shrink': 0, 'basis': '108px'}\n\t\telif d.get('kind') == 'utility':\n\t\t\tpos = {'grow': 1, 'shrink': 0, 'basis': '148px'}\n\t\telse:\n\t\t\tpos = {'grow': 1, 'shrink': 0, 'basis': '88px'}\n\t\tinst['instancePosition'] = pos\n\t\tout.append(inst)\n\treturn out\n"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Steppers"
+        },
+        "props": {
+          "direction": "row",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "FanStepper"
+            },
+            "props": {
+              "direction": "column",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "FanStepperCaption"
+                },
+                "props": {
+                  "text": "FAN",
+                  "style": {
+                    "classes": "roast-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "FanStepperRow"
+                },
+                "props": {
+                  "direction": "row",
+                  "justify": "center",
+                  "alignItems": "center",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.input.button",
+                    "meta": {
+                      "name": "FanStepperMinus"
+                    },
+                    "props": {
+                      "text": "-",
+                      "style": {
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-reset"
+                      }
+                    },
+                    "events": {
+                      "dom": {
+                        "onClick": {
+                          "scope": "G",
+                          "type": "script",
+                          "config": {
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('FanLevel', -1, 'Fan')\n"
+                          }
+                        }
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "58px"
+                    }
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "FanStepperValue"
+                    },
+                    "props": {
+                      "text": "5",
+                      "style": {
+                        "classes": "roast-stepper-value"
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "44px"
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/FanLevel",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false,
+                          "transforms": [
+                            {
+                              "type": "format",
+                              "formatType": "numeric",
+                              "formatValue": "0"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.button",
+                    "meta": {
+                      "name": "FanStepperPlus"
+                    },
+                    "props": {
+                      "text": "+",
+                      "style": {
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-blue"
+                      }
+                    },
+                    "events": {
+                      "dom": {
+                        "onClick": {
+                          "scope": "G",
+                          "type": "script",
+                          "config": {
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('FanLevel', 1, 'Fan')\n"
+                          }
+                        }
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "58px"
+                    }
+                  }
+                ]
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "150px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "HeatStepper"
+            },
+            "props": {
+              "direction": "column",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "HeatStepperCaption"
+                },
+                "props": {
+                  "text": "HEAT",
+                  "style": {
+                    "classes": "roast-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "HeatStepperRow"
+                },
+                "props": {
+                  "direction": "row",
+                  "justify": "center",
+                  "alignItems": "center",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.input.button",
+                    "meta": {
+                      "name": "HeatStepperMinus"
+                    },
+                    "props": {
+                      "text": "-",
+                      "style": {
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-reset"
+                      }
+                    },
+                    "events": {
+                      "dom": {
+                        "onClick": {
+                          "scope": "G",
+                          "type": "script",
+                          "config": {
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('HeatLevel', -1, 'Heat')\n"
+                          }
+                        }
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "58px"
+                    }
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "HeatStepperValue"
+                    },
+                    "props": {
+                      "text": "5",
+                      "style": {
+                        "classes": "roast-stepper-value"
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "44px"
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/HeatLevel",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false,
+                          "transforms": [
+                            {
+                              "type": "format",
+                              "formatType": "numeric",
+                              "formatValue": "0"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.button",
+                    "meta": {
+                      "name": "HeatStepperPlus"
+                    },
+                    "props": {
+                      "text": "+",
+                      "style": {
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-charge"
+                      }
+                    },
+                    "events": {
+                      "dom": {
+                        "onClick": {
+                          "scope": "G",
+                          "type": "script",
+                          "config": {
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('HeatLevel', 1, 'Heat')\n"
+                          }
+                        }
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "58px"
+                    }
+                  }
+                ]
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "150px"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "events": {
+    "system": {
+      "onStartup": {
+        "scope": "G",
+        "type": "script",
+        "config": {
+          "script": "\timport roastery.core\n\troastery.core.update_dock_actions()\n"
+        }
+      }
+    }
+  }
+}''')
 
 # ================================================================ MetaCard
 
@@ -10323,6 +10780,18 @@ def _canvas_yaxis(minv, maxv, title_text, position=None,
         ya['position'] = position
     ya['title'].update({'visible': True, 'text': title_text,
                         'color': '', 'fontSize': 11})
+    # Polish round 15 (Eric, 2026-11-23, REQUIRED): the y axis
+    # titles and tick labels run VERTICAL. Horizontal titles
+    # ('Bean Temp (F)', 'RoR (deg F/min)') ate the middle of
+    # the card and squeezed the plot to a narrow strip at
+    # 360px; rotated -90 both read bottom to top in a column
+    # about one character wide, the gaps shrink to match, and
+    # the plot fills the card width (probe proven live at
+    # 360px before this was written into the builder).
+    ya['title']['rotation'] = -90
+    ya['title']['gap'] = 6
+    ya['labels']['rotation'] = -90
+    ya['labels']['gap'] = 2
     ya['gridLines'] = {'visible': grid, 'color': '', 'width': 1}
     ya['ticks']['majorSplit'] = split
     return ya
@@ -10579,219 +11048,2787 @@ def phone_cols_wrap(wrap_name, btn_name, table, phone_cols,
 
 
 def batches_panel_view():
-    """The reusable batches panel for the Log page: a tidy table
-    (columns chosen to survive a phone width), selection driven
-    actions (Details, Edit via the slide over dock, Use as Ghost,
-    Delete behind a confirm). All logic lives in roastery.batches;
-    the table reads through the SelectAll named query only."""
-    # Column widths slimmed (no overlap pass, 2026-11-13): the
-    # old set totaled 710px and the Bean column ran off the
-    # card edge at 360px. The date drops its year in the list
-    # (the detail view carries the full date) and every column
-    # is sized to its content; the set totals about 580px.
-    cols = [
-        {'field': 'batch_number', 'header': {'title': 'Batch'},
-         'width': 60},
-        {'field': 'roast_start', 'header': {'title': 'Date'},
-         'width': 132, 'render': 'date',
-         'dateFormat': 'MM-DD h:mm a'},
-        {'field': 'bean_name', 'header': {'title': 'Bean'},
-         'width': 120},
-        {'field': 'drop_temp_f', 'header': {'title': 'Drop (F)'},
-         'width': 66},
-        {'field': 'total_sec', 'header': {'title': 'Total (s)'},
-         'width': 62},
-        {'field': 'dtr_pct', 'header': {'title': 'DTR %'},
-         'width': 56},
-        {'field': 'roast_degree', 'header': {'title': 'Degree'},
-         'width': 84},
-        {'field': 'id', 'header': {'title': 'ID'}, 'width': 50,
-         'visible': False},
-    ]
-    table = {'type': 'ia.display.table', 'meta': {'name': 'BatchTable'},
-             'props': {'data': [], 'columns': cols,
-                       'pager': {'enabled': False},
-                       'rows': {'height': 40},
-                       'header': {'height': 36, 'style': {
-                           'classes': 'roast-table-header'}},
-                       'style': {'classes': 'roast-table roast-cols-full'}},
-             'propConfig': {'props.data': {'binding': {
-                 'type': 'query',
-                 'config': {'queryPath': 'Roastery/Batches/SelectAll',
-                            'returnFormat': 'dataset',
-                            'parameters': {},
-                            'polling': {'enabled': False, 'rate': 5},
-                            'designerUseLimit': True,
-                            'bypassCache': False}}}},
-             'events': {'component': {'onRowClick': {
-                 'scope': 'G', 'type': 'script',
-                 'config': {'script':
-                     "\timport roastery.batches\n"
-                     "\troastery.batches.select_row(self, event)\n"}}}},
-             'position': {'grow': 0, 'shrink': 0, 'basis': '430px'}}
-    table_wrap = phone_cols_wrap(
-        'BatchTablePhoneWrap', 'ColsToggleButton', table, [
-            {'field': 'batch_number',
-             'header': {'title': 'Batch'}, 'width': 54},
-            {'field': 'roast_start',
-             'header': {'title': 'Date'}, 'width': 100,
-             'render': 'date', 'dateFormat': 'MM-DD h:mm a'},
-            {'field': 'bean_name',
-             'header': {'title': 'Bean'}, 'width': 68},
-            {'field': 'drop_temp_f',
-             'header': {'title': 'Drop (F)'}, 'width': 62}],
-        'roast-table')
-    sel_enabled = "({view.custom.selBatchNumber} > 0)"
-    details_btn = button('DetailsButton', 'Details',
-                         'roast-btn roast-btn-sm roast-btn-primary',
-                         prop_config={'props.enabled': {'binding':
-                             expr_binding(sel_enabled)}},
-                         events=lib_event(
-                             'roastery.batches.open_detail(self)'))
-    edit_btn = button('EditButton', 'Edit',
-                      'roast-btn roast-btn-sm roast-btn-ghost',
-                      prop_config={'props.enabled': {'binding':
-                          expr_binding(sel_enabled)}},
-                      events=lib_event(
-                          'roastery.batches.open_editor(self)'))
-    bg_btn = button('BgButton', 'Use as Ghost',
-                    'roast-btn roast-btn-sm roast-btn-purple',
-                    prop_config={'props.enabled': {'binding':
-                        expr_binding(sel_enabled)}},
-                    events=lib_event(
-                        'roastery.batches.set_background(self)'))
-    del_btn = button('DeleteButton', 'Delete',
-                     'roast-btn roast-btn-sm roast-btn-charge',
-                     prop_config={'props.enabled': {'binding':
-                         expr_binding(sel_enabled)}},
-                     events=lib_event('roastery.batches.arm_delete(self)'))
-    note = label('SelNote',
-                 'Select a batch for its details, the editor, a ghost overlay, or delete.',
-                 'roast-note',
-                 position={'grow': 1, 'shrink': 1, 'basis': '0px'},
-                 prop_config={'props.text': {'binding': prop_binding(
-                     'view.custom.selNote')}})
-    foot = flex('FootRow', 'row',
-                [note, details_btn, edit_btn, bg_btn, del_btn],
-                justify='flex-end', align='center', wrap='wrap',
-                classes='roast-gap-12')
-    confirm_lbl = label('ConfirmLabel', '', 'roast-banner-text',
-                        prop_config={'props.text': {'binding': expr_binding(
-                            "'Delete batch ' + {view.custom.selBatchNumber} + ', its curve and its press log?'")}})
-    confirm_btn = button('ConfirmDeleteButton', 'Confirm Delete',
-                         'roast-btn roast-btn-sm roast-btn-charge',
-                         events=lib_event(
-                             'roastery.batches.confirm_delete(self)'))
-    cancel_btn = button('CancelDeleteButton', 'Cancel',
-                        'roast-btn roast-btn-sm roast-btn-ghost',
-                        events=lib_event(
-                            'roastery.batches.cancel_delete(self)'))
-    confirm_row = flex('ConfirmRow', 'row',
-                       [confirm_lbl, confirm_btn, cancel_btn],
-                       justify='space-between', align='center',
-                       classes='roast-banner roast-gap-12',
-                       prop_config={'props.style.classes': {'binding':
-                           expr_binding(
-                               "if({view.custom.confirmDelete}, "
-                               "'roast-banner roast-gap-12', "
-                               "'roast-banner roast-gap-12 roast-hidden')")}})
-    import_lbl = label('ImportLabel', 'Artisan import',
-                       'roast-note',
-                       position={'grow': 0, 'shrink': 0,
-                                 'basis': '92px'})
-    upload = {'type': 'ia.input.fileupload',
-              'meta': {'name': 'ArtisanImport'},
-              'props': {'maxUploads': 1,
-                        'supportedFileTypes': ['alog'],
-                        'fileSizeLimit': 5},
-              'events': {'component': {'onFileReceived': {
-                  'scope': 'G', 'type': 'script',
-                  'config': {'script':
-                      "\timport roastery.artisan\n"
-                      "\troastery.artisan.import_upload(self, event)\n"}}}},
-              'position': {'grow': 0, 'shrink': 1,
-                           'basis': '190px'}}
-    import_note = label(
-        'ImportNote',
-        'Choose an Artisan .alog file to add that roast to the log.',
-        'roast-note',
-        position={'grow': 1, 'shrink': 1, 'basis': '0px'},
-        prop_config={'props.text': {'binding': prop_binding(
-            'view.custom.importNote')}})
-    import_row = flex('ImportRow', 'row',
-                      [import_lbl, upload, import_note],
-                      align='center', wrap='wrap',
-                      classes='roast-gap-12')
-    # Compare section (Tier 1 item 2): three batch pickers, an
-    # Align picker (polish round 8, HUNT-56: the Artisan
-    # alignEvent choice, bound to the CompareAlignEvent tag
-    # shared with Settings Display), a Compare button and the
-    # overlay chart. Options and the dataset are library built
-    # (roastery.batches.compare_*).
-    def cmp_drop(name, prop):
-        return {'type': 'ia.input.dropdown', 'meta': {'name': name},
-                'props': {'options': [], 'value': 0,
-                          'style': {'classes': 'roast-input'}},
-                'propConfig': {'props.value': _custom_binding(prop)},
-                'position': {'grow': 1, 'shrink': 1, 'basis': '150px'}}
-    align_opts = [{'value': 'charge', 'label': 'CHARGE'},
-                  {'value': 'dryEnd', 'label': 'DRY'},
-                  {'value': 'fcStart', 'label': 'FCs'},
-                  {'value': 'fcEnd', 'label': 'FCe'},
-                  {'value': 'scStart', 'label': 'SCs'},
-                  {'value': 'scEnd', 'label': 'SCe'},
-                  {'value': 'drop', 'label': 'DROP'}]
-    cmp_btn = button('CompareButton', 'Compare',
-                     'roast-btn roast-btn-sm roast-btn-primary',
-                     events=lib_event(
-                         'roastery.batches.build_compare(self)'))
-    compare_row = flex('CompareRow', 'row',
-                       [cmp_drop('CmpA', 'cmpA'), cmp_drop('CmpB', 'cmpB'),
-                        cmp_drop('CmpC', 'cmpC'),
-                        cfg_field('CmpAlignField', 'Align on',
-                                  tag_dropdown('CmpAlign',
-                                               'CompareAlignEvent',
-                                               align_opts),
-                                  basis='150px',
-                                  classes='roast-gap-8 '
-                                          'roast-compare-field'),
-                        cmp_btn],
-                       align='flex-end', wrap='wrap',
-                       classes='roast-gap-12')
-    cmp_cap = label('CompareCaption', '', 'roast-note',
-                    prop_config={'props.text': {'binding': prop_binding(
-                        'view.custom.compareCaption')}})
-    cmp_chart_wrap = flex('CompareChartWrap', 'row',
-                          [compare_chart(), compare_chart_phone()],
-                          position={'grow': 0, 'shrink': 0,
-                                    'basis': '300px'})
-    root = flex('root', 'column',
-                [table, table_wrap, confirm_row, foot, import_row, compare_row,
-                 cmp_cap, cmp_chart_wrap],
-                classes='roast-card roast-gap-12',
-                scripts={'messageHandlers': [{
-                    'messageType': 'roastery-batches-refresh',
-                    'script': ("\timport roastery.batches\n"
-                               "\troastery.batches.refresh_table(self)\n"),
-                    'sessionScope': True, 'pageScope': True,
-                    'viewScope': False}]})
-    return {'custom': {'showAllCols': False,
-                       'selBatchNumber': 0, 'selLabel': '',
-                       'selNote': 'Select a batch for its details, the editor, a ghost overlay, or delete.',
-                       'confirmDelete': False,
-                       'importNote': 'Choose an Artisan .alog file to add that roast to the log.',
-                       'cmpA': 0, 'cmpB': 0, 'cmpC': 0,
-                       'compareDs': None,
-                       'compareCaption': 'Pick up to three batches and press Compare.',
-                       'compareRefLines': []},
-            'params': {}, 'propConfig': {},
-            'props': {'defaultSize': {'width': 1200, 'height': 940}},
-            'events': {'system': {'onStartup': {
-                'scope': 'G', 'type': 'script',
-                'config': {'script':
-                    "\timport roastery.batches\n"
-                    "\troastery.batches.compare_startup(self)\n"}}}},
-            'root': root}
+# Resynced 2026-11-24 (round 15): the live view is
+# Designer edited well past what the helpers in this
+# file can build, so the function returns the live
+# view.json verbatim, the same way CORE_CODE carries
+# the live library. A rebuild from the builder
+# reproduces the live file byte for byte.
+# The literal carries the round 15 axis fix on its
+# compare charts (y axis titles and tick labels
+# vertical, rotation -90, gaps 6 and 2).
+    return json.loads(r'''{
+  "custom": {
+    "selBatchNumber": 0,
+    "selLabel": "",
+    "selNote": "Select a batch for its details, the editor, a ghost overlay, or delete.",
+    "confirmDelete": false,
+    "importNote": "Choose an Artisan .alog file to add that roast to the log.",
+    "cmpA": 0,
+    "cmpB": 0,
+    "cmpC": 0,
+    "compareDs": null,
+    "compareCaption": "Pick up to three batches and press Compare.",
+    "showAllCols": false,
+    "compareRefLines": []
+  },
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 1200,
+      "height": 940
+    }
+  },
+  "events": {
+    "system": {
+      "onStartup": {
+        "scope": "G",
+        "type": "script",
+        "config": {
+          "script": "\timport roastery.batches\n\troastery.batches.compare_startup(self)\n"
+        }
+      }
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "BatchesPanelRoot"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-card roast-gap-12"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.display.table",
+        "meta": {
+          "name": "BatchTable"
+        },
+        "props": {
+          "data": [],
+          "columns": [
+            {
+              "field": "batch_number",
+              "header": {
+                "title": "Batch"
+              },
+              "width": 60
+            },
+            {
+              "field": "roast_start",
+              "header": {
+                "title": "Date"
+              },
+              "width": 132,
+              "render": "date",
+              "dateFormat": "MM-DD h:mm a"
+            },
+            {
+              "field": "bean_name",
+              "header": {
+                "title": "Bean"
+              },
+              "width": 120
+            },
+            {
+              "field": "drop_temp_f",
+              "header": {
+                "title": "Drop (F)"
+              },
+              "width": 66
+            },
+            {
+              "field": "total_sec",
+              "header": {
+                "title": "Total (s)"
+              },
+              "width": 62
+            },
+            {
+              "field": "dtr_pct",
+              "header": {
+                "title": "DTR %"
+              },
+              "width": 56
+            },
+            {
+              "field": "roast_degree",
+              "header": {
+                "title": "Degree"
+              },
+              "width": 84
+            },
+            {
+              "field": "id",
+              "header": {
+                "title": "ID"
+              },
+              "width": 50,
+              "visible": false
+            }
+          ],
+          "pager": {
+            "enabled": false
+          },
+          "rows": {
+            "height": 40
+          },
+          "header": {
+            "height": 36,
+            "style": {
+              "classes": "roast-table-header"
+            }
+          },
+          "style": {
+            "classes": "roast-table roast-cols-full"
+          }
+        },
+        "propConfig": {
+          "props.data": {
+            "binding": {
+              "type": "query",
+              "config": {
+                "queryPath": "Roastery/Batches/SelectAll",
+                "returnFormat": "dataset",
+                "parameters": {},
+                "polling": {
+                  "enabled": false,
+                  "rate": 5
+                },
+                "designerUseLimit": true,
+                "bypassCache": false
+              }
+            }
+          }
+        },
+        "events": {
+          "component": {
+            "onRowClick": {
+              "scope": "G",
+              "type": "script",
+              "config": {
+                "script": "\timport roastery.batches\n\troastery.batches.select_row(self, event)\n"
+              }
+            }
+          }
+        },
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "430px"
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "BatchTablePhoneWrap"
+        },
+        "props": {
+          "direction": "column",
+          "style": {
+            "classes": "roast-gap-8 roast-cols-phone"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "ColsToggleRow"
+            },
+            "props": {
+              "direction": "row",
+              "justify": "flex-end",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-gap-12"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "ColsToggleButton"
+                },
+                "props": {
+                  "text": "All columns",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "if({view.custom.showAllCols}, 'Fewer columns', 'All columns')"
+                      }
+                    }
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core\n\troastery.core.toggle_all_cols(self)\n"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "ia.display.table",
+            "meta": {
+              "name": "BatchTablePhone"
+            },
+            "props": {
+              "data": [],
+              "columns": [
+                {
+                  "field": "batch_number",
+                  "header": {
+                    "title": "Batch"
+                  },
+                  "width": 54
+                },
+                {
+                  "field": "roast_start",
+                  "header": {
+                    "title": "Date"
+                  },
+                  "width": 100,
+                  "render": "date",
+                  "dateFormat": "MM-DD h:mm a"
+                },
+                {
+                  "field": "bean_name",
+                  "header": {
+                    "title": "Bean"
+                  },
+                  "width": 68
+                },
+                {
+                  "field": "drop_temp_f",
+                  "header": {
+                    "title": "Drop (F)"
+                  },
+                  "width": 62
+                }
+              ],
+              "pager": {
+                "enabled": false
+              },
+              "rows": {
+                "height": 40
+              },
+              "header": {
+                "height": 36,
+                "style": {
+                  "classes": "roast-table-header"
+                }
+              },
+              "style": {
+                "classes": "roast-table"
+              }
+            },
+            "propConfig": {
+              "props.data": {
+                "binding": {
+                  "type": "query",
+                  "config": {
+                    "queryPath": "Roastery/Batches/SelectAll",
+                    "returnFormat": "dataset",
+                    "parameters": {},
+                    "polling": {
+                      "enabled": false,
+                      "rate": 5
+                    },
+                    "designerUseLimit": true,
+                    "bypassCache": false
+                  }
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({view.custom.showAllCols}, 'roast-table roast-hidden', 'roast-table')"
+                  }
+                }
+              }
+            },
+            "events": {
+              "component": {
+                "onRowClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.batches\n\troastery.batches.select_row(self, event)\n"
+                  }
+                }
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "430px"
+            }
+          },
+          {
+            "type": "ia.display.table",
+            "meta": {
+              "name": "BatchTableFullPhone"
+            },
+            "props": {
+              "data": [],
+              "columns": [
+                {
+                  "field": "batch_number",
+                  "header": {
+                    "title": "Batch"
+                  },
+                  "width": 60
+                },
+                {
+                  "field": "roast_start",
+                  "header": {
+                    "title": "Date"
+                  },
+                  "width": 132,
+                  "render": "date",
+                  "dateFormat": "MM-DD h:mm a"
+                },
+                {
+                  "field": "bean_name",
+                  "header": {
+                    "title": "Bean"
+                  },
+                  "width": 120
+                },
+                {
+                  "field": "drop_temp_f",
+                  "header": {
+                    "title": "Drop (F)"
+                  },
+                  "width": 66
+                },
+                {
+                  "field": "total_sec",
+                  "header": {
+                    "title": "Total (s)"
+                  },
+                  "width": 62
+                },
+                {
+                  "field": "dtr_pct",
+                  "header": {
+                    "title": "DTR %"
+                  },
+                  "width": 56
+                },
+                {
+                  "field": "roast_degree",
+                  "header": {
+                    "title": "Degree"
+                  },
+                  "width": 84
+                },
+                {
+                  "field": "id",
+                  "header": {
+                    "title": "ID"
+                  },
+                  "width": 50,
+                  "visible": false
+                }
+              ],
+              "pager": {
+                "enabled": false
+              },
+              "rows": {
+                "height": 40
+              },
+              "header": {
+                "height": 36,
+                "style": {
+                  "classes": "roast-table-header"
+                }
+              },
+              "style": {
+                "classes": "roast-table"
+              }
+            },
+            "propConfig": {
+              "props.data": {
+                "binding": {
+                  "type": "query",
+                  "config": {
+                    "queryPath": "Roastery/Batches/SelectAll",
+                    "returnFormat": "dataset",
+                    "parameters": {},
+                    "polling": {
+                      "enabled": false,
+                      "rate": 5
+                    },
+                    "designerUseLimit": true,
+                    "bypassCache": false
+                  }
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({view.custom.showAllCols}, 'roast-table', 'roast-table roast-hidden')"
+                  }
+                }
+              }
+            },
+            "events": {
+              "component": {
+                "onRowClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.batches\n\troastery.batches.select_row(self, event)\n"
+                  }
+                }
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "430px"
+            }
+          }
+        ],
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "auto"
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "ConfirmRow"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "space-between",
+          "alignItems": "center",
+          "style": {
+            "classes": "roast-banner roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "ConfirmLabel"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-banner-text"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "'Delete batch ' + {view.custom.selBatchNumber} + ', its curve and its press log?'"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "ConfirmDeleteButton"
+            },
+            "props": {
+              "text": "Confirm Delete",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-charge"
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.confirm_delete(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "CancelDeleteButton"
+            },
+            "props": {
+              "text": "Cancel",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.cancel_delete(self)\n"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "propConfig": {
+          "props.style.classes": {
+            "binding": {
+              "type": "expr",
+              "config": {
+                "expression": "if({view.custom.confirmDelete}, 'roast-banner roast-gap-12', 'roast-banner roast-gap-12 roast-hidden')"
+              }
+            }
+          }
+        }
+      },
+      {
+        "meta": {
+          "name": "SelNoteRow"
+        },
+        "type": "ia.container.flex",
+        "props": {
+          "direction": "row"
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "SelNote"
+            },
+            "props": {
+              "text": "Select a batch for its details, the editor, a ghost overlay, or delete.",
+              "style": {
+                "classes": "roast-note"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.selNote"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "FootRow"
+        },
+        "props": {
+          "direction": "row",
+          "justify": "flex-end",
+          "alignItems": "center",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "DetailsButton"
+            },
+            "props": {
+              "text": "Details",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-primary"
+              }
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "({view.custom.selBatchNumber} > 0)"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.open_detail(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "EditButton"
+            },
+            "props": {
+              "text": "Edit",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+              }
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "({view.custom.selBatchNumber} > 0)"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.open_editor(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "BgButton"
+            },
+            "props": {
+              "text": "Use as Ghost",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-purple"
+              }
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "({view.custom.selBatchNumber} > 0)"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.set_background(self)\n"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "DeleteButton"
+            },
+            "props": {
+              "text": "Delete",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-charge"
+              }
+            },
+            "propConfig": {
+              "props.enabled": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "({view.custom.selBatchNumber} > 0)"
+                  }
+                }
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.arm_delete(self)\n"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "ImportRow"
+        },
+        "props": {
+          "direction": "row",
+          "alignItems": "center",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "ImportLabel"
+            },
+            "props": {
+              "text": "Artisan import",
+              "style": {
+                "classes": "roast-note"
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "92px"
+            }
+          },
+          {
+            "type": "ia.input.fileupload",
+            "meta": {
+              "name": "ArtisanImport"
+            },
+            "props": {
+              "maxUploads": 1,
+              "supportedFileTypes": [
+                "alog"
+              ],
+              "fileSizeLimit": 5
+            },
+            "events": {
+              "component": {
+                "onFileReceived": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.artisan\n\troastery.artisan.import_upload(self, event)\n"
+                  }
+                }
+              }
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 1,
+              "basis": "190px"
+            }
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "ImportNoteRow"
+        },
+        "type": "ia.container.flex",
+        "props": {
+          "direction": "row"
+        },
+        "children": [
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "ImportNote"
+            },
+            "props": {
+              "text": "Choose an Artisan .alog file to add that roast to the log.",
+              "style": {
+                "classes": "roast-note"
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.importNote"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "CompareRow"
+        },
+        "props": {
+          "direction": "row",
+          "alignItems": "flex-end",
+          "wrap": "wrap",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.input.dropdown",
+            "meta": {
+              "name": "CmpA"
+            },
+            "props": {
+              "options": [],
+              "value": 0,
+              "style": {
+                "classes": "roast-input"
+              }
+            },
+            "propConfig": {
+              "props.value": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.cmpA",
+                    "bidirectional": true
+                  },
+                  "bidirectional": true
+                }
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "150px"
+            }
+          },
+          {
+            "type": "ia.input.dropdown",
+            "meta": {
+              "name": "CmpB"
+            },
+            "props": {
+              "options": [],
+              "value": 0,
+              "style": {
+                "classes": "roast-input"
+              }
+            },
+            "propConfig": {
+              "props.value": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.cmpB",
+                    "bidirectional": true
+                  },
+                  "bidirectional": true
+                }
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "150px"
+            }
+          },
+          {
+            "type": "ia.input.dropdown",
+            "meta": {
+              "name": "CmpC"
+            },
+            "props": {
+              "options": [],
+              "value": 0,
+              "style": {
+                "classes": "roast-input"
+              }
+            },
+            "propConfig": {
+              "props.value": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.cmpC",
+                    "bidirectional": true
+                  },
+                  "bidirectional": true
+                }
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "150px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "CmpAlignField"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-gap-8 roast-compare-field"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "CmpAlignFieldCap"
+                },
+                "props": {
+                  "text": "Align on",
+                  "style": {
+                    "classes": "roast-form-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.input.dropdown",
+                "meta": {
+                  "name": "CmpAlign"
+                },
+                "props": {
+                  "options": [
+                    {
+                      "value": "charge",
+                      "label": "CHARGE"
+                    },
+                    {
+                      "value": "dryEnd",
+                      "label": "DRY"
+                    },
+                    {
+                      "value": "fcStart",
+                      "label": "FCs"
+                    },
+                    {
+                      "value": "fcEnd",
+                      "label": "FCe"
+                    },
+                    {
+                      "value": "scStart",
+                      "label": "SCs"
+                    },
+                    {
+                      "value": "scEnd",
+                      "label": "SCe"
+                    },
+                    {
+                      "value": "drop",
+                      "label": "DROP"
+                    }
+                  ],
+                  "value": "charge",
+                  "style": {
+                    "classes": "roast-input"
+                  }
+                },
+                "propConfig": {
+                  "props.value": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/CurrentBatch/CompareAlignEvent",
+                        "mode": "direct",
+                        "bidirectional": true
+                      },
+                      "bidirectional": true
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "150px"
+            }
+          },
+          {
+            "type": "ia.input.button",
+            "meta": {
+              "name": "CompareButton"
+            },
+            "props": {
+              "text": "Compare",
+              "style": {
+                "classes": "roast-btn roast-btn-sm roast-btn-primary"
+              }
+            },
+            "events": {
+              "dom": {
+                "onClick": {
+                  "scope": "G",
+                  "type": "script",
+                  "config": {
+                    "script": "\timport roastery.core, roastery.batches\n\troastery.batches.build_compare(self)\n"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "type": "ia.display.label",
+        "meta": {
+          "name": "CompareCaption"
+        },
+        "props": {
+          "text": "",
+          "style": {
+            "classes": "roast-note"
+          }
+        },
+        "propConfig": {
+          "props.text": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "view.custom.compareCaption"
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "CompareChartWrap"
+        },
+        "props": {
+          "direction": "row"
+        },
+        "children": [
+          {
+            "type": "ia.canvas-charts.line",
+            "meta": {
+              "name": "CompareChart"
+            },
+            "props": {
+              "appearance": {
+                "animation": {
+                  "enabled": true,
+                  "entry": {
+                    "duration": 900,
+                    "easing": "cubicOut",
+                    "delay": 0
+                  },
+                  "transition": {
+                    "duration": 300,
+                    "easing": "cubicOut",
+                    "delay": 0
+                  }
+                },
+                "backgroundColor": "",
+                "colorPalette": [
+                  "#f97316",
+                  "#14b8a6",
+                  "#8b5cf6"
+                ]
+              },
+              "axisPointer": {
+                "enabled": true,
+                "label": {
+                  "backgroundColor": "",
+                  "color": "",
+                  "elementStyle": {},
+                  "fontSize": "",
+                  "visible": false
+                },
+                "type": "line"
+              },
+              "data": [],
+              "legend": {
+                "color": "",
+                "elementStyle": {},
+                "fontSize": 12,
+                "interactive": true,
+                "orientation": "horizontal",
+                "position": "bottom",
+                "visible": true
+              },
+              "liveData": false,
+              "series": [
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 0
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "A BT",
+                  "line": {
+                    "type": "solid",
+                    "width": 2,
+                    "color": "#f97316"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "btA",
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 1
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "A RoR",
+                  "line": {
+                    "type": "dashed",
+                    "width": 1,
+                    "color": "#f97316"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "rorA",
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 0
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "B BT",
+                  "line": {
+                    "type": "solid",
+                    "width": 2,
+                    "color": "#14b8a6"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "btB",
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 1
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "B RoR",
+                  "line": {
+                    "type": "dashed",
+                    "width": 1,
+                    "color": "#14b8a6"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "rorB",
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 0
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "C BT",
+                  "line": {
+                    "type": "solid",
+                    "width": 2,
+                    "color": "#8b5cf6"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "btC",
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 1
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "C RoR",
+                  "line": {
+                    "type": "dashed",
+                    "width": 1,
+                    "color": "#8b5cf6"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "rorC",
+                  "visible": true
+                }
+              ],
+              "stackGroups": [],
+              "title": {
+                "color": "",
+                "elementStyle": {},
+                "fontSize": "",
+                "gap": 5,
+                "position": "top-left",
+                "subtitle": {
+                  "color": "",
+                  "elementStyle": {},
+                  "fontSize": "",
+                  "text": ""
+                },
+                "text": "",
+                "visible": false
+              },
+              "tooltip": {
+                "enabled": true,
+                "formatter": {
+                  "template": "",
+                  "type": "value",
+                  "value": "{value}"
+                },
+                "trigger": "axis"
+              },
+              "visualMap": {
+                "dimension": "y",
+                "enabled": false,
+                "legend": {
+                  "color": "",
+                  "elementStyle": {},
+                  "fontSize": "",
+                  "interactive": true,
+                  "orientation": "horizontal",
+                  "position": "bottom",
+                  "visible": true
+                },
+                "outOfRange": {},
+                "pieces": []
+              },
+              "xAxis": {
+                "advanced": {
+                  "axisPointer": {
+                    "enabled": "auto",
+                    "label": {
+                      "backgroundColor": "",
+                      "color": "",
+                      "elementStyle": {},
+                      "fontSize": "",
+                      "visible": "auto"
+                    },
+                    "type": "auto"
+                  }
+                },
+                "axisLine": {
+                  "color": "",
+                  "visible": true,
+                  "width": 1
+                },
+                "boundaryGap": false,
+                "field": "t_label",
+                "gridLines": {
+                  "color": "",
+                  "visible": false,
+                  "width": 1
+                },
+                "labels": {
+                  "color": "",
+                  "elementStyle": {},
+                  "fontSize": 11,
+                  "overflow": "none",
+                  "position": "bottom",
+                  "rotation": 30,
+                  "visible": true
+                },
+                "max": "auto",
+                "min": "auto",
+                "position": "bottom",
+                "title": {
+                  "color": "",
+                  "elementStyle": {},
+                  "fontSize": "",
+                  "gap": 15,
+                  "position": "middle",
+                  "rotation": 0,
+                  "text": "",
+                  "visible": false
+                },
+                "type": "category",
+                "visible": true
+              },
+              "yAxis": [
+                {
+                  "advanced": {
+                    "axisPointer": {
+                      "enabled": "auto",
+                      "label": {
+                        "backgroundColor": "",
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": "",
+                        "visible": "auto"
+                      },
+                      "type": "auto"
+                    }
+                  },
+                  "axisLine": {
+                    "visible": true
+                  },
+                  "boundaryGap": true,
+                  "gridLines": {
+                    "visible": true,
+                    "color": "",
+                    "width": 1
+                  },
+                  "labels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": 11,
+                    "overflow": "none",
+                    "rotation": -90,
+                    "visible": true,
+                    "width": null,
+                    "gap": 2
+                  },
+                  "max": 460,
+                  "min": 150,
+                  "ticks": {
+                    "displayInside": false,
+                    "majorSplit": 6,
+                    "minorSplit": 0,
+                    "visible": true
+                  },
+                  "title": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": 11,
+                    "gap": 6,
+                    "position": "middle",
+                    "rotation": -90,
+                    "text": "Bean Temp (deg F)",
+                    "visible": true
+                  },
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "axisPointer": {
+                      "enabled": "auto",
+                      "label": {
+                        "backgroundColor": "",
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": "",
+                        "visible": "auto"
+                      },
+                      "type": "auto"
+                    }
+                  },
+                  "axisLine": {
+                    "visible": true
+                  },
+                  "boundaryGap": true,
+                  "gridLines": {
+                    "visible": false,
+                    "color": "",
+                    "width": 1
+                  },
+                  "labels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": 11,
+                    "overflow": "none",
+                    "rotation": -90,
+                    "visible": true,
+                    "width": null,
+                    "gap": 2
+                  },
+                  "max": 40,
+                  "min": 0,
+                  "ticks": {
+                    "displayInside": false,
+                    "majorSplit": 4,
+                    "minorSplit": 0,
+                    "visible": true
+                  },
+                  "title": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": 11,
+                    "gap": 6,
+                    "position": "middle",
+                    "rotation": -90,
+                    "text": "Rate of Rise (deg F/min)",
+                    "visible": true
+                  },
+                  "visible": true,
+                  "position": "right"
+                }
+              ],
+              "zoom": {
+                "axis": "x",
+                "backgroundColor": "",
+                "enabled": false,
+                "height": 30,
+                "type": "slider",
+                "width": 30,
+                "xPosition": "bottom",
+                "yPosition": "right"
+              },
+              "style": {
+                "classes": "roast-chart roast-cols-full"
+              }
+            },
+            "propConfig": {
+              "props.data": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.compareDs"
+                  }
+                }
+              },
+              "props.xAxis.labels.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.xAxis.advanced.axisPointer.label.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].labels.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].title.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].advanced.axisPointer.label.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].labels.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].title.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].advanced.axisPointer.label.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.xAxis.advanced.axisPointer.label.backgroundColor": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].advanced.axisPointer.label.backgroundColor": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].advanced.axisPointer.label.backgroundColor": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.series[0].referenceLines.items": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.compareRefLines"
+                  }
+                }
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          },
+          {
+            "type": "ia.canvas-charts.line",
+            "meta": {
+              "name": "CompareChartPhone"
+            },
+            "props": {
+              "appearance": {
+                "animation": {
+                  "enabled": true,
+                  "entry": {
+                    "duration": 900,
+                    "easing": "cubicOut",
+                    "delay": 0
+                  },
+                  "transition": {
+                    "duration": 300,
+                    "easing": "cubicOut",
+                    "delay": 0
+                  }
+                },
+                "backgroundColor": "",
+                "colorPalette": [
+                  "#f97316",
+                  "#14b8a6",
+                  "#8b5cf6"
+                ]
+              },
+              "axisPointer": {
+                "enabled": true,
+                "label": {
+                  "backgroundColor": "",
+                  "color": "",
+                  "elementStyle": {},
+                  "fontSize": "",
+                  "visible": false
+                },
+                "type": "line"
+              },
+              "data": [],
+              "legend": {
+                "color": "",
+                "elementStyle": {},
+                "fontSize": 12,
+                "interactive": true,
+                "orientation": "horizontal",
+                "position": "bottom",
+                "visible": true
+              },
+              "liveData": false,
+              "series": [
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 0
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "A BT",
+                  "line": {
+                    "type": "solid",
+                    "width": 2,
+                    "color": "#f97316"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "btA",
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 1
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "A RoR",
+                  "line": {
+                    "type": "dashed",
+                    "width": 1,
+                    "color": "#f97316"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "rorA",
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 0
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "B BT",
+                  "line": {
+                    "type": "solid",
+                    "width": 2,
+                    "color": "#14b8a6"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "btB",
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 1
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "B RoR",
+                  "line": {
+                    "type": "dashed",
+                    "width": 1,
+                    "color": "#14b8a6"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "rorB",
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 0
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "C BT",
+                  "line": {
+                    "type": "solid",
+                    "width": 2,
+                    "color": "#8b5cf6"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "btC",
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "connectNulls": true,
+                    "step": "",
+                    "tooltip": {
+                      "enabled": true,
+                      "formatter": {
+                        "template": "",
+                        "type": "value",
+                        "value": ""
+                      }
+                    },
+                    "yAxis": 1
+                  },
+                  "dataLabels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "format": "{value}",
+                    "position": "top",
+                    "visible": false
+                  },
+                  "label": "C RoR",
+                  "line": {
+                    "type": "dashed",
+                    "width": 1,
+                    "color": "#8b5cf6"
+                  },
+                  "points": {
+                    "fillColor": "",
+                    "outlineColor": "transparent",
+                    "outlineWidth": 0,
+                    "shape": "circle",
+                    "size": 4,
+                    "visible": false
+                  },
+                  "referenceLines": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "delay": 0,
+                        "duration": 1000,
+                        "easing": "cubicOut"
+                      },
+                      "transition": {
+                        "delay": 0,
+                        "duration": 300,
+                        "easing": "cubicOut"
+                      }
+                    },
+                    "endpoints": {
+                      "points": [
+                        {
+                          "shape": "circle",
+                          "size": 4
+                        }
+                      ],
+                      "visible": true
+                    },
+                    "items": []
+                  },
+                  "smooth": true,
+                  "value": "rorC",
+                  "visible": true
+                }
+              ],
+              "stackGroups": [],
+              "title": {
+                "color": "",
+                "elementStyle": {},
+                "fontSize": "",
+                "gap": 5,
+                "position": "top-left",
+                "subtitle": {
+                  "color": "",
+                  "elementStyle": {},
+                  "fontSize": "",
+                  "text": ""
+                },
+                "text": "",
+                "visible": false
+              },
+              "tooltip": {
+                "enabled": true,
+                "formatter": {
+                  "template": "",
+                  "type": "value",
+                  "value": "{value}"
+                },
+                "trigger": "axis"
+              },
+              "visualMap": {
+                "dimension": "y",
+                "enabled": false,
+                "legend": {
+                  "color": "",
+                  "elementStyle": {},
+                  "fontSize": "",
+                  "interactive": true,
+                  "orientation": "horizontal",
+                  "position": "bottom",
+                  "visible": true
+                },
+                "outOfRange": {},
+                "pieces": []
+              },
+              "xAxis": {
+                "advanced": {
+                  "axisPointer": {
+                    "enabled": "auto",
+                    "label": {
+                      "backgroundColor": "",
+                      "color": "",
+                      "elementStyle": {},
+                      "fontSize": "",
+                      "visible": "auto"
+                    },
+                    "type": "auto"
+                  }
+                },
+                "axisLine": {
+                  "color": "",
+                  "visible": true,
+                  "width": 1
+                },
+                "boundaryGap": false,
+                "field": "t_label",
+                "gridLines": {
+                  "color": "",
+                  "visible": false,
+                  "width": 1
+                },
+                "labels": {
+                  "color": "",
+                  "elementStyle": {},
+                  "fontSize": 11,
+                  "overflow": "none",
+                  "position": "bottom",
+                  "rotation": 30,
+                  "visible": true
+                },
+                "max": "auto",
+                "min": "auto",
+                "position": "bottom",
+                "title": {
+                  "color": "",
+                  "elementStyle": {},
+                  "fontSize": "",
+                  "gap": 15,
+                  "position": "middle",
+                  "rotation": 0,
+                  "text": "",
+                  "visible": false
+                },
+                "type": "category",
+                "visible": true
+              },
+              "yAxis": [
+                {
+                  "advanced": {
+                    "axisPointer": {
+                      "enabled": "auto",
+                      "label": {
+                        "backgroundColor": "",
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": "",
+                        "visible": "auto"
+                      },
+                      "type": "auto"
+                    }
+                  },
+                  "axisLine": {
+                    "visible": true
+                  },
+                  "boundaryGap": true,
+                  "gridLines": {
+                    "visible": true,
+                    "color": "",
+                    "width": 1
+                  },
+                  "labels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": 11,
+                    "overflow": "none",
+                    "rotation": -90,
+                    "visible": true,
+                    "width": null,
+                    "gap": 2
+                  },
+                  "max": 460,
+                  "min": 150,
+                  "ticks": {
+                    "displayInside": false,
+                    "majorSplit": 6,
+                    "minorSplit": 0,
+                    "visible": true
+                  },
+                  "title": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": 11,
+                    "gap": 6,
+                    "position": "middle",
+                    "rotation": -90,
+                    "text": "Bean Temp (F)",
+                    "visible": true
+                  },
+                  "visible": true
+                },
+                {
+                  "advanced": {
+                    "axisPointer": {
+                      "enabled": "auto",
+                      "label": {
+                        "backgroundColor": "",
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": "",
+                        "visible": "auto"
+                      },
+                      "type": "auto"
+                    }
+                  },
+                  "axisLine": {
+                    "visible": true
+                  },
+                  "boundaryGap": true,
+                  "gridLines": {
+                    "visible": false,
+                    "color": "",
+                    "width": 1
+                  },
+                  "labels": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": 11,
+                    "overflow": "none",
+                    "rotation": -90,
+                    "visible": true,
+                    "width": null,
+                    "gap": 2
+                  },
+                  "max": 40,
+                  "min": 0,
+                  "ticks": {
+                    "displayInside": false,
+                    "majorSplit": 4,
+                    "minorSplit": 0,
+                    "visible": true
+                  },
+                  "title": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": 11,
+                    "gap": 6,
+                    "position": "middle",
+                    "rotation": -90,
+                    "text": "RoR (deg F/min)",
+                    "visible": true
+                  },
+                  "visible": true,
+                  "position": "right"
+                }
+              ],
+              "zoom": {
+                "axis": "x",
+                "backgroundColor": "",
+                "enabled": false,
+                "height": 30,
+                "type": "slider",
+                "width": 30,
+                "xPosition": "bottom",
+                "yPosition": "right"
+              },
+              "style": {
+                "classes": "roast-chart roast-cols-phone"
+              }
+            },
+            "propConfig": {
+              "props.data": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.compareDs"
+                  }
+                }
+              },
+              "props.xAxis.labels.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.xAxis.advanced.axisPointer.label.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].labels.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].title.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].advanced.axisPointer.label.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].labels.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].title.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].advanced.axisPointer.label.color": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.xAxis.advanced.axisPointer.label.backgroundColor": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[0].advanced.axisPointer.label.backgroundColor": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.yAxis[1].advanced.axisPointer.label.backgroundColor": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "session.custom.chartDark"
+                  },
+                  "transforms": [
+                    {
+                      "type": "script",
+                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                    }
+                  ]
+                }
+              },
+              "props.series[0].referenceLines.items": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.compareRefLines"
+                  }
+                }
+              }
+            },
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          }
+        ],
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "300px"
+        }
+      }
+    ],
+    "scripts": {
+      "messageHandlers": [
+        {
+          "messageType": "roastery-batches-refresh",
+          "script": "\timport roastery.batches\n\troastery.batches.refresh_table(self)\n",
+          "sessionScope": true,
+          "pageScope": true,
+          "viewScope": false
+        }
+      ]
+    }
+  }
+}''')
 
 
 def compare_chart():
@@ -11243,38 +14280,181 @@ def prompt_strip(name='PromptStrip'):
 # ---------------------------------------------------------------- TabBar
 
 def tabbar_view():
-    """Shared bottom dock content: the three tabs plus the theme
-    toggle. Navigation is a plain framework call per button."""
-
-    def tab(name, text, page):
-        return button(name, text, 'roast-tab-btn',
-                      position={'grow': 1, 'shrink': 1, 'basis': '0px'},
-                      events=script_event(
-                          "\tsystem.perspective.navigate(page='%s')\n"
-                          % page))
-
-    theme_btn = button('ThemeButton', '', 'roast-tab-btn',
-                       position={'grow': 0, 'shrink': 0,
-                                 'basis': '88px'},
-                       prop_config={'props.text': {'binding': prop_binding(
-                           'view.custom.themeText')}},
-                       events=lib_event(
-                           'roastery.core.theme_toggle(self)'))
-    root = flex('root', 'row',
-                [theme_btn,
-                 tab('RoastTab', 'Roast', '/'),
-                 tab('SettingsTab', 'Settings', '/settings'),
-                 tab('LogTab', 'Log', '/log')],
-                align='center', classes='roast-tabbar')
-    return {'custom': {'themeText': 'Light'},
-            'params': {}, 'propConfig': {},
-            'props': {'defaultSize': {'width': 900, 'height': 62}},
-            'events': {'system': {'onStartup': {
-                'scope': 'G', 'type': 'script',
-                'config': {'script':
-                    "\timport roastery.core\n"
-                    "\troastery.core.main_startup(self)\n"}}}},
-            'root': root}
+# Resynced 2026-11-24 (round 15): the live view is
+# Designer edited well past what the helpers in this
+# file can build, so the function returns the live
+# view.json verbatim, the same way CORE_CODE carries
+# the live library. A rebuild from the builder
+# reproduces the live file byte for byte.
+    return json.loads(r'''{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 800,
+      "height": 62
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "TabBarRoot"
+    },
+    "props": {
+      "direction": "row",
+      "alignItems": "center",
+      "style": {
+        "classes": "roast-tabbar"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.navigation.horizontalmenu",
+        "meta": {
+          "name": "TabMenu"
+        },
+        "props": {
+          "items": [
+            {
+              "enabled": true,
+              "icon": {
+                "path": "material/whatshot"
+              },
+              "items": [],
+              "label": "Roast",
+              "style": {
+                "classes": ""
+              },
+              "target": "/"
+            },
+            {
+              "enabled": true,
+              "icon": {
+                "path": "material/settings"
+              },
+              "items": [],
+              "label": "Settings",
+              "style": {
+                "classes": ""
+              },
+              "target": "/settings"
+            },
+            {
+              "enabled": true,
+              "icon": {
+                "path": "material/history"
+              },
+              "items": [],
+              "label": "Log",
+              "style": {
+                "classes": ""
+              },
+              "target": "/log"
+            }
+          ],
+          "enabled": true,
+          "itemStyle": {
+            "classes": "roast-tab-item"
+          },
+          "style": {
+            "classes": ""
+          }
+        },
+        "position": {
+          "grow": 1,
+          "basis": "0px"
+        },
+        "propConfig": {
+          "props.items[0].style.fontWeight": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "page.props.path"
+              },
+              "transforms": [
+                {
+                  "type": "expression",
+                  "expression": "if ({value} = {this.props.items[0].target}, \"bold\", \"normal\")"
+                }
+              ]
+            }
+          },
+          "props.items[0].style.classes": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "page.props.path"
+              },
+              "transforms": [
+                {
+                  "type": "expression",
+                  "expression": "if ({value} = {this.props.items[0].target}, \"roast-tab-active\", \"\")"
+                }
+              ]
+            }
+          },
+          "props.items[1].style.fontWeight": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "page.props.path"
+              },
+              "transforms": [
+                {
+                  "type": "expression",
+                  "expression": "if ({value} = {this.props.items[1].target}, \"bold\", \"normal\")"
+                }
+              ]
+            }
+          },
+          "props.items[1].style.classes": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "page.props.path"
+              },
+              "transforms": [
+                {
+                  "type": "expression",
+                  "expression": "if ({value} = {this.props.items[1].target}, \"roast-tab-active\", \"\")"
+                }
+              ]
+            }
+          },
+          "props.items[2].style.fontWeight": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "page.props.path"
+              },
+              "transforms": [
+                {
+                  "type": "expression",
+                  "expression": "if ({value} = {this.props.items[2].target}, \"bold\", \"normal\")"
+                }
+              ]
+            }
+          },
+          "props.items[2].style.classes": {
+            "binding": {
+              "type": "property",
+              "config": {
+                "path": "page.props.path"
+              },
+              "transforms": [
+                {
+                  "type": "expression",
+                  "expression": "if ({value} = {this.props.items[2].target}, \"roast-tab-active\", \"\")"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}''')
 
 
 # ---------------------------------------------------------------- HudBar
@@ -11389,22 +14569,392 @@ def hud_view():
 # ---------------------------------------------------------------- ControlDock
 
 def controldock_view():
-    """Mobile primary controls, pinned at the bottom of the small
-    Roast layout just above the tab bar: the primary flow in
-    sequence plus the Fan and Heat steppers, all with 52px
-    targets. Nothing here requires scrolling."""
-    primary = flex('PrimaryRow', 'row', primary_event_buttons('M', big=True),
-                   classes='roast-gap-8')
-    steppers = flex('Steppers', 'row', [
-        stepper_big('FanStepper', 'Fan', 'FanLevel', 'roast-btn-blue'),
-        stepper_big('HeatStepper', 'Heat', 'HeatLevel',
-                    'roast-btn-charge')],
-        classes='roast-gap-12')
-    root = flex('root', 'column', [primary, steppers],
-                classes='roast-controldock')
-    return {'custom': {}, 'params': {}, 'propConfig': {},
-            'props': {'defaultSize': {'width': 390, 'height': 150}},
-            'root': root}
+# Resynced 2026-11-24 (round 15): the live view is
+# Designer edited well past what the helpers in this
+# file can build, so the function returns the live
+# view.json verbatim, the same way CORE_CODE carries
+# the live library. A rebuild from the builder
+# reproduces the live file byte for byte.
+    return json.loads(r'''{
+  "custom": {},
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 390,
+      "height": 150
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "ControlDockRoot"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-controldock"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.display.flex-repeater",
+        "meta": {
+          "name": "DockRepeater"
+        },
+        "props": {
+          "path": "Views/DockButton",
+          "instances": [],
+          "direction": "row",
+          "wrap": "wrap",
+          "justify": "flex-start",
+          "alignItems": "stretch",
+          "elementPosition": {
+            "grow": 1,
+            "shrink": 1,
+            "basis": "0px"
+          },
+          "useDefaultViewWidth": false,
+          "useDefaultViewHeight": false,
+          "style": {
+            "classes": "roast-gap-8"
+          }
+        },
+        "position": {
+          "grow": 0,
+          "shrink": 0,
+          "basis": "auto"
+        },
+        "propConfig": {
+          "props.instances": {
+            "binding": {
+              "type": "tag",
+              "config": {
+                "tagPath": "[default]Roastery/CurrentBatch/DockActionsJson",
+                "mode": "direct",
+                "bidirectional": false
+              },
+              "bidirectional": false,
+              "transforms": [
+                {
+                  "type": "script",
+                  "code": "\timport system\n\titems = system.util.jsonDecode(value) or []\n\tout = []\n\tfor d in items:\n\t\tinst = dict(d)\n\t\tif d.get('lead'):\n\t\t\tpos = {'grow': 2, 'shrink': 0, 'basis': '108px'}\n\t\telif d.get('kind') == 'utility':\n\t\t\tpos = {'grow': 1, 'shrink': 0, 'basis': '148px'}\n\t\telse:\n\t\t\tpos = {'grow': 1, 'shrink': 0, 'basis': '88px'}\n\t\tinst['instancePosition'] = pos\n\t\tout.append(inst)\n\treturn out\n"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Steppers"
+        },
+        "props": {
+          "direction": "row",
+          "style": {
+            "classes": "roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "FanStepper"
+            },
+            "props": {
+              "direction": "column",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "FanStepperCaption"
+                },
+                "props": {
+                  "text": "FAN",
+                  "style": {
+                    "classes": "roast-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "FanStepperRow"
+                },
+                "props": {
+                  "direction": "row",
+                  "justify": "center",
+                  "alignItems": "center",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.input.button",
+                    "meta": {
+                      "name": "FanStepperMinus"
+                    },
+                    "props": {
+                      "text": "-",
+                      "style": {
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-reset"
+                      }
+                    },
+                    "events": {
+                      "dom": {
+                        "onClick": {
+                          "scope": "G",
+                          "type": "script",
+                          "config": {
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('FanLevel', -1, 'Fan')\n"
+                          }
+                        }
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "58px"
+                    }
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "FanStepperValue"
+                    },
+                    "props": {
+                      "text": "5",
+                      "style": {
+                        "classes": "roast-stepper-value"
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "44px"
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/FanLevel",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false,
+                          "transforms": [
+                            {
+                              "type": "format",
+                              "formatType": "numeric",
+                              "formatValue": "0"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.button",
+                    "meta": {
+                      "name": "FanStepperPlus"
+                    },
+                    "props": {
+                      "text": "+",
+                      "style": {
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-blue"
+                      }
+                    },
+                    "events": {
+                      "dom": {
+                        "onClick": {
+                          "scope": "G",
+                          "type": "script",
+                          "config": {
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('FanLevel', 1, 'Fan')\n"
+                          }
+                        }
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "58px"
+                    }
+                  }
+                ]
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "150px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "HeatStepper"
+            },
+            "props": {
+              "direction": "column",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "HeatStepperCaption"
+                },
+                "props": {
+                  "text": "HEAT",
+                  "style": {
+                    "classes": "roast-caption"
+                  }
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "HeatStepperRow"
+                },
+                "props": {
+                  "direction": "row",
+                  "justify": "center",
+                  "alignItems": "center",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.input.button",
+                    "meta": {
+                      "name": "HeatStepperMinus"
+                    },
+                    "props": {
+                      "text": "-",
+                      "style": {
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-reset"
+                      }
+                    },
+                    "events": {
+                      "dom": {
+                        "onClick": {
+                          "scope": "G",
+                          "type": "script",
+                          "config": {
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('HeatLevel', -1, 'Heat')\n"
+                          }
+                        }
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "58px"
+                    }
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "HeatStepperValue"
+                    },
+                    "props": {
+                      "text": "5",
+                      "style": {
+                        "classes": "roast-stepper-value"
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "44px"
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/HeatLevel",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false,
+                          "transforms": [
+                            {
+                              "type": "format",
+                              "formatType": "numeric",
+                              "formatValue": "0"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.input.button",
+                    "meta": {
+                      "name": "HeatStepperPlus"
+                    },
+                    "props": {
+                      "text": "+",
+                      "style": {
+                        "classes": "roast-btn roast-btn-step-lg roast-btn-charge"
+                      }
+                    },
+                    "events": {
+                      "dom": {
+                        "onClick": {
+                          "scope": "G",
+                          "type": "script",
+                          "config": {
+                            "script": "\timport roastery.core, roastery.batches\n\troastery.core.stepper('HeatLevel', 1, 'Heat')\n"
+                          }
+                        }
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "58px"
+                    }
+                  }
+                ]
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "150px"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "events": {
+    "system": {
+      "onStartup": {
+        "scope": "G",
+        "type": "script",
+        "config": {
+          "script": "\timport roastery.core\n\troastery.core.update_dock_actions()\n"
+        }
+      }
+    }
+  }
+}''')
 
 
 # ---------------------------------------------------------------- Roast page
@@ -11669,6 +15219,11 @@ def roast_page_view():
 # view.json verbatim, the same way CORE_CODE carries the live
 # library. A rebuild from the builder reproduces the live file
 # byte for byte.
+# Polish round 15 (2026-11-24): the y axis titles and
+# tick labels in this literal run vertical (title
+# rotation -90, title gap 6, labels rotation -90, labels
+# gap 2) per Eric's required chart fix; every other byte
+# is the round 14 capture.
     return json.loads(r'''{
   "custom": {
     "clockText": "00:00",
@@ -13235,9 +16790,10 @@ def roast_page_view():
                                 "elementStyle": {},
                                 "fontSize": "",
                                 "overflow": "none",
-                                "rotation": 0,
+                                "rotation": -90,
                                 "visible": true,
-                                "width": null
+                                "width": null,
+                                "gap": 2
                               },
                               "max": 520,
                               "min": 150,
@@ -13251,9 +16807,9 @@ def roast_page_view():
                                 "color": "",
                                 "elementStyle": {},
                                 "fontSize": 11,
-                                "gap": 15,
+                                "gap": 6,
                                 "position": "middle",
-                                "rotation": 0,
+                                "rotation": -90,
                                 "text": "Bean Temp (deg F)",
                                 "visible": true
                               },
@@ -13287,9 +16843,10 @@ def roast_page_view():
                                 "elementStyle": {},
                                 "fontSize": "",
                                 "overflow": "none",
-                                "rotation": 0,
+                                "rotation": -90,
                                 "visible": true,
-                                "width": null
+                                "width": null,
+                                "gap": 2
                               },
                               "max": 47,
                               "min": 0,
@@ -13303,9 +16860,9 @@ def roast_page_view():
                                 "color": "",
                                 "elementStyle": {},
                                 "fontSize": 11,
-                                "gap": 15,
+                                "gap": 6,
                                 "position": "middle",
-                                "rotation": 0,
+                                "rotation": -90,
                                 "text": "Rate of Rise (deg F/min)",
                                 "visible": true
                               },
@@ -14484,9 +18041,10 @@ def roast_page_view():
                                     "elementStyle": {},
                                     "fontSize": "",
                                     "overflow": "none",
-                                    "rotation": 0,
+                                    "rotation": -90,
                                     "visible": true,
-                                    "width": null
+                                    "width": null,
+                                    "gap": 2
                                   },
                                   "max": 10,
                                   "min": 0,
@@ -14500,9 +18058,9 @@ def roast_page_view():
                                     "color": "",
                                     "elementStyle": {},
                                     "fontSize": 11,
-                                    "gap": 15,
+                                    "gap": 6,
                                     "position": "middle",
-                                    "rotation": 0,
+                                    "rotation": -90,
                                     "text": "Level",
                                     "visible": true
                                   },
@@ -16317,7 +19875,7 @@ def roast_page_view():
                             "elementStyle": {},
                             "fontSize": 11,
                             "overflow": "none",
-                            "rotation": 0,
+                            "rotation": -90,
                             "visible": true,
                             "width": null,
                             "gap": 2
@@ -16334,9 +19892,9 @@ def roast_page_view():
                             "color": "",
                             "elementStyle": {},
                             "fontSize": 11,
-                            "gap": 15,
+                            "gap": 6,
                             "position": "middle",
-                            "rotation": 0,
+                            "rotation": -90,
                             "text": "Bean Temp (F)",
                             "visible": true
                           },
@@ -16370,7 +19928,7 @@ def roast_page_view():
                             "elementStyle": {},
                             "fontSize": 11,
                             "overflow": "none",
-                            "rotation": 0,
+                            "rotation": -90,
                             "visible": true,
                             "width": null,
                             "gap": 2
@@ -16387,9 +19945,9 @@ def roast_page_view():
                             "color": "",
                             "elementStyle": {},
                             "fontSize": 11,
-                            "gap": 15,
+                            "gap": 6,
                             "position": "middle",
-                            "rotation": 0,
+                            "rotation": -90,
                             "text": "RoR (deg F/min)",
                             "visible": true
                           },
@@ -17764,9 +21322,10 @@ def roast_page_view():
                                 "elementStyle": {},
                                 "fontSize": "",
                                 "overflow": "none",
-                                "rotation": 0,
+                                "rotation": -90,
                                 "visible": true,
-                                "width": null
+                                "width": null,
+                                "gap": 2
                               },
                               "max": 10,
                               "min": 0,
@@ -17780,9 +21339,9 @@ def roast_page_view():
                                 "color": "",
                                 "elementStyle": {},
                                 "fontSize": 11,
-                                "gap": 15,
+                                "gap": 6,
                                 "position": "middle",
-                                "rotation": 0,
+                                "rotation": -90,
                                 "text": "Level",
                                 "visible": true
                               },
@@ -18088,7 +21647,7 @@ def settings_roaster_view():
                          f"if({ref(T('ActiveSource'))} = 'WebSocket', {ref(T('Sources/WebSocket/WsUrl'))}, "
                          f"if({ref(T('ActiveSource'))} = 'Mqtt', {ref(T('Sources/Mqtt/Address'))}, "
                          f"{ref(T('Sources/Simulated/Address'))}))")}})
-    root = settings_section('SettingsRoasterRoot', 'Roaster',
+    root = settings_section('RoasterSection', 'Roaster',
         'Where the bean temperature comes from. The app always '
         'reads the canonical probe tag; switching the active source '
         'switches the transport underneath it, live.', [
@@ -18265,7 +21824,7 @@ def settings_ror_view():
     live = label('RorLive', '', 'roast-value',
                  prop_config={'props.text': {'binding': expr_binding(
                      f"'RoR now: ' + numberFormat({ref(T('RateOfRiseF'))}, '0.0') + ' F/min'")}})
-    root = settings_section('SettingsRorRoot', 'Rate of Rise',
+    root = settings_section('RorSection', 'Rate of Rise',
         'Artisan parameters, applied live by the one library '
         'implementation (roastery.core.compute_ror_series) and '
         're-applied to saved batches when they are loaded as a '
@@ -18318,7 +21877,7 @@ def settings_auc_view():
         {'value': 'TP', 'label': 'Turning point'},
         {'value': 'Dry End', 'label': 'Dry end'},
         {'value': 'FC Start', 'label': 'FC start'}])
-    root = settings_section('SettingsAucRoot', 'AUC',
+    root = settings_section('AucSection', 'AUC',
         'Area under the curve, Artisan style: the integral of '
         'bean temp above the base temp from the begin event, in '
         'F min (Artisan works in C min; its 640 C min default '
@@ -18377,7 +21936,7 @@ def settings_projection_view():
     mode_dd = tag_dropdown('ProjModeDropdown', 'ProjectionMode', [
         {'value': 'Linear', 'label': 'Linear (current RoR)'},
         {'value': 'Quadratic', 'label': 'Quadratic (RoR trend)'}])
-    root = settings_section('SettingsProjectionRoot', 'Projection',
+    root = settings_section('ProjectionSection', 'Projection',
         'Where the bean curve is heading, Artisan style: a '
         'dashed projection line on the live chart extending '
         'two minutes forward from the current bean temp and '
@@ -18421,9 +21980,16 @@ def settings_playback_view():
                       basis='190px'),
             cfg_field('PbSoundField', 'Beep with prompts',
                       check_in('PbSoundCheck', 'PlaybackSound'),
-                      basis='170px'),
-            cfg_field('PbNoteField', 'Sound note', pb_note,
-                      basis='320px')]),
+                      basis='170px')]),
+        # PbRow2 is a plain row in the live file (no wrap, no
+        # gap class, meta serialized before type), not a
+        # cfg_row; build it as the literal the Designer left.
+        {'meta': {'name': 'PbRow2'},
+         'type': 'ia.container.flex',
+         'props': {'direction': 'row'},
+         'children': [
+             cfg_field('PbNoteField', 'Sound note', pb_note,
+                       basis='0px')]},
     ])
     suggestions = settings_section('SuggestSection', 'Event Suggestions',
         'When the live bean temp crosses a phase target temp '
@@ -18616,7 +22182,7 @@ def settings_alarms_view():
             {'field': 'value', 'header': {'title': 'Value'},
              'width': 56}],
         'roast-table-sm')
-    root = settings_section('SettingsAlarmsRoot', 'Alarms',
+    root = settings_section('AlarmSection', 'Alarms',
         'Alarm definitions, Artisan style: an alarm arms after '
         'its guard event plus the offset, then watches the bean '
         'temp, the rate of rise, or the elapsed time. Banner '
@@ -18625,9 +22191,9 @@ def settings_alarms_view():
         'Definitions live in one tag and are evaluated by the '
         'library on every temp change.', [
         table, alarm_wrap, load_row, ed_row1, ed_row2, btn_row])
-    return {'custom': {'showAllCols': False,
-                       'alarmsDs': None, 'alarmCount': 0,
-                       'alarmIdx': 0, 'alarmNote': ''},
+    return {'custom': {'alarmsDs': None, 'alarmCount': 0,
+                       'alarmIdx': 0, 'alarmNote': '',
+                       'showAllCols': False},
             'params': {}, 'propConfig': {},
             'props': {'defaultSize': {'width': 900, 'height': 560}},
             'events': {'system': {'onStartup': {
@@ -18748,11 +22314,19 @@ def settings_display_view():
         'fill under the rate of rise curve, and the size of '
         'the event markers on the bean curve. Colors do not '
         'change here; they stay the app palette in both themes. '
-        'The compare chart aligns its curves on the event '
-        'chosen below (Artisan alignEvent: Charge, Dry End, '
-        'First Crack start and end, Second Crack start and '
-        'end, Drop); the same choice sits on the Log compare '
-        'row, and both write the one CompareAlignEvent tag.', [
+        'The time axis on every chart (Roast, batch detail, '
+        'compare) reads elapsed time since Charge, formatted '
+        'here as m:ss like Artisan or padded mm:ss; the labels '
+        'are true elapsed in any browser timezone. Tick spacing '
+        'adapts to the chart width on its own, the way Artisan '
+        'fits its grid to the window; this Ignition build does '
+        'not expose fixed tick steps for the chart, so there is '
+        'no spacing setting to miss. The compare chart aligns '
+        'its curves on the event chosen here (Artisan '
+        'alignEvent: Charge, Dry End, First Crack start and '
+        'end, Second Crack start and end, Drop); the same '
+        'choice sits on the Log compare row, and both write '
+        'the one CompareAlignEvent tag.', [
         cfg_row('DispRow1', [
             cfg_field('DispBtWField', 'Bean temp width',
                       tag_dropdown('DispBtWDrop', 'DispBtWidth',
@@ -18902,6 +22476,14 @@ def log_page_view():
                            'roast-btn roast-btn-sm roast-btn-primary',
                            events=lib_event(
                                'roastery.batches.open_editor(self, create=True)'))
+    gear = button('GearButton', '',
+                  'roast-btn roast-btn-ghost roast-gear-btn',
+                  position={'grow': 0, 'shrink': 0, 'basis': '40px'},
+                  events=script_event(
+                      "\timport roastery.core\n"
+                      "\troastery.core.toggle_app_settings(self)\n"),
+                  image={'icon': {'path': 'material/settings'},
+                         'width': 22, 'height': 22})
     # Basis is auto, not a fixed 72px (no overlap pass,
     # 2026-11-13): at 360px the fixed height capped the row
     # while the subtitle needed three lines, so the buttons
@@ -18909,7 +22491,7 @@ def log_page_view():
     # buttons drop under the text block on narrow screens and
     # sit beside it on wide ones.
     head = flex('HeadRow', 'row', [head_col, new_roast_btn,
-                                   new_batch_btn],
+                                   new_batch_btn, gear],
                 justify='flex-end', align='center', wrap='wrap',
                 classes='roast-gap-12 roast-log-head',
                 position={'grow': 0, 'shrink': 0, 'basis': 'auto'})
@@ -18920,7 +22502,12 @@ def log_page_view():
     root = flex('root', 'column', [content], classes='roast-app')
     return {'custom': {}, 'params': {}, 'propConfig': {},
             'props': {'defaultSize': {'width': 1440, 'height': 760}},
-            'root': root}
+            'root': root,
+            'events': {'system': {'onStartup': {
+                'scope': 'G', 'type': 'script',
+                'config': {'script':
+                    "\timport roastery.core\n"
+                    "\troastery.core.page_startup(self)\n"}}}}}
 
 
 def detail_chart():
@@ -19091,6 +22678,11 @@ def batch_detail_view():
 # view.json verbatim, the same way CORE_CODE carries the live
 # library. A rebuild from the builder reproduces the live file
 # byte for byte.
+# Polish round 15 (2026-11-24): the y axis titles and
+# tick labels in this literal run vertical (title
+# rotation -90, title gap 6, labels rotation -90, labels
+# gap 2) per Eric's required chart fix; every other byte
+# is the round 14 capture.
     return json.loads(r'''{
   "custom": {
     "batchNumber": 0,
@@ -19813,7 +23405,7 @@ def batch_detail_view():
                         "elementStyle": {},
                         "fontSize": 11,
                         "overflow": "none",
-                        "rotation": 0,
+                        "rotation": -90,
                         "visible": true,
                         "width": null,
                         "gap": 2
@@ -19830,9 +23422,9 @@ def batch_detail_view():
                         "color": "",
                         "elementStyle": {},
                         "fontSize": 11,
-                        "gap": 15,
+                        "gap": 6,
                         "position": "middle",
-                        "rotation": 0,
+                        "rotation": -90,
                         "text": "Bean Temp (deg F)",
                         "visible": true
                       },
@@ -19866,7 +23458,7 @@ def batch_detail_view():
                         "elementStyle": {},
                         "fontSize": 11,
                         "overflow": "none",
-                        "rotation": 0,
+                        "rotation": -90,
                         "visible": true,
                         "width": null,
                         "gap": 2
@@ -19883,9 +23475,9 @@ def batch_detail_view():
                         "color": "",
                         "elementStyle": {},
                         "fontSize": 11,
-                        "gap": 15,
+                        "gap": 6,
                         "position": "middle",
-                        "rotation": 0,
+                        "rotation": -90,
                         "text": "Rate of Rise (deg F/min)",
                         "visible": true
                       },
@@ -20397,7 +23989,7 @@ def batch_detail_view():
                         "elementStyle": {},
                         "fontSize": 11,
                         "overflow": "none",
-                        "rotation": 0,
+                        "rotation": -90,
                         "visible": true,
                         "width": null,
                         "gap": 2
@@ -20414,9 +24006,9 @@ def batch_detail_view():
                         "color": "",
                         "elementStyle": {},
                         "fontSize": 11,
-                        "gap": 15,
+                        "gap": 6,
                         "position": "middle",
-                        "rotation": 0,
+                        "rotation": -90,
                         "text": "Bean Temp (F)",
                         "visible": true
                       },
@@ -20450,7 +24042,7 @@ def batch_detail_view():
                         "elementStyle": {},
                         "fontSize": 11,
                         "overflow": "none",
-                        "rotation": 0,
+                        "rotation": -90,
                         "visible": true,
                         "width": null,
                         "gap": 2
@@ -20467,9 +24059,9 @@ def batch_detail_view():
                         "color": "",
                         "elementStyle": {},
                         "fontSize": 11,
-                        "gap": 15,
+                        "gap": 6,
                         "position": "middle",
-                        "rotation": 0,
+                        "rotation": -90,
                         "text": "RoR (deg F/min)",
                         "visible": true
                       },
@@ -23863,13 +27455,15 @@ def batch_detail_view():
 
 # ================================================================ write out
 
-# Live view.json trailing newlines (round 14 worker D): four live
-# views end with a trailing newline and four do not. The builder
-# reproduces each live file byte for byte, so write_view appends
-# the newline only for the views that carry one.
+# Live view.json trailing newlines (round 14 worker D, round 15
+# added SettingsPlayback): some live views end with a trailing
+# newline and some do not. The builder reproduces each live
+# file byte for byte, so write_view appends the newline only
+# for the views that carry one.
 VIEW_TRAILING_NEWLINE = frozenset(
     ('RoastPage', 'BatchDetail', 'SettingsTargets',
-     'SettingsCustoms'))
+     'SettingsCustoms', 'SettingsPlayback', 'ControlDock',
+     'Controls'))
 
 
 def write_view(path_parts, doc):

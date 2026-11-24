@@ -1644,7 +1644,7 @@
                     "elementStyle": {},
                     "fontSize": 11,
                     "overflow": "none",
-                    "rotation": 0,
+                    "rotation": -90,
                     "visible": true,
                     "width": null,
                     "gap": 2
@@ -1661,9 +1661,9 @@
                     "color": "",
                     "elementStyle": {},
                     "fontSize": 11,
-                    "gap": 15,
+                    "gap": 6,
                     "position": "middle",
-                    "rotation": 0,
+                    "rotation": -90,
                     "text": "Bean Temp (deg F)",
                     "visible": true
                   },
@@ -1697,7 +1697,7 @@
                     "elementStyle": {},
                     "fontSize": 11,
                     "overflow": "none",
-                    "rotation": 0,
+                    "rotation": -90,
                     "visible": true,
                     "width": null,
                     "gap": 2
@@ -1714,9 +1714,9 @@
                     "color": "",
                     "elementStyle": {},
                     "fontSize": 11,
-                    "gap": 15,
+                    "gap": 6,
                     "position": "middle",
-                    "rotation": 0,
+                    "rotation": -90,
                     "text": "Rate of Rise (deg F/min)",
                     "visible": true
                   },
@@ -2477,7 +2477,7 @@
                     "elementStyle": {},
                     "fontSize": 11,
                     "overflow": "none",
-                    "rotation": 0,
+                    "rotation": -90,
                     "visible": true,
                     "width": null,
                     "gap": 2
@@ -2494,9 +2494,9 @@
                     "color": "",
                     "elementStyle": {},
                     "fontSize": 11,
-                    "gap": 15,
+                    "gap": 6,
                     "position": "middle",
-                    "rotation": 0,
+                    "rotation": -90,
                     "text": "Bean Temp (F)",
                     "visible": true
                   },
@@ -2530,7 +2530,7 @@
                     "elementStyle": {},
                     "fontSize": 11,
                     "overflow": "none",
-                    "rotation": 0,
+                    "rotation": -90,
                     "visible": true,
                     "width": null,
                     "gap": 2
@@ -2547,9 +2547,9 @@
                     "color": "",
                     "elementStyle": {},
                     "fontSize": 11,
-                    "gap": 15,
+                    "gap": 6,
                     "position": "middle",
-                    "rotation": 0,
+                    "rotation": -90,
                     "text": "RoR (deg F/min)",
                     "visible": true
                   },

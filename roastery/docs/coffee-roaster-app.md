@@ -10965,3 +10965,132 @@ tick labels rotated vertical on every canvas chart (Eric,
 flagged by worker D above. HUNT-53's ring-clearing app fix
 remains unbuilt, awaiting Eric's word; the PressSlots lab
 mitigation stays in effect. Next HUNT number is HUNT-111.
+
+### Polish round 15: vertical y axis labels and the 14 view builder resync (coordinator, 2026-11-24)
+
+Eric's order (2026-11-23, REQUIRED): "it is required that the
+labels are vertical because in its current format this chart is
+worthless as it needs to be bigger and fill more of the available
+mobile core." He circled the two y axis titles on the 360px Roast
+screenshot: "Bean Temp (F)" (left) and "RoR (deg F/min)" (right)
+sat horizontally mid-axis and the plot was squeezed to a narrow
+strip in the middle of the card. Earlier the same evening he had
+also directed that the y axis tick labels be vertical.
+
+The fix, in the Perspective canvas chart props (ECharts
+nameRotate and axisLabel rotate under the hood): every y axis on
+every Roastery canvas chart now carries title rotation -90 with
+title gap 6, and labels rotation -90 with labels gap 2. Both
+titles read bottom to top along their axes, the tick labels read
+bottom to top, and with the horizontal titles gone the plot
+fills nearly the full card width at 360px. Measured on the
+screenshots: the widest colored plot run at 360px went from
+about 73px before to about 206px after. The values live in
+_canvas_yaxis() in the builder, so every chart the helpers build
+carries them, and in the RoastPage, BatchDetail and BatchesPanel
+literals (14 y axes total across the three views).
+
+Why the plot was squeezed: the canvas chart auto-sizes its grid
+around the axis titles and label columns (containLabel style
+behavior). A horizontal title mid-axis reserves a wide column
+on each side; rotating the titles and labels collapses those
+columns to a few pixels each, and the grid takes the freed
+width. No margins were hand-tuned per view; the rotation is the
+fix.
+
+Second task: the 14 stale builder views flagged by round 14
+worker D are resynced. The builder now reproduces every one of
+the 25 views byte for byte (proof: the new suite
+verify_r15_axis.py runs the builder emission probe and the
+literal probe and requires 25 of 25 IDENTICAL). How each was
+fixed:
+
+- Settings sections (Roaster, Ror, Auc, Projection, Alarms):
+  the settings_section calls now pass the live section names
+  (RoasterSection, RorSection, and so on) instead of the root
+  names; write_view renames the emitted root to <View>Root, so
+  the section head and description components keep the live
+  names. SettingsAlarms also needed the live custom property
+  order (alarmsDs, alarmCount, alarmIdx, alarmNote, showAllCols).
+- SettingsDisplay: the Curve Display description now matches
+  the live text, including the elapsed-axis paragraph (the time
+  axis reads elapsed since Charge in m:ss or mm:ss, true in any
+  browser timezone, tick spacing adapts, no fixed tick step).
+- SettingsPlayback: the sound note field moved to its own row
+  (PbRow2, a plain flex row with no wrap or gap class, meta
+  serialized before type) with field basis 0px, and the view
+  joined the trailing-newline set in write_view.
+- Tile: the UnitLabel carries position grow 0, shrink 0, basis
+  auto, serialized after propConfig (Designer order).
+- EventsStrip: the four custom event cells carry the
+  props.style.classes expression binding that hides the cell
+  when its CustomEventNName tag is empty.
+- LogPage: the header row gained the GearButton (App Settings
+  toggle) as its fourth child, and the view gained the
+  onStartup event calling roastery.core.page_startup, keyed
+  after root as in the live file.
+- TabBar, ControlDock, Controls, BatchesPanel: the live views
+  are Designer edited well past what the helpers can build
+  (TabBar is a horizontalmenu TabMenu now; the builder's
+  ControlDock still emitted mobile M-buttons the live view
+  dropped; Controls differs structurally throughout), so the
+  four functions return the live view.json verbatim, the round
+  14 worker D pattern used for RoastPage and BatchDetail.
+  ControlDock and Controls joined the trailing-newline set.
+  The BatchesPanel literal carries the round 15 axis fix on
+  its two compare charts.
+
+One mistake made and repaired during this round: a full builder
+main() run early on overwrote the 14 stale gateway views with
+stale builder output and rewrote page-config/config.json
+without the appSettings dock. Everything except the two axis
+literals was restored from the repo, the gateway was rescanned,
+and from that point views were written selectively only. A
+related find: the builder's page-config (no appSettings right
+dock on the Roast page), the SelectAll and InsertPress named
+queries, and the style-class resource.json signature formatting
+are also stale relative to the live gateway. They were NOT
+touched this round; rebuilding any of them from the builder
+today would regress the live files. Flagged here for a future
+round, the same way worker D flagged the views.
+
+Screenshots (~/workspace/ignition-lab/r15-screenshots/):
+before-roast-dark-360.png reproduces Eric's complaint exactly;
+after-roast-dark-360.png shows both titles and all tick labels
+vertical with the plot filling the card. Also after shots at
+desktop and in light for Roast, BatchDetail dark at both sizes,
+and the Log page dark at desktop (compare chart vertical, note
+rows restored). The seeded batches are 9 to 19 second stubs, so
+detail and compare curves are short segments, the same caveat
+as round 14.
+
+Closing battery: 51 of 51 suites green counting one rerun
+(~/workspace/ignition-lab/r15-battery/results.txt, final run
+completed 2026-11-24 10:12 UTC, ending with cleanup_workspace
+and the r7_udt_diff at 0 differences). The new suite
+verify_r15_axis.py (8 checks) covers the axis values in the
+repo and gateway files, the 25 view byte identity, and the
+live 360px plot width measurement.
+
+Honest battery history: verify_roastery_tier2 failed its
+battery run on one check, "batch events back to the starting
+count" (rc=1), after an otherwise fully passing run (seeded
+log restored, defaults restored, zero warnings). The immediate
+rerun passed every check including that one (rc=0, "ALL TIER 2
+CHECKS PASSED"). The check counts press event rows before and
+after the suite's live roasts; the one-off mismatch is the
+intermittent press capture timing the HUNT-53 family already
+documents, not a round 15 change (this round touched chart
+props, view literals, and the builder only). The battery was
+also interrupted twice and resumed: a VM replacement at 25
+suites took the lab down (recovered with recover-lab.sh after
+removing the unreachable mirror.cogentco.com from the apt
+sources and clearing a hung apt-get update; Postgres
+reinstalled, reseeded to 7 batches and 101 series, PressSlots
+cleared, 0 events stable), and a later runner kill during
+verify_r14_ui left the lab intact and the run resumed from the
+results file.
+
+HUNT-53's ring-clearing app fix remains unbuilt, awaiting
+Eric's word; the PressSlots lab mitigation stays in effect.
+Next HUNT number is HUNT-111.
