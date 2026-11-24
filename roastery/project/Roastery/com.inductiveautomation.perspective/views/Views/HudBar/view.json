@@ -1,7 +1,7 @@
 {
   "custom": {
     "clockText": "00:00",
-    "clockCaption": "ROAST TIME",
+    "clockCaption": "TIME",
     "phaseText": "Pre-charge",
     "themeMode": "System"
   },
@@ -19,7 +19,7 @@
       "binding": {
         "type": "expr",
         "config": {
-          "expression": "if(({[default]Roastery/CurrentBatch/DropTime} != null && ({[default]Roastery/CurrentBatch/State} = 'Dropped' || {[default]Roastery/CurrentBatch/State} = 'Cooling' || {[default]Roastery/CurrentBatch/State} = 'Complete')), 'SINCE DROP', 'ROAST TIME')"
+          "expression": "if(({[default]Roastery/CurrentBatch/DropTime} != null && ({[default]Roastery/CurrentBatch/State} = 'Dropped' || {[default]Roastery/CurrentBatch/State} = 'Cooling' || {[default]Roastery/CurrentBatch/State} = 'Complete')), 'DROP', 'TIME')"
         }
       }
     },
@@ -84,7 +84,7 @@
         "position": {
           "grow": 0,
           "shrink": 0,
-          "basis": "88px"
+          "basis": "80px"
         },
         "propConfig": {
           "props.text": {
@@ -200,7 +200,7 @@
         "position": {
           "grow": 0,
           "shrink": 0,
-          "basis": "38px"
+          "basis": "48px"
         }
       },
       {
@@ -277,7 +277,7 @@
               "name": "ClockCap"
             },
             "props": {
-              "text": "ROAST TIME",
+              "text": "TIME",
               "style": {
                 "classes": "roast-hud-cap"
               }

@@ -154,7 +154,7 @@
    padding shrink before any text does. With these numbers
    the longest phase text (Second Crack) and a 59:59 clock
    both fit at 360px. */
-.psc-roast-hud { gap: 3px !important; padding: 3px 4px !important; }
+.psc-roast-hud { gap: 2px !important; padding: 3px 4px !important; }
 .psc-roast-hud-field { padding-left: 4px !important; }
 
 /* ---- polish round 9: compare row caption gap (item 8) ------------

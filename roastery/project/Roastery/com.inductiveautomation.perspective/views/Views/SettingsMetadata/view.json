@@ -29526,7 +29526,9 @@
                 "messageStyle": {},
                 "style": {}
               },
-              "style": {}
+              "style": {
+                "flexBasis": "auto"
+              }
             },
             "cancel": {
               "disabled": false,
