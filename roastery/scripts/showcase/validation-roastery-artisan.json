@@ -1,0 +1,163 @@
+{
+ "served_views": [
+  "Views/AppSettings",
+  "Views/BatchDetail",
+  "Views/BatchEdit",
+  "Views/BatchesPanel",
+  "Views/ControlDock",
+  "Views/Controls",
+  "Views/DockButton",
+  "Views/EventCell",
+  "Views/EventsStrip",
+  "Views/HudBar",
+  "Views/LogPage",
+  "Views/MetaCard",
+  "Views/PhasesBar",
+  "Views/RoastPage",
+  "Views/SettingsAlarms",
+  "Views/SettingsAuc",
+  "Views/SettingsBackground",
+  "Views/SettingsCustoms",
+  "Views/SettingsDisplay",
+  "Views/SettingsMetadata",
+  "Views/SettingsPage",
+  "Views/SettingsPlayback",
+  "Views/SettingsProjection",
+  "Views/SettingsRoaster",
+  "Views/SettingsRor",
+  "Views/SettingsTargets",
+  "Views/Summary",
+  "Views/TabBar",
+  "Views/Tile"
+ ],
+ "views": {
+  "Views/RoastPage": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/SettingsPage": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/LogPage": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/BatchDetail": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/TabBar": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/HudBar": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/ControlDock": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/SettingsRoaster": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/SettingsTargets": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/SettingsRor": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/SettingsAuc": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/SettingsProjection": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/SettingsPlayback": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/SettingsAlarms": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/SettingsMetadata": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/SettingsCustoms": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/BatchesPanel": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/BatchEdit": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/Tile": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/EventCell": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/EventsStrip": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/PhasesBar": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/Controls": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/MetaCard": {
+   "served": true,
+   "deep_equal": true
+  },
+  "Views/Summary": {
+   "served": true,
+   "deep_equal": true
+  }
+ },
+ "resources": {
+  "library_core": true,
+  "library_batches": true,
+  "named_queries": [
+   "Batches/Delete",
+   "Batches/Insert",
+   "Batches/SelectAll",
+   "Batches/SelectById",
+   "Batches/SelectMaxNumber",
+   "Batches/Update",
+   "Events/DeleteByBatch",
+   "Events/InsertPress",
+   "Events/SelectByBatch",
+   "Events/SelectByCounter",
+   "Series/InsertBatch",
+   "Series/SelectByBatch"
+  ],
+  "style_classes_on_disk": 92,
+  "roast_card_on_disk": true,
+  "stylesheet_on_disk": true,
+  "radius_offenders": [],
+  "inline_style_offenders": [],
+  "style_binding_offenders": [],
+  "classic_chart_offenders": []
+ },
+ "roastery_warnings": [],
+ "drill_window_warnings": [],
+ "bogus_control_warnings": 1
+}

@@ -4445,8 +4445,22 @@ def bbp_compute(points):
     t_last = points[-1][0]
     if t_last <= t_first:
         return None
-    bottom = min(v for _t, v in points)
-    t_b = [t for t, v in points if v == bottom][0]
+    # HUNT-97: the bottom search used to run over every sample
+    # including the last one (the CHARGE sample finalize
+    # appends) and kept the EARLIEST sample holding the
+    # minimum. Artisan finds the BBP bottom with findTPint
+    # over a fake timeindex whose CHARGE index caps the scan,
+    # so the scan runs over the samples BEFORE charge and
+    # scans backward with a strict less-than, keeping the
+    # LATEST tied sample. The search below mirrors that:
+    # points[:-1] (everything before the charge sample),
+    # latest tied minimum. On a flat-bottomed window the old
+    # form put the bottom at the first sample; Artisan puts
+    # it at the last sample before charge, and the two RoR
+    # legs change with it.
+    search = points[:-1]
+    bottom = min(v for _t, v in search)
+    t_b = [t for t, v in search if v == bottom][-1]
     if t_b > t_first:
         ror_in = ((bottom - points[0][1]) * 60.0
                   / (t_b - t_first))
@@ -4521,14 +4535,20 @@ def bbp_clear_staged():
 
 def bbp_staged_metrics():
     """The staged BBP metrics for the batch document, as the
-    four value bbp subdocument, or None when no window was
-    finalized at this batch charge."""
+    five value bbp subdocument, or None when no window was
+    finalized at this batch charge. HUNT-98: the subdocument
+    used to carry only four values; BottomSec was computed,
+    staged on the tag and then dropped here, so a saved
+    batch lost when its bottom happened (Artisan's BBP
+    report prints the begin to bottom time beside the bottom
+    temp). The staged BottomSec rides into the document now."""
     vals = _bbp_read(['HasMetrics', 'TimeSec', 'BottomTempF',
-                      'RorInFMin', 'RorOutFMin'])
+                      'BottomSec', 'RorInFMin', 'RorOutFMin'])
     if not vals['HasMetrics']:
         return None
     return {'time_sec': float(vals['TimeSec'] or 0.0),
             'bottom_temp_f': float(vals['BottomTempF'] or 0.0),
+            'bottom_sec': float(vals['BottomSec'] or 0.0),
             'ror_in_f_min': float(vals['RorInFMin'] or 0.0),
             'ror_out_f_min': float(vals['RorOutFMin'] or 0.0)}
 
@@ -6324,8 +6344,32 @@ def _phase_analysis(doc, points):
                 tp = (t, bt)
     # AUC base: the saved AUC detail base when present, else
     # the charge temp (the base curve_auc uses for the batch).
+    # HUNT-99: this used to read baseF unconditionally, so
+    # with AucBaseFromEvent set the phase AUCs were computed
+    # above the fixed base while the live AUC and the .alog
+    # export used the bean temp at the begin event (Artisan
+    # AUCbaseFlag: the base is the BT at the begin event).
+    # The base below resolves the same way _computed_for
+    # does, from the recorded event temps: Charge, Dry End
+    # and FC Start from their event temps, TP from the saved
+    # turning point temp, falling back to the fixed base and
+    # then the charge temp when the event temp is missing.
     auc_detail = doc.get('aucDetail') or {}
-    base = auc_detail.get('baseF')
+    base = None
+    if auc_detail.get('fromEvent'):
+        _begin = auc_detail.get('begin') or 'TP'
+        if _begin == 'Charge':
+            base = ev('charge', 'tempF')
+        elif _begin == 'Dry End':
+            base = ev('dryEnd', 'tempF')
+        elif _begin == 'FC Start':
+            base = ev('fcStart', 'tempF')
+        else:
+            base = (saved_tp.get('tempF')
+                    if saved_tp.get('tempF') is not None
+                    else (tp[1] if tp is not None else None))
+    if base is None:
+        base = auc_detail.get('baseF')
     if base is None:
         base = ev('charge', 'tempF') or 0.0
     greens = 0.0
@@ -6602,11 +6646,19 @@ def detail_startup(self):
     # preceding drop show nothing.
     _bbp_doc = doc.get('bbp') or {}
     if _bbp_doc:
+        # HUNT-98: the line now names the bottom time from
+        # the saved bbp subdocument (bottom_sec, restored to
+        # the document by the same fix), so the detail page
+        # shows when the bottom happened, not just how hot
+        # it was. Older saved batches carry no bottom_sec
+        # and read '--' here, which is the honest gap, not
+        # a measured time.
         self.view.custom.dBbp = (
-            'Between batch (BBP): %s, bottom %.0f F, '
+            'Between batch (BBP): %s, bottom %.0f F at %s, '
             'RoR in %.1f F/min, RoR out %.1f F/min' % (
                 _mmss(_bbp_doc.get('time_sec')),
                 float(_bbp_doc.get('bottom_temp_f') or 0),
+                _mmss(_bbp_doc.get('bottom_sec')) or '--',
                 float(_bbp_doc.get('ror_in_f_min') or 0),
                 float(_bbp_doc.get('ror_out_f_min') or 0)))
     else:
@@ -7519,6 +7571,15 @@ def _fan_heat_series(p, timex, t0, mode):
     heat_events.sort()
 
     def level_at(events, t, default=5):
+        # HUNT-100: samples before the first slider event used
+        # to read the FIRST event's level, backfilling a
+        # future setting into the past (a file whose fan only
+        # moves at 60 s read that level from charge on). The
+        # level before the first recorded change is unknown:
+        # Artisan records changes only, and the slider holds
+        # whatever it held before the first change, so the
+        # honest value is the SR800 mid default, not the
+        # future level. Events at or before t still win.
         lvl = None
         for et, pct in events:
             if et <= t:
@@ -7526,7 +7587,7 @@ def _fan_heat_series(p, timex, t0, mode):
             else:
                 break
         if lvl is None:
-            lvl = _level_from_pct(events[0][1]) if events else default
+            lvl = default
         return lvl
 
     merged = sorted(set([t for t, _ in fan_events] +
@@ -8565,16 +8626,25 @@ def batch_to_profile(batch):
     else:
         dry_t = (events.get('dryEnd') or {}).get('tempF')
         fc_t = (events.get('fcStart') or {}).get('tempF')
+        # HUNT-101: the C mode branch used to write the dry
+        # and FC temps in F (the document stores every temp
+        # in F) into a profile whose mode is C, so an imported
+        # C mode batch without phasesRaw exported phases of
+        # [100, 300, 390, 230] where Artisan expects about
+        # [100, 150, 200, 230]. The event temps convert to
+        # mode units here, like every other temp this
+        # function writes; the F branch is unchanged.
         if mode == 'F':
             profile['phases'] = [212, int(round(dry_t)) if dry_t
                                  else 300,
                                  int(round(fc_t)) if fc_t else 390,
                                  450]
         else:
-            profile['phases'] = [100, int(round(dry_t)) if dry_t
-                                 else 150,
-                                 int(round(fc_t)) if fc_t else 200,
-                                 230]
+            profile['phases'] = [
+                100,
+                int(round(_from_f(dry_t, 'C'))) if dry_t else 150,
+                int(round(_from_f(fc_t, 'C'))) if fc_t else 200,
+                230]
 
     if settings.get('weightRaw'):
         profile['weight'] = list(settings['weightRaw'])
@@ -8781,7 +8851,7 @@ STYLE_CLASSES = {
                    'whiteSpace': 'nowrap', 'overflow': 'hidden',
                    'textOverflow': 'ellipsis'},
     'roast-pill': {'fontSize': '12px', 'fontWeight': '700',
-                   'color': '#ffffff', 'padding': '4px 14px',
+                   'color': '#ffffff', 'padding': '4px 8px',
                    'borderRadius': '999px', 'textAlign': 'center'},
     'roast-chart': {'backgroundColor': 'transparent'},
     'roast-hidden': {'display': 'none'},
@@ -9095,7 +9165,7 @@ STYLESHEET_CSS = """/* Roastery advanced stylesheet.
    padding shrink before any text does. With these numbers
    the longest phase text (Second Crack) and a 59:59 clock
    both fit at 360px. */
-.psc-roast-hud { gap: 3px !important; padding: 3px 4px !important; }
+.psc-roast-hud { gap: 2px !important; padding: 3px 4px !important; }
 .psc-roast-hud-field { padding-left: 4px !important; }
 
 /* ---- polish round 9: compare row caption gap (item 8) ------------
@@ -9446,7 +9516,7 @@ def metadata_form(name, header_text, submit_text, submit_script,
                                                'titleStyle': {},
                                                'messageStyle': {},
                                                'style': {}},
-                           'style': {}},
+                           'style': {'flexBasis': 'auto'}},
                 'cancel': {'disabled': False, 'text': 'Cancel',
                            'icon': {}, 'fireComponentEvent': True,
                            'reset': False, 'style': {}},
@@ -10882,10 +10952,10 @@ def batch_edit_form():
                                                'titleStyle': {},
                                                'messageStyle': {},
                                                'style': {}},
-                           'style': {}},
+                           'style': {'flexBasis': 'auto'}},
                 'cancel': {'disabled': False, 'text': 'Cancel',
                            'icon': {}, 'fireComponentEvent': True,
-                           'reset': False, 'style': {}},
+                           'reset': False, 'style': {'flexBasis': 'auto'}},
                 'style': {}},
             'context': {},
             'data': {},
@@ -10980,13 +11050,13 @@ AFTER_DROP = (f"({ref(T('DropTime'))} != null && "
 # roasting (that is the working roast clock; it is never re-zeroed
 # mid roast). At Drop the displayed clock's zero is set: from Drop
 # on it counts up from 00:00 as a post drop timer, captioned
-# SINCE DROP. Event stamps, phases and the chart always use
+# DROP. Event stamps, phases and the chart always use
 # elapsed since Charge regardless.
 CLOCK_EXPR_V4 = (
     f"if({AFTER_DROP}, {mmss_ms(DROP_ELAPSED_MS)}, "
     f"if({ref(T('State'))} = 'Roasting', {mmss_ms(ELAPSED_MS)}, '00:00'))")
 CLOCK_CAPTION_EXPR = (
-    f"if({AFTER_DROP}, 'SINCE DROP', 'ROAST TIME')")
+    f"if({AFTER_DROP}, 'DROP', 'TIME')")
 
 TARGET_AT = (
     f"if({ELAPSED_SEC} <= {ref(T('TargetDryEndSec'))}, "
@@ -11085,7 +11155,7 @@ def stats_line_expr():
 
 
 def state_pill(name):
-    # Fixed 88px box (stability pass): the pill used to size to
+    # Fixed 80px box (stability pass): the pill used to size to
     # its text (Idle 52px, Roasting 81px), shoving every element
     # after it sideways at each state change. The size rides
     # the flex position channel: this build's style class
@@ -11094,7 +11164,7 @@ def state_pill(name):
     # empty), so box sizing is layout, expressed via position,
     # while every visual property stays in the class.
     return label(name, 'Idle', 'roast-pill',
-                 position={'grow': 0, 'shrink': 0, 'basis': '88px'},
+                 position={'grow': 0, 'shrink': 0, 'basis': '80px'},
                  prop_config={
                      'props.text': {'binding': tag_binding(T('State'))},
                      'props.style.backgroundColor': {'binding': {
@@ -11241,35 +11311,79 @@ def hud_view():
     # glance layer; the tiles on the same screen keep the 0.0
     # precision. Whole numbers fit every field with margin.
     # Tier 1 tried adding an AUC field here and the 360px
-    # budget does not close: pill 88 + bean + ror + clock +
+    # budget does not close: pill 80 + bean + ror + clock +
     # a phase field wide enough for 'Second Crack' at HUD
     # size already fill the row, and every squeeze clipped a
     # digit or a phase letter in measurement. AUC lives on
     # the tiles and in the summary (both layouts) and in
     # Settings instead; the HUD keeps its four readouts.
     bean = field('Bean', 'BEAN F', fmt_tag(T('BeanTempF'), '0'),
-                 basis='46px')
-    ror = field('Ror', 'ROR', fmt_tag(T('RateOfRiseF'), '0'),
-                basis='42px')
-    clock = field('Clock', 'ROAST TIME', prop_binding('view.custom.clockText'),
+                 basis='48px')
+    ror = field('Ror', 'ROR', tag_binding(T('RateOfRiseDisplayText')),
+                basis='36px')
+    clock = field('Clock', 'TIME', prop_binding('view.custom.clockText'),
                   cap_binding=prop_binding('view.custom.clockCaption'),
-                  basis='58px')
+                  basis='52px')
     phase = field('Phase', 'PHASE', prop_binding('view.custom.phaseText'),
                   grow=1, value_class='roast-hud-value-phase')
+    gear = button('GearButton', '',
+                  'roast-btn roast-btn-ghost roast-gear-btn',
+                  position={'grow': 0, 'shrink': 0, 'basis': '31px'},
+                  events=script_event(
+                      "\timport roastery.core\n"
+                      "\troastery.core.toggle_app_settings(self)\n"),
+                  image={'icon': {'path': 'material/settings'},
+                         'width': 22, 'height': 22})
+    # The brightness probe buttons are literal dicts, not
+    # button(): the gateway serializes these Designer-edited
+    # components with events before position, while button()
+    # emits position first.
+    bright_dark = {
+        'type': 'ia.input.button',
+        'meta': {'name': 'BrightDarkBtn'},
+        'props': {'text': '',
+                  'style': {'classes': 'roast-brightness-probe'}},
+        'events': script_event(
+            "\timport roastery.core\n"
+            "\troastery.core.set_chart_dark(self, True)\n"),
+        'position': {'basis': '1px', 'shrink': 0, 'grow': 0}}
+    bright_light = {
+        'type': 'ia.input.button',
+        'meta': {'name': 'BrightLightBtn'},
+        'props': {'text': '',
+                  'style': {'classes': 'roast-brightness-probe'}},
+        'events': script_event(
+            "\timport roastery.core\n"
+            "\troastery.core.set_chart_dark(self, False)\n"),
+        'position': {'basis': '1px', 'shrink': 0, 'grow': 0}}
     root = flex('root', 'row',
-                [state_pill('HudState'), bean, ror, clock, phase],
+                [state_pill('HudState'), bean, ror, clock, phase,
+                 gear, bright_dark, bright_light],
                 align='center', justify='flex-start',
                 classes='roast-hud')
-    return {'custom': {'clockText': '00:00', 'clockCaption': 'ROAST TIME',
-                       'phaseText': 'Pre-charge'},
+    return {'custom': {'clockText': '00:00', 'clockCaption': 'TIME',
+                       'phaseText': 'Pre-charge', 'themeMode': 'System'},
             'params': {},
             'propConfig': {
                 'custom.clockText': {'binding': expr_binding(CLOCK_EXPR_V4)},
                 'custom.clockCaption': {'binding': expr_binding(
                     CLOCK_CAPTION_EXPR)},
-                'custom.phaseText': {'binding': expr_binding(PHASE_EXPR)}},
+                'custom.phaseText': {'binding': tag_binding(
+                    T('PhaseLabel'))},
+                'custom.themeMode': {
+                    'binding': tag_binding(
+                        '[default]Roastery/AppSettings/ThemeMode'),
+                    'onChange': {'enabled': True, 'script':
+                        "\timport roastery.core\n"
+                        "\troastery.core.on_theme_mode_change(self)\n"}}},
             'props': {'defaultSize': {'width': 900, 'height': 54}},
-            'root': root}
+            'root': root,
+            'events': {'system': {'onStartup': {
+                'scope': 'G', 'type': 'script',
+                'config': {'script':
+                    "\timport roastery.core\n"
+                    "\troastery.core.init_chart_dark(self)\n"
+                    "\troastery.core.report_brightness(self)\n"}}}}}
 
 
 # ---------------------------------------------------------------- ControlDock
@@ -11547,123 +11661,6402 @@ def _phases_embed():
 
 
 def roast_page_view():
-    # ---- large (desktop): trend first, control rail on the right
-    title = label('TitleLabel', 'Ember & Oak Roastery', 'roast-title')
-    sub = label('SubLabel', 'Artisan Roast Console - FreshRoast SR800',
-                'roast-subtitle')
-    title_block = flex('TitleBlock', 'column', [title, sub],
-                       classes='roast-gap-8')
-    batch_chip = label('BatchChip', '', 'roast-chip',
-                       position={'grow': 0, 'shrink': 1,
-                                 'basis': 'auto'},
-                       prop_config={'props.text': {'binding': expr_binding(
-                           f"'Batch ' + {ref(T('BatchNumber'))} + ' - ' + {ref(T('BeanName'))}")}})
-    ws_pill = label('WsPill', 'SR800', 'roast-pill',
-                    position={'grow': 0, 'shrink': 0,
-                              'basis': '170px'},
-                    prop_config={
-                        'props.text': {'binding': expr_binding(
-                            f"if({ref(T('BeanTempF'))} > 0, {ref(T('ActiveSource'))} + ' CONNECTED', {ref(T('ActiveSource'))} + ' OFFLINE')")},
-                        'props.style.backgroundColor': {'binding':
-                            expr_binding(
-                                f"if({ref(T('BeanTempF'))} > 0, '#166534', '#7f1d1d')")}})
-    clock_cap = label('ClockCap', 'ROAST TIME', 'roast-caption',
-                      prop_config={'props.text': {'binding': prop_binding(
-                          'view.custom.clockCaption')}})
-    clock = label('ClockLabel', '00:00', 'roast-clock',
-                  prop_config={'props.text': {'binding': prop_binding(
-                      'view.custom.clockText')}})
-    clock_block = flex('ClockBlock', 'column', [clock_cap, clock],
-                       align='flex-end', classes='')
-    right = flex('HeaderRight', 'row',
-                 [batch_chip, ws_pill, state_pill('StatePill'),
-                  clock_block],
-                 align='center', wrap='wrap', classes='roast-gap-12')
-    header = flex('HeaderBar', 'row', [title_block, right],
-                  justify='space-between', align='center', wrap='wrap',
-                  position={'grow': 0, 'shrink': 0, 'basis': 'auto'},
-                  classes='roast-header')
-    main_col = flex('MainCol', 'column',
-                    [_chart_card('748px', trace_basis='250px'),
-                     _strip_embed(),
-                     _phases_embed(), _tiles_row()],
-                    classes='roast-gap-12',
-                    position={'grow': 1, 'shrink': 1, 'basis': '0px'})
-    rail_col = flex('RailCol', 'column', [
-        embed('ControlsEmbed', 'Views/Controls', {},
-              {'grow': 0, 'shrink': 0, 'basis': 'auto'}),
-        embed('SummaryEmbed', 'Views/Summary', {},
-              {'grow': 0, 'shrink': 0, 'basis': 'auto'}),
-        embed('MetaCardEmbed', 'Views/MetaCard', {},
-              {'grow': 0, 'shrink': 0, 'basis': 'auto'})],
-        classes='roast-gap-12',
-        position={'grow': 0, 'shrink': 0, 'basis': '400px'})
-    content_row = flex('ContentRow', 'row', [main_col, rail_col],
-                       classes='roast-content roast-gap-12',
-                       position={'grow': 0, 'shrink': 0, 'basis': 'auto'})
-    large = flex('LargeRoot', 'column',
-                 [header, alarm_banner(), prompt_strip(), content_row],
-                 classes='roast-app roast-fillscroll',
-                 position={'size': 'large'})
-
-    # ---- small (phone): control first; chart secondary; the
-    # primary controls are pinned in the ControlDock embed at the
-    # bottom of the layout (above the shared tab bar dock).
-    batch_line = label('BatchLine', '', 'roast-chip',
-                       prop_config={'props.text': {'binding': expr_binding(
-                           f"'Batch ' + {ref(T('BatchNumber'))} + ' - ' + {ref(T('BeanName'))}")}})
-    scroll_col = flex('ScrollCol', 'column', [
-        batch_line, _chart_card('518px', legend_on=False,
-                                head_stack=True, include_trace=False,
-                                mobile=True),
-        _tiles_row(mobile=True),
-        _trace_card(),
-        _strip_embed(),
-        _phases_embed(),
-        embed('ControlsEmbedMobile', 'Views/Controls', {},
-              {'grow': 0, 'shrink': 0, 'basis': 'auto'}),
-        embed('SummaryEmbedMobile', 'Views/Summary', {},
-              {'grow': 0, 'shrink': 0, 'basis': 'auto'}),
-        embed('MetaCardEmbedMobile', 'Views/MetaCard', {},
-              {'grow': 0, 'shrink': 0, 'basis': 'auto'})],
-        classes='roast-content roast-gap-12 roast-scrollcol',
-        position={'grow': 1, 'shrink': 1, 'basis': '0px'})
-    small = flex('SmallRoot', 'column', [
-        alarm_banner('AlarmBannerMobile'), prompt_strip('PromptStripMobile'),
-        scroll_col,
-        embed('ControlDockEmbed', 'Views/ControlDock', {},
-              {'grow': 0, 'shrink': 0, 'basis': 'auto'})],
-        classes='roast-app roast-h100',
-        position={'size': 'small'})
-
-    root = {'type': 'ia.container.breakpt', 'meta': {'name': 'root'},
-            'props': {'breakpoint': 900, 'currentBreakpoint': '',
-                      'determinant': 'width', 'style': {}},
-            'children': [large, small]}
-    return {
-        'custom': {'clockText': '00:00', 'clockCaption': 'ROAST TIME',
-                   'deviationText': '--', 'phaseText': 'Pre-charge',
-                   'alarmText': '', 'bgNote': '', 'promptText': ''},
-        'params': {},
-        'propConfig': {
-            'custom.clockText': {'binding': expr_binding(CLOCK_EXPR_V4)},
-            'custom.clockCaption': {'binding': expr_binding(
-                CLOCK_CAPTION_EXPR)},
-            # Tier 3 item 17: the deviation tile reads the
-            # variable length plan through the library published
-            # PlanDeviationText tag (a view expression can only
-            # interpolate the old four fixed points).
-            'custom.deviationText': {'binding': tag_binding(
-                T('PlanDeviationText'))},
-            'custom.phaseText': {'binding': expr_binding(PHASE_EXPR)},
-            'custom.promptText': {'binding': expr_binding(
-                f"if({ref(T('PlaybackActive'))}, "
-                f"{ref(T('PlaybackText'))}, "
-                f"if({ref(T('SuggestionActive'))}, "
-                f"{ref(T('SuggestionText'))}, ''))")},
-            'custom.alarmText': {'binding': tag_binding(T('AlarmText'))}},
-        'props': {'defaultSize': {'width': 1440, 'height': 1240}},
-        'root': root}
+# Resynced 2026-11-23 (round 14 worker D): the live view is
+# Designer edited well past what the helpers in this file can
+# build (leaf components carry empty children arrays, chart
+# dark mode bindings, alarm bindings, the gear button, and the
+# removed background upload), so the function returns the live
+# view.json verbatim, the same way CORE_CODE carries the live
+# library. A rebuild from the builder reproduces the live file
+# byte for byte.
+    return json.loads(r'''{
+  "custom": {
+    "clockText": "00:00",
+    "clockCaption": "ROAST TIME",
+    "deviationText": "--",
+    "phaseText": "Pre-charge",
+    "alarmText": "",
+    "bgNote": "",
+    "promptText": "",
+    "alarmMessageText": "",
+    "alarmMessageSeq": 0
+  },
+  "params": {},
+  "propConfig": {
+    "custom.clockText": {
+      "binding": {
+        "type": "expr",
+        "config": {
+          "expression": "if(({[default]Roastery/CurrentBatch/DropTime} != null && ({[default]Roastery/CurrentBatch/State} = 'Dropped' || {[default]Roastery/CurrentBatch/State} = 'Cooling' || {[default]Roastery/CurrentBatch/State} = 'Complete')), numberFormat(floor((now() - {[default]Roastery/CurrentBatch/DropTime}) / 60000), '00') + ':' + numberFormat(floor(((now() - {[default]Roastery/CurrentBatch/DropTime}) / 1000) % 60), '00'), if({[default]Roastery/CurrentBatch/State} = 'Roasting', numberFormat(floor((now() - {[default]Roastery/CurrentBatch/StartTime}) / 60000), '00') + ':' + numberFormat(floor(((now() - {[default]Roastery/CurrentBatch/StartTime}) / 1000) % 60), '00'), '00:00'))"
+        }
+      }
+    },
+    "custom.clockCaption": {
+      "binding": {
+        "type": "expr",
+        "config": {
+          "expression": "if(({[default]Roastery/CurrentBatch/DropTime} != null && ({[default]Roastery/CurrentBatch/State} = 'Dropped' || {[default]Roastery/CurrentBatch/State} = 'Cooling' || {[default]Roastery/CurrentBatch/State} = 'Complete')), 'SINCE DROP', 'ROAST TIME')"
+        }
+      }
+    },
+    "custom.deviationText": {
+      "binding": {
+        "type": "tag",
+        "config": {
+          "tagPath": "[default]Roastery/CurrentBatch/PlanDeviationText",
+          "mode": "direct",
+          "bidirectional": false
+        },
+        "bidirectional": false
+      }
+    },
+    "custom.phaseText": {
+      "binding": {
+        "type": "tag",
+        "config": {
+          "tagPath": "[default]Roastery/CurrentBatch/PhaseLabel",
+          "mode": "direct",
+          "bidirectional": false
+        },
+        "bidirectional": false
+      }
+    },
+    "custom.promptText": {
+      "binding": {
+        "type": "expr",
+        "config": {
+          "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive}, {[default]Roastery/CurrentBatch/PlaybackText}, if({[default]Roastery/CurrentBatch/SuggestionActive}, {[default]Roastery/CurrentBatch/SuggestionText}, ''))"
+        }
+      }
+    },
+    "custom.alarmText": {
+      "binding": {
+        "type": "tag",
+        "config": {
+          "tagPath": "[default]Roastery/CurrentBatch/AlarmText",
+          "mode": "direct",
+          "bidirectional": false
+        },
+        "bidirectional": false
+      }
+    },
+    "custom.alarmMessageText": {
+      "binding": {
+        "type": "tag",
+        "config": {
+          "tagPath": "[default]Roastery/CurrentBatch/AlarmMessageText",
+          "mode": "direct",
+          "bidirectional": false
+        },
+        "bidirectional": false
+      }
+    },
+    "custom.alarmMessageSeq": {
+      "binding": {
+        "type": "tag",
+        "config": {
+          "tagPath": "[default]Roastery/CurrentBatch/AlarmMessageSeq",
+          "mode": "direct",
+          "bidirectional": false
+        },
+        "bidirectional": false
+      },
+      "onChange": {
+        "enabled": true,
+        "script": "\timport roastery.core\n\tprev = previousValue.value if previousValue is not None else 0\n\tcur = currentValue.value if currentValue is not None else 0\n\tif cur and cur != prev:\n\t\tmsg = system.tag.readBlocking(['[default]Roastery/CurrentBatch/AlarmMessageText'])[0].value\n\t\tif msg:\n\t\t\troastery.core.show_toast(self, msg, 'warning')\n"
+      }
+    }
+  },
+  "props": {
+    "defaultSize": {
+      "width": 1440,
+      "height": 1240
+    }
+  },
+  "root": {
+    "type": "ia.container.breakpt",
+    "meta": {
+      "name": "RoastPageRoot"
+    },
+    "props": {
+      "breakpoint": 900,
+      "currentBreakpoint": "",
+      "determinant": "width",
+      "style": {}
+    },
+    "children": [
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "LargeRoot"
+        },
+        "props": {
+          "direction": "column",
+          "style": {
+            "classes": "roast-app roast-fillscroll"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "HeaderBar"
+            },
+            "props": {
+              "direction": "row",
+              "justify": "space-between",
+              "alignItems": "center",
+              "wrap": "wrap",
+              "style": {
+                "classes": "roast-header"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "TitleBlock"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "TitleLabel"
+                    },
+                    "props": {
+                      "text": "Ember & Oak Roastery",
+                      "style": {
+                        "classes": "roast-title"
+                      }
+                    },
+                    "children": []
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "SubLabel"
+                    },
+                    "props": {
+                      "text": "Artisan Roast Console - FreshRoast SR800",
+                      "style": {
+                        "classes": "roast-subtitle"
+                      }
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "HeaderRight"
+                },
+                "props": {
+                  "direction": "row",
+                  "alignItems": "center",
+                  "wrap": "wrap",
+                  "style": {
+                    "classes": "roast-gap-12"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "BatchChip"
+                    },
+                    "props": {
+                      "text": "",
+                      "style": {
+                        "classes": "roast-chip"
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 1,
+                      "basis": "auto"
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "expr",
+                          "config": {
+                            "expression": "'Batch ' + {[default]Roastery/CurrentBatch/BatchNumber} + ' - ' + {[default]Roastery/CurrentBatch/BeanName}"
+                          }
+                        }
+                      }
+                    },
+                    "children": []
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "WsPill"
+                    },
+                    "props": {
+                      "text": "SR800",
+                      "style": {
+                        "classes": "roast-pill"
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "170px"
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "expr",
+                          "config": {
+                            "expression": "if({[default]Roastery/CurrentBatch/BeanTempF} > 0, {[default]Roastery/CurrentBatch/ActiveSource} + ' CONNECTED', {[default]Roastery/CurrentBatch/ActiveSource} + ' OFFLINE')"
+                          }
+                        }
+                      },
+                      "props.style.backgroundColor": {
+                        "binding": {
+                          "type": "expr",
+                          "config": {
+                            "expression": "if({[default]Roastery/CurrentBatch/BeanTempF} > 0, '#166534', '#7f1d1d')"
+                          }
+                        }
+                      }
+                    },
+                    "children": []
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "StatePill"
+                    },
+                    "props": {
+                      "text": "Idle",
+                      "style": {
+                        "classes": "roast-pill"
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "88px"
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/State",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.style.backgroundColor": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/State",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "transforms": [
+                            {
+                              "type": "map",
+                              "inputType": "scalar",
+                              "outputType": "color",
+                              "fallback": "#6b7280",
+                              "mappings": [
+                                {
+                                  "input": "Idle",
+                                  "output": "#6b7280"
+                                },
+                                {
+                                  "input": "Roasting",
+                                  "output": "#dc2626"
+                                },
+                                {
+                                  "input": "Dropped",
+                                  "output": "#475569"
+                                },
+                                {
+                                  "input": "Cooling",
+                                  "output": "#0284c7"
+                                },
+                                {
+                                  "input": "Complete",
+                                  "output": "#16a34a"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "children": []
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "ClockBlock"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "alignItems": "flex-end"
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "ClockCap"
+                        },
+                        "props": {
+                          "text": "ROAST TIME",
+                          "style": {
+                            "classes": "roast-caption"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.clockCaption"
+                              }
+                            }
+                          }
+                        },
+                        "children": []
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "ClockLabel"
+                        },
+                        "props": {
+                          "text": "00:00",
+                          "style": {
+                            "classes": "roast-clock"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.clockText"
+                              }
+                            }
+                          }
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.input.button",
+                    "meta": {
+                      "name": "GearButton"
+                    },
+                    "props": {
+                      "text": "",
+                      "image": {
+                        "icon": {
+                          "path": "material/settings"
+                        },
+                        "width": 22,
+                        "height": 22
+                      },
+                      "style": {
+                        "classes": "roast-btn roast-btn-ghost roast-gear-btn"
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "40px"
+                    },
+                    "events": {
+                      "dom": {
+                        "onClick": {
+                          "scope": "G",
+                          "type": "script",
+                          "config": {
+                            "script": "\timport roastery.core\n\troastery.core.toggle_app_settings(self)\n"
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AlarmBanner"
+            },
+            "props": {
+              "direction": "row",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-banner"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AlarmBannerText"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-banner-text"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "view.custom.alarmText"
+                      }
+                    }
+                  }
+                },
+                "children": []
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "38px"
+            },
+            "propConfig": {
+              "props.style.backgroundColor": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/AlarmActive}, '#991b1b', 'rgba(0,0,0,0)')"
+                  }
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/AlarmActive}, 'roast-banner', 'roast-banner roast-hidden')"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "PromptStrip"
+            },
+            "props": {
+              "direction": "row",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-banner"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "PromptStripText"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-banner-text"
+                  }
+                },
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "0px"
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "view.custom.promptText"
+                      }
+                    }
+                  }
+                },
+                "children": []
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "PromptStripDismiss"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive} || {[default]Roastery/CurrentBatch/SuggestionActive}, 'Dismiss', '')"
+                      }
+                    }
+                  },
+                  "props.style.classes": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive} || {[default]Roastery/CurrentBatch/SuggestionActive}, 'roast-btn roast-btn-sm roast-btn-ghost', 'roast-btn roast-btn-sm roast-btn-ghost roast-hidden')"
+                      }
+                    }
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core, roastery.batches\n\troastery.core.dismiss_prompt()\n"
+                      }
+                    }
+                  }
+                },
+                "children": [],
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "92px"
+                }
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "56px"
+            },
+            "propConfig": {
+              "props.style.backgroundColor": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive}, '#92400e', if({[default]Roastery/CurrentBatch/SuggestionActive}, '#1e40af', 'rgba(0,0,0,0)'))"
+                  }
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive} || {[default]Roastery/CurrentBatch/SuggestionActive} || {[default]Roastery/BackgroundLabel} != '', 'roast-banner', 'roast-banner roast-hidden')"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "ContentRow"
+            },
+            "props": {
+              "direction": "row",
+              "style": {
+                "classes": "roast-content roast-gap-12"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "MainCol"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-12"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "ChartCard"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-card roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "ChartHead"
+                        },
+                        "props": {
+                          "direction": "row",
+                          "justify": "space-between",
+                          "alignItems": "center"
+                        },
+                        "children": [
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "ChartTitle"
+                            },
+                            "props": {
+                              "text": "Roast Curve",
+                              "style": {
+                                "classes": "roast-value-strong"
+                              }
+                            },
+                            "children": []
+                          },
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "BgChip"
+                            },
+                            "props": {
+                              "text": "",
+                              "style": {
+                                "classes": "roast-note"
+                              }
+                            },
+                            "propConfig": {
+                              "props.text": {
+                                "binding": {
+                                  "type": "expr",
+                                  "config": {
+                                    "expression": "if({[default]Roastery/BackgroundLabel} != '', 'Background: ' + {[default]Roastery/BackgroundLabel}, 'Background: none')"
+                                  }
+                                }
+                              }
+                            },
+                            "children": []
+                          }
+                        ],
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "24px"
+                        }
+                      },
+                      {
+                        "type": "ia.canvas-charts.line",
+                        "meta": {
+                          "name": "RoastChart"
+                        },
+                        "props": {
+                          "appearance": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "duration": 900,
+                                "easing": "cubicOut",
+                                "delay": 0
+                              },
+                              "transition": {
+                                "duration": 300,
+                                "easing": "cubicOut",
+                                "delay": 0
+                              }
+                            },
+                            "backgroundColor": "",
+                            "colorPalette": [
+                              "#eab308",
+                              "#f97316",
+                              "#dc2626",
+                              "#0284c7",
+                              "#64748b",
+                              "#64748b",
+                              "#94a3b8",
+                              "#3b82f6",
+                              "#14b8a6",
+                              "#f59e0b"
+                            ]
+                          },
+                          "axisPointer": {
+                            "enabled": true,
+                            "label": {
+                              "backgroundColor": "",
+                              "color": "",
+                              "elementStyle": {},
+                              "fontSize": "",
+                              "visible": false
+                            },
+                            "type": "line"
+                          },
+                          "data": [],
+                          "legend": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": 12,
+                            "interactive": true,
+                            "orientation": "horizontal",
+                            "position": "bottom",
+                            "visible": true
+                          },
+                          "liveData": false,
+                          "series": [
+                            {
+                              "advanced": {
+                                "connectNulls": true,
+                                "step": "",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 0
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Drying",
+                              "line": {
+                                "type": "solid",
+                                "width": 0,
+                                "color": "#eab308"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": false,
+                              "value": "bandDry",
+                              "visible": true,
+                              "area": {
+                                "fillStyle": "solid",
+                                "color": "#eab308",
+                                "opacity": 0.12,
+                                "gradientMode": "fade",
+                                "gradientStart": "#eab308",
+                                "gradientEnd": ""
+                              }
+                            },
+                            {
+                              "advanced": {
+                                "connectNulls": true,
+                                "step": "",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 0
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Maillard",
+                              "line": {
+                                "type": "solid",
+                                "width": 0,
+                                "color": "#f97316"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": false,
+                              "value": "bandMai",
+                              "visible": true,
+                              "area": {
+                                "fillStyle": "solid",
+                                "color": "#f97316",
+                                "opacity": 0.12,
+                                "gradientMode": "fade",
+                                "gradientStart": "#f97316",
+                                "gradientEnd": ""
+                              }
+                            },
+                            {
+                              "advanced": {
+                                "connectNulls": true,
+                                "step": "",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 0
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Development",
+                              "line": {
+                                "type": "solid",
+                                "width": 0,
+                                "color": "#dc2626"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": false,
+                              "value": "bandDev",
+                              "visible": true,
+                              "area": {
+                                "fillStyle": "solid",
+                                "color": "#dc2626",
+                                "opacity": 0.12,
+                                "gradientMode": "fade",
+                                "gradientStart": "#dc2626",
+                                "gradientEnd": ""
+                              }
+                            },
+                            {
+                              "advanced": {
+                                "connectNulls": true,
+                                "step": "",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 0
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Cooling",
+                              "line": {
+                                "type": "solid",
+                                "width": 0,
+                                "color": "#0284c7"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": false,
+                              "value": "bandCool",
+                              "visible": true,
+                              "area": {
+                                "fillStyle": "solid",
+                                "color": "#0284c7",
+                                "opacity": 0.12,
+                                "gradientMode": "fade",
+                                "gradientStart": "#0284c7",
+                                "gradientEnd": ""
+                              }
+                            },
+                            {
+                              "advanced": {
+                                "connectNulls": true,
+                                "step": "",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 0
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Background",
+                              "line": {
+                                "type": "solid",
+                                "width": 2,
+                                "color": "#64748b"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": true,
+                              "value": "bg",
+                              "visible": true
+                            },
+                            {
+                              "advanced": {
+                                "connectNulls": true,
+                                "step": "",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 1
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Background RoR",
+                              "line": {
+                                "type": "solid",
+                                "width": 2,
+                                "color": "#64748b"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": true,
+                              "value": "bgRor",
+                              "visible": true
+                            },
+                            {
+                              "advanced": {
+                                "connectNulls": true,
+                                "step": "",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 0
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Target",
+                              "line": {
+                                "type": "dashed",
+                                "width": 2,
+                                "color": "#94a3b8"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": true,
+                              "value": "plan",
+                              "visible": true
+                            },
+                            {
+                              "advanced": {
+                                "connectNulls": true,
+                                "step": "",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 0
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Bean Temp",
+                              "line": {
+                                "type": "solid",
+                                "width": 3,
+                                "color": "#3b82f6"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": true,
+                              "value": "bean",
+                              "visible": true
+                            },
+                            {
+                              "advanced": {
+                                "connectNulls": true,
+                                "step": "",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 1
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Rate of Rise",
+                              "line": {
+                                "type": "solid",
+                                "width": 2,
+                                "color": "#14b8a6"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": true,
+                              "value": "ror",
+                              "visible": true,
+                              "area": {
+                                "fillStyle": "solid",
+                                "color": "#14b8a6",
+                                "opacity": 0.0,
+                                "gradientMode": "fade",
+                                "gradientStart": "#14b8a6",
+                                "gradientEnd": ""
+                              }
+                            },
+                            {
+                              "advanced": {
+                                "connectNulls": true,
+                                "step": "",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 0
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Projection",
+                              "line": {
+                                "type": "dashed",
+                                "width": 2,
+                                "color": "#f59e0b"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": true,
+                              "value": "proj",
+                              "visible": true
+                            }
+                          ],
+                          "stackGroups": [],
+                          "title": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "gap": 5,
+                            "position": "top-left",
+                            "subtitle": {
+                              "color": "",
+                              "elementStyle": {},
+                              "fontSize": "",
+                              "text": ""
+                            },
+                            "text": "",
+                            "visible": false
+                          },
+                          "tooltip": {
+                            "enabled": true,
+                            "formatter": {
+                              "template": "",
+                              "type": "value",
+                              "value": "{value}"
+                            },
+                            "trigger": "axis"
+                          },
+                          "visualMap": {
+                            "dimension": "y",
+                            "enabled": false,
+                            "legend": {
+                              "color": "",
+                              "elementStyle": {},
+                              "fontSize": "",
+                              "interactive": true,
+                              "orientation": "horizontal",
+                              "position": "bottom",
+                              "visible": true
+                            },
+                            "outOfRange": {},
+                            "pieces": []
+                          },
+                          "xAxis": {
+                            "advanced": {
+                              "axisPointer": {
+                                "enabled": "auto",
+                                "label": {
+                                  "backgroundColor": "",
+                                  "color": "",
+                                  "elementStyle": {},
+                                  "fontSize": "",
+                                  "visible": "auto"
+                                },
+                                "type": "auto"
+                              }
+                            },
+                            "axisLine": {
+                              "color": "",
+                              "visible": true,
+                              "width": 1
+                            },
+                            "boundaryGap": false,
+                            "field": "t_label",
+                            "gridLines": {
+                              "color": "",
+                              "visible": false,
+                              "width": 1
+                            },
+                            "labels": {
+                              "color": "",
+                              "elementStyle": {},
+                              "fontSize": "",
+                              "overflow": "none",
+                              "position": "bottom",
+                              "rotation": 0,
+                              "visible": true
+                            },
+                            "max": "auto",
+                            "min": "auto",
+                            "position": "bottom",
+                            "title": {
+                              "color": "",
+                              "elementStyle": {},
+                              "fontSize": 11,
+                              "gap": 15,
+                              "position": "middle",
+                              "rotation": 0,
+                              "text": "",
+                              "visible": true
+                            },
+                            "type": "category",
+                            "visible": true
+                          },
+                          "yAxis": [
+                            {
+                              "advanced": {
+                                "axisPointer": {
+                                  "enabled": "auto",
+                                  "label": {
+                                    "backgroundColor": "",
+                                    "color": "",
+                                    "elementStyle": {},
+                                    "fontSize": "",
+                                    "visible": "auto"
+                                  },
+                                  "type": "auto"
+                                }
+                              },
+                              "axisLine": {
+                                "visible": true
+                              },
+                              "boundaryGap": true,
+                              "gridLines": {
+                                "visible": true,
+                                "color": "",
+                                "width": 1
+                              },
+                              "labels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "overflow": "none",
+                                "rotation": 0,
+                                "visible": true,
+                                "width": null
+                              },
+                              "max": 520,
+                              "min": 150,
+                              "ticks": {
+                                "displayInside": false,
+                                "majorSplit": 6,
+                                "minorSplit": 0,
+                                "visible": true
+                              },
+                              "title": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": 11,
+                                "gap": 15,
+                                "position": "middle",
+                                "rotation": 0,
+                                "text": "Bean Temp (deg F)",
+                                "visible": true
+                              },
+                              "visible": true
+                            },
+                            {
+                              "advanced": {
+                                "axisPointer": {
+                                  "enabled": "auto",
+                                  "label": {
+                                    "backgroundColor": "",
+                                    "color": "",
+                                    "elementStyle": {},
+                                    "fontSize": "",
+                                    "visible": "auto"
+                                  },
+                                  "type": "auto"
+                                }
+                              },
+                              "axisLine": {
+                                "visible": true
+                              },
+                              "boundaryGap": true,
+                              "gridLines": {
+                                "visible": false,
+                                "color": "",
+                                "width": 1
+                              },
+                              "labels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "overflow": "none",
+                                "rotation": 0,
+                                "visible": true,
+                                "width": null
+                              },
+                              "max": 47,
+                              "min": 0,
+                              "ticks": {
+                                "displayInside": false,
+                                "majorSplit": 4,
+                                "minorSplit": 0,
+                                "visible": true
+                              },
+                              "title": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": 11,
+                                "gap": 15,
+                                "position": "middle",
+                                "rotation": 0,
+                                "text": "Rate of Rise (deg F/min)",
+                                "visible": true
+                              },
+                              "visible": true,
+                              "position": "right"
+                            }
+                          ],
+                          "zoom": {
+                            "axis": "x",
+                            "backgroundColor": "",
+                            "enabled": false,
+                            "height": 30,
+                            "type": "slider",
+                            "width": 30,
+                            "xPosition": "bottom",
+                            "yPosition": "right"
+                          },
+                          "style": {
+                            "classes": "roast-chart"
+                          }
+                        },
+                        "propConfig": {
+                          "props.data": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/LiveCurveDS",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[7].referenceLines.items": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/EventMarksDS",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.event_reference_lines()\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.series[7].line.width": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispBtWidth",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[7].line.type": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispBtStyle",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[8].line.width": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispRorWidth",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[8].line.type": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispRorStyle",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[4].line.width": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispGhostWidth",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[4].line.type": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispGhostStyle",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[5].line.width": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispGhostWidth",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[5].line.type": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispGhostStyle",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.series[8].area.opacity": {
+                            "binding": {
+                              "type": "expr",
+                              "config": {
+                                "expression": "if({[default]Roastery/CurrentBatch/DispRorFill}, 0.22, 0.0)"
+                              }
+                            }
+                          },
+                          "props.series[7].referenceLines.endpoints.points[0].size": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/DispMarkerSize",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.xAxis.labels.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.xAxis.advanced.axisPointer.label.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].labels.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].title.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].advanced.axisPointer.label.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[1].labels.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[1].title.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[1].advanced.axisPointer.label.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.xAxis.advanced.axisPointer.label.backgroundColor": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].advanced.axisPointer.label.backgroundColor": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[1].advanced.axisPointer.label.backgroundColor": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.series[0].area.opacity": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.series[1].area.opacity": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.series[2].area.opacity": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.series[3].area.opacity": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        },
+                        "children": []
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "StatsLine"
+                        },
+                        "props": {
+                          "text": "",
+                          "style": {
+                            "classes": "roast-stats-line"
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "20px"
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/StatsLineText",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          }
+                        },
+                        "children": []
+                      },
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "AnalyzerStrip"
+                        },
+                        "props": {
+                          "direction": "column",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.container.flex",
+                            "meta": {
+                              "name": "AnalyzerCapRow"
+                            },
+                            "props": {
+                              "direction": "row",
+                              "style": {
+                                "classes": "roast-gap-8"
+                              }
+                            },
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "16px"
+                            },
+                            "children": [
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerCap"
+                                },
+                                "props": {
+                                  "text": "Analyzer",
+                                  "style": {
+                                    "classes": "roast-caption"
+                                  }
+                                },
+                                "position": {
+                                  "grow": 0,
+                                  "shrink": 0,
+                                  "basis": "auto"
+                                },
+                                "children": []
+                              }
+                            ]
+                          },
+                          {
+                            "type": "ia.container.flex",
+                            "meta": {
+                              "name": "AnalyzerControls"
+                            },
+                            "props": {
+                              "direction": "row",
+                              "alignItems": "center",
+                              "style": {
+                                "classes": "roast-gap-8"
+                              }
+                            },
+                            "children": [
+                              {
+                                "type": "ia.input.button",
+                                "meta": {
+                                  "name": "AnalyzerMinus"
+                                },
+                                "props": {
+                                  "text": "-10s",
+                                  "style": {
+                                    "classes": "roast-btn-ghost roast-btn-compact"
+                                  }
+                                },
+                                "events": {
+                                  "dom": {
+                                    "onClick": {
+                                      "scope": "G",
+                                      "type": "script",
+                                      "config": {
+                                        "script": "\timport roastery.core, roastery.batches\n\troastery.core.analyzer_step(-10)\n"
+                                      }
+                                    }
+                                  }
+                                },
+                                "children": [],
+                                "position": {
+                                  "grow": 0,
+                                  "shrink": 0,
+                                  "basis": "auto"
+                                }
+                              },
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerTime"
+                                },
+                                "props": {
+                                  "text": "--:--",
+                                  "style": {
+                                    "classes": "roast-value-strong"
+                                  }
+                                },
+                                "position": {
+                                  "grow": 0,
+                                  "shrink": 0,
+                                  "basis": "52px"
+                                },
+                                "propConfig": {
+                                  "props.text": {
+                                    "binding": {
+                                      "type": "tag",
+                                      "config": {
+                                        "tagPath": "[default]Roastery/CurrentBatch/AnalyzerTimeText",
+                                        "mode": "direct",
+                                        "bidirectional": false
+                                      },
+                                      "bidirectional": false
+                                    }
+                                  }
+                                },
+                                "children": []
+                              },
+                              {
+                                "type": "ia.input.button",
+                                "meta": {
+                                  "name": "AnalyzerPlus"
+                                },
+                                "props": {
+                                  "text": "+10s",
+                                  "style": {
+                                    "classes": "roast-btn-ghost roast-btn-compact"
+                                  }
+                                },
+                                "events": {
+                                  "dom": {
+                                    "onClick": {
+                                      "scope": "G",
+                                      "type": "script",
+                                      "config": {
+                                        "script": "\timport roastery.core, roastery.batches\n\troastery.core.analyzer_step(10)\n"
+                                      }
+                                    }
+                                  }
+                                },
+                                "children": [],
+                                "position": {
+                                  "grow": 0,
+                                  "shrink": 0,
+                                  "basis": "auto"
+                                }
+                              },
+                              {
+                                "type": "ia.input.button",
+                                "meta": {
+                                  "name": "AnalyzerLatest"
+                                },
+                                "props": {
+                                  "text": "Latest",
+                                  "style": {
+                                    "classes": "roast-btn-ghost roast-btn-compact"
+                                  }
+                                },
+                                "events": {
+                                  "dom": {
+                                    "onClick": {
+                                      "scope": "G",
+                                      "type": "script",
+                                      "config": {
+                                        "script": "\timport roastery.core, roastery.batches\n\troastery.core.analyzer_latest()\n"
+                                      }
+                                    }
+                                  }
+                                },
+                                "children": [],
+                                "position": {
+                                  "grow": 0,
+                                  "shrink": 0,
+                                  "basis": "auto"
+                                }
+                              }
+                            ],
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "36px"
+                            }
+                          },
+                          {
+                            "type": "ia.container.flex",
+                            "meta": {
+                              "name": "AnalyzerValues"
+                            },
+                            "props": {
+                              "direction": "row",
+                              "style": {
+                                "classes": "roast-gap-8"
+                              }
+                            },
+                            "children": [
+                              {
+                                "type": "ia.container.flex",
+                                "meta": {
+                                  "name": "AnalyzerBt"
+                                },
+                                "props": {
+                                  "direction": "column",
+                                  "style": {
+                                    "classes": "roast-gap-8"
+                                  }
+                                },
+                                "children": [
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerBtCap"
+                                    },
+                                    "props": {
+                                      "text": "BT (F)",
+                                      "style": {
+                                        "classes": "roast-caption"
+                                      }
+                                    },
+                                    "children": []
+                                  },
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerBtVal"
+                                    },
+                                    "props": {
+                                      "text": "--",
+                                      "style": {
+                                        "classes": "roast-value"
+                                      }
+                                    },
+                                    "propConfig": {
+                                      "props.text": {
+                                        "binding": {
+                                          "type": "tag",
+                                          "config": {
+                                            "tagPath": "[default]Roastery/CurrentBatch/AnalyzerBtText",
+                                            "mode": "direct",
+                                            "bidirectional": false
+                                          },
+                                          "bidirectional": false
+                                        }
+                                      }
+                                    },
+                                    "children": []
+                                  }
+                                ],
+                                "position": {
+                                  "grow": 1,
+                                  "shrink": 1,
+                                  "basis": "0px"
+                                }
+                              },
+                              {
+                                "type": "ia.container.flex",
+                                "meta": {
+                                  "name": "AnalyzerRor"
+                                },
+                                "props": {
+                                  "direction": "column",
+                                  "style": {
+                                    "classes": "roast-gap-8"
+                                  }
+                                },
+                                "children": [
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerRorCap"
+                                    },
+                                    "props": {
+                                      "text": "RoR",
+                                      "style": {
+                                        "classes": "roast-caption"
+                                      }
+                                    },
+                                    "children": []
+                                  },
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerRorVal"
+                                    },
+                                    "props": {
+                                      "text": "--",
+                                      "style": {
+                                        "classes": "roast-value"
+                                      }
+                                    },
+                                    "propConfig": {
+                                      "props.text": {
+                                        "binding": {
+                                          "type": "tag",
+                                          "config": {
+                                            "tagPath": "[default]Roastery/CurrentBatch/AnalyzerRorText",
+                                            "mode": "direct",
+                                            "bidirectional": false
+                                          },
+                                          "bidirectional": false
+                                        }
+                                      }
+                                    },
+                                    "children": []
+                                  }
+                                ],
+                                "position": {
+                                  "grow": 1,
+                                  "shrink": 1,
+                                  "basis": "0px"
+                                }
+                              },
+                              {
+                                "type": "ia.container.flex",
+                                "meta": {
+                                  "name": "AnalyzerBg"
+                                },
+                                "props": {
+                                  "direction": "column",
+                                  "style": {
+                                    "classes": "roast-gap-8"
+                                  }
+                                },
+                                "children": [
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerBgCap"
+                                    },
+                                    "props": {
+                                      "text": "Ghost (F)",
+                                      "style": {
+                                        "classes": "roast-caption"
+                                      }
+                                    },
+                                    "children": []
+                                  },
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerBgVal"
+                                    },
+                                    "props": {
+                                      "text": "--",
+                                      "style": {
+                                        "classes": "roast-value"
+                                      }
+                                    },
+                                    "propConfig": {
+                                      "props.text": {
+                                        "binding": {
+                                          "type": "tag",
+                                          "config": {
+                                            "tagPath": "[default]Roastery/CurrentBatch/AnalyzerBgText",
+                                            "mode": "direct",
+                                            "bidirectional": false
+                                          },
+                                          "bidirectional": false
+                                        }
+                                      }
+                                    },
+                                    "children": []
+                                  }
+                                ],
+                                "position": {
+                                  "grow": 1,
+                                  "shrink": 1,
+                                  "basis": "0px"
+                                }
+                              },
+                              {
+                                "type": "ia.container.flex",
+                                "meta": {
+                                  "name": "AnalyzerDev"
+                                },
+                                "props": {
+                                  "direction": "column",
+                                  "style": {
+                                    "classes": "roast-gap-8"
+                                  }
+                                },
+                                "children": [
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerDevCap"
+                                    },
+                                    "props": {
+                                      "text": "Dev (F)",
+                                      "style": {
+                                        "classes": "roast-caption"
+                                      }
+                                    },
+                                    "children": []
+                                  },
+                                  {
+                                    "type": "ia.display.label",
+                                    "meta": {
+                                      "name": "AnalyzerDevVal"
+                                    },
+                                    "props": {
+                                      "text": "--",
+                                      "style": {
+                                        "classes": "roast-value"
+                                      }
+                                    },
+                                    "propConfig": {
+                                      "props.text": {
+                                        "binding": {
+                                          "type": "tag",
+                                          "config": {
+                                            "tagPath": "[default]Roastery/CurrentBatch/AnalyzerDevText",
+                                            "mode": "direct",
+                                            "bidirectional": false
+                                          },
+                                          "bidirectional": false
+                                        }
+                                      }
+                                    },
+                                    "children": []
+                                  }
+                                ],
+                                "position": {
+                                  "grow": 1,
+                                  "shrink": 1,
+                                  "basis": "0px"
+                                }
+                              }
+                            ],
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "44px"
+                            }
+                          }
+                        ],
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "112px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "TraceCaption"
+                        },
+                        "props": {
+                          "text": "Fan / Heat Levels",
+                          "style": {
+                            "classes": "roast-caption"
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "16px"
+                        },
+                        "children": []
+                      },
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "TraceWrap"
+                        },
+                        "props": {
+                          "direction": "row"
+                        },
+                        "children": [
+                          {
+                            "type": "ia.canvas-charts.line",
+                            "meta": {
+                              "name": "TraceChart"
+                            },
+                            "props": {
+                              "appearance": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "duration": 900,
+                                    "easing": "cubicOut",
+                                    "delay": 0
+                                  },
+                                  "transition": {
+                                    "duration": 300,
+                                    "easing": "cubicOut",
+                                    "delay": 0
+                                  }
+                                },
+                                "backgroundColor": "",
+                                "colorPalette": [
+                                  "#3b82f6",
+                                  "#ef4444"
+                                ]
+                              },
+                              "axisPointer": {
+                                "enabled": true,
+                                "label": {
+                                  "backgroundColor": "",
+                                  "color": "",
+                                  "elementStyle": {},
+                                  "fontSize": "",
+                                  "visible": false
+                                },
+                                "type": "line"
+                              },
+                              "data": [],
+                              "legend": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": 12,
+                                "interactive": true,
+                                "orientation": "horizontal",
+                                "position": "bottom",
+                                "visible": true
+                              },
+                              "liveData": false,
+                              "series": [
+                                {
+                                  "advanced": {
+                                    "connectNulls": true,
+                                    "step": "start",
+                                    "tooltip": {
+                                      "enabled": true,
+                                      "formatter": {
+                                        "template": "",
+                                        "type": "value",
+                                        "value": ""
+                                      }
+                                    },
+                                    "yAxis": 0
+                                  },
+                                  "dataLabels": {
+                                    "color": "",
+                                    "elementStyle": {},
+                                    "fontSize": "",
+                                    "format": "{value}",
+                                    "position": "top",
+                                    "visible": false
+                                  },
+                                  "label": "Fan",
+                                  "line": {
+                                    "type": "solid",
+                                    "width": 2,
+                                    "color": "#3b82f6"
+                                  },
+                                  "points": {
+                                    "fillColor": "",
+                                    "outlineColor": "transparent",
+                                    "outlineWidth": 0,
+                                    "shape": "circle",
+                                    "size": 4,
+                                    "visible": false
+                                  },
+                                  "referenceLines": {
+                                    "animation": {
+                                      "enabled": true,
+                                      "entry": {
+                                        "delay": 0,
+                                        "duration": 1000,
+                                        "easing": "cubicOut"
+                                      },
+                                      "transition": {
+                                        "delay": 0,
+                                        "duration": 300,
+                                        "easing": "cubicOut"
+                                      }
+                                    },
+                                    "endpoints": {
+                                      "points": [
+                                        {
+                                          "shape": "circle",
+                                          "size": 4
+                                        }
+                                      ],
+                                      "visible": true
+                                    },
+                                    "items": []
+                                  },
+                                  "smooth": true,
+                                  "value": "fan",
+                                  "visible": true
+                                },
+                                {
+                                  "advanced": {
+                                    "connectNulls": true,
+                                    "step": "start",
+                                    "tooltip": {
+                                      "enabled": true,
+                                      "formatter": {
+                                        "template": "",
+                                        "type": "value",
+                                        "value": ""
+                                      }
+                                    },
+                                    "yAxis": 0
+                                  },
+                                  "dataLabels": {
+                                    "color": "",
+                                    "elementStyle": {},
+                                    "fontSize": "",
+                                    "format": "{value}",
+                                    "position": "top",
+                                    "visible": false
+                                  },
+                                  "label": "Heat",
+                                  "line": {
+                                    "type": "solid",
+                                    "width": 2,
+                                    "color": "#ef4444"
+                                  },
+                                  "points": {
+                                    "fillColor": "",
+                                    "outlineColor": "transparent",
+                                    "outlineWidth": 0,
+                                    "shape": "circle",
+                                    "size": 4,
+                                    "visible": false
+                                  },
+                                  "referenceLines": {
+                                    "animation": {
+                                      "enabled": true,
+                                      "entry": {
+                                        "delay": 0,
+                                        "duration": 1000,
+                                        "easing": "cubicOut"
+                                      },
+                                      "transition": {
+                                        "delay": 0,
+                                        "duration": 300,
+                                        "easing": "cubicOut"
+                                      }
+                                    },
+                                    "endpoints": {
+                                      "points": [
+                                        {
+                                          "shape": "circle",
+                                          "size": 4
+                                        }
+                                      ],
+                                      "visible": true
+                                    },
+                                    "items": []
+                                  },
+                                  "smooth": true,
+                                  "value": "heat",
+                                  "visible": true
+                                }
+                              ],
+                              "stackGroups": [],
+                              "title": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "gap": 5,
+                                "position": "top-left",
+                                "subtitle": {
+                                  "color": "",
+                                  "elementStyle": {},
+                                  "fontSize": "",
+                                  "text": ""
+                                },
+                                "text": "",
+                                "visible": false
+                              },
+                              "tooltip": {
+                                "enabled": true,
+                                "formatter": {
+                                  "template": "",
+                                  "type": "value",
+                                  "value": "{value}"
+                                },
+                                "trigger": "axis"
+                              },
+                              "visualMap": {
+                                "dimension": "y",
+                                "enabled": false,
+                                "legend": {
+                                  "color": "",
+                                  "elementStyle": {},
+                                  "fontSize": "",
+                                  "interactive": true,
+                                  "orientation": "horizontal",
+                                  "position": "bottom",
+                                  "visible": true
+                                },
+                                "outOfRange": {},
+                                "pieces": []
+                              },
+                              "xAxis": {
+                                "advanced": {
+                                  "axisPointer": {
+                                    "enabled": "auto",
+                                    "label": {
+                                      "backgroundColor": "",
+                                      "color": "",
+                                      "elementStyle": {},
+                                      "fontSize": "",
+                                      "visible": "auto"
+                                    },
+                                    "type": "auto"
+                                  }
+                                },
+                                "axisLine": {
+                                  "color": "",
+                                  "visible": true,
+                                  "width": 1
+                                },
+                                "boundaryGap": false,
+                                "field": "t_label",
+                                "gridLines": {
+                                  "color": "",
+                                  "visible": false,
+                                  "width": 1
+                                },
+                                "labels": {
+                                  "color": "",
+                                  "elementStyle": {},
+                                  "fontSize": "",
+                                  "overflow": "none",
+                                  "position": "bottom",
+                                  "rotation": 0,
+                                  "visible": true
+                                },
+                                "max": "auto",
+                                "min": "auto",
+                                "position": "bottom",
+                                "title": {
+                                  "color": "",
+                                  "elementStyle": {},
+                                  "fontSize": "",
+                                  "gap": 15,
+                                  "position": "middle",
+                                  "rotation": 0,
+                                  "text": "",
+                                  "visible": false
+                                },
+                                "type": "category",
+                                "visible": true
+                              },
+                              "yAxis": [
+                                {
+                                  "advanced": {
+                                    "axisPointer": {
+                                      "enabled": "auto",
+                                      "label": {
+                                        "backgroundColor": "",
+                                        "color": "",
+                                        "elementStyle": {},
+                                        "fontSize": "",
+                                        "visible": "auto"
+                                      },
+                                      "type": "auto"
+                                    }
+                                  },
+                                  "axisLine": {
+                                    "visible": true
+                                  },
+                                  "boundaryGap": true,
+                                  "gridLines": {
+                                    "visible": true,
+                                    "color": "",
+                                    "width": 1
+                                  },
+                                  "labels": {
+                                    "color": "",
+                                    "elementStyle": {},
+                                    "fontSize": "",
+                                    "overflow": "none",
+                                    "rotation": 0,
+                                    "visible": true,
+                                    "width": null
+                                  },
+                                  "max": 10,
+                                  "min": 0,
+                                  "ticks": {
+                                    "displayInside": false,
+                                    "majorSplit": 5,
+                                    "minorSplit": 0,
+                                    "visible": true
+                                  },
+                                  "title": {
+                                    "color": "",
+                                    "elementStyle": {},
+                                    "fontSize": 11,
+                                    "gap": 15,
+                                    "position": "middle",
+                                    "rotation": 0,
+                                    "text": "Level",
+                                    "visible": true
+                                  },
+                                  "visible": true
+                                }
+                              ],
+                              "zoom": {
+                                "axis": "x",
+                                "backgroundColor": "",
+                                "enabled": false,
+                                "height": 30,
+                                "type": "slider",
+                                "width": 30,
+                                "xPosition": "bottom",
+                                "yPosition": "right"
+                              },
+                              "style": {
+                                "classes": "roast-chart"
+                              }
+                            },
+                            "propConfig": {
+                              "props.data": {
+                                "binding": {
+                                  "type": "tag",
+                                  "config": {
+                                    "tagPath": "[default]Roastery/LiveCurveDS",
+                                    "mode": "direct",
+                                    "bidirectional": false
+                                  },
+                                  "bidirectional": false
+                                }
+                              },
+                              "props.xAxis.labels.color": {
+                                "binding": {
+                                  "type": "property",
+                                  "config": {
+                                    "path": "session.custom.chartDark"
+                                  },
+                                  "transforms": [
+                                    {
+                                      "type": "script",
+                                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                    }
+                                  ]
+                                }
+                              },
+                              "props.xAxis.advanced.axisPointer.label.color": {
+                                "binding": {
+                                  "type": "property",
+                                  "config": {
+                                    "path": "session.custom.chartDark"
+                                  },
+                                  "transforms": [
+                                    {
+                                      "type": "script",
+                                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                    }
+                                  ]
+                                }
+                              },
+                              "props.yAxis[0].labels.color": {
+                                "binding": {
+                                  "type": "property",
+                                  "config": {
+                                    "path": "session.custom.chartDark"
+                                  },
+                                  "transforms": [
+                                    {
+                                      "type": "script",
+                                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                    }
+                                  ]
+                                }
+                              },
+                              "props.yAxis[0].title.color": {
+                                "binding": {
+                                  "type": "property",
+                                  "config": {
+                                    "path": "session.custom.chartDark"
+                                  },
+                                  "transforms": [
+                                    {
+                                      "type": "script",
+                                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                    }
+                                  ]
+                                }
+                              },
+                              "props.yAxis[0].advanced.axisPointer.label.color": {
+                                "binding": {
+                                  "type": "property",
+                                  "config": {
+                                    "path": "session.custom.chartDark"
+                                  },
+                                  "transforms": [
+                                    {
+                                      "type": "script",
+                                      "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                    }
+                                  ]
+                                }
+                              },
+                              "props.xAxis.advanced.axisPointer.label.backgroundColor": {
+                                "binding": {
+                                  "type": "property",
+                                  "config": {
+                                    "path": "session.custom.chartDark"
+                                  },
+                                  "transforms": [
+                                    {
+                                      "type": "script",
+                                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                                    }
+                                  ]
+                                }
+                              },
+                              "props.yAxis[0].advanced.axisPointer.label.backgroundColor": {
+                                "binding": {
+                                  "type": "property",
+                                  "config": {
+                                    "path": "session.custom.chartDark"
+                                  },
+                                  "transforms": [
+                                    {
+                                      "type": "script",
+                                      "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            "position": {
+                              "grow": 1,
+                              "shrink": 1,
+                              "basis": "0px"
+                            },
+                            "children": []
+                          }
+                        ],
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "250px"
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "748px"
+                    }
+                  },
+                  {
+                    "type": "ia.display.view",
+                    "meta": {
+                      "name": "EventsStripEmbed"
+                    },
+                    "props": {
+                      "path": "Views/EventsStrip",
+                      "params": {}
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "auto"
+                    },
+                    "children": []
+                  },
+                  {
+                    "type": "ia.display.view",
+                    "meta": {
+                      "name": "PhasesBarEmbed"
+                    },
+                    "props": {
+                      "path": "Views/PhasesBar",
+                      "params": {}
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "auto"
+                    },
+                    "children": []
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "TilesRow"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "wrap": "wrap",
+                      "style": {
+                        "classes": "roast-gap-12 roast-flexmin"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.view",
+                        "meta": {
+                          "name": "BeanTile"
+                        },
+                        "props": {
+                          "path": "Views/Tile",
+                          "params": {
+                            "title": "Bean Temp",
+                            "valueText": "0.0",
+                            "unit": "deg F",
+                            "accent": "#3b82f6"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "148px"
+                        },
+                        "propConfig": {
+                          "props.params.valueText": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/BeanTempF",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0.0"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "children": []
+                      },
+                      {
+                        "type": "ia.display.view",
+                        "meta": {
+                          "name": "RorTile"
+                        },
+                        "props": {
+                          "path": "Views/Tile",
+                          "params": {
+                            "title": "Rate of Rise",
+                            "valueText": "0.0",
+                            "unit": "F/min",
+                            "accent": "#14b8a6"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "148px"
+                        },
+                        "propConfig": {
+                          "props.params.valueText": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/RateOfRiseDisplayText",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          }
+                        },
+                        "children": []
+                      },
+                      {
+                        "type": "ia.display.view",
+                        "meta": {
+                          "name": "DevTile"
+                        },
+                        "props": {
+                          "path": "Views/Tile",
+                          "params": {
+                            "title": "Deviation",
+                            "valueText": "--",
+                            "unit": "",
+                            "accent": "#0c7bb3"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "148px"
+                        },
+                        "propConfig": {
+                          "props.params.valueText": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.deviationText"
+                              }
+                            }
+                          }
+                        },
+                        "children": []
+                      },
+                      {
+                        "type": "ia.display.view",
+                        "meta": {
+                          "name": "FanTile"
+                        },
+                        "props": {
+                          "path": "Views/Tile",
+                          "params": {
+                            "title": "Fan",
+                            "valueText": "5",
+                            "unit": "/ 9",
+                            "accent": "#3b82f6"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "148px"
+                        },
+                        "propConfig": {
+                          "props.params.valueText": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/FanLevel",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "children": []
+                      },
+                      {
+                        "type": "ia.display.view",
+                        "meta": {
+                          "name": "HeatTile"
+                        },
+                        "props": {
+                          "path": "Views/Tile",
+                          "params": {
+                            "title": "Heat",
+                            "valueText": "5",
+                            "unit": "/ 9",
+                            "accent": "#ef4444"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "148px"
+                        },
+                        "propConfig": {
+                          "props.params.valueText": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/HeatLevel",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "children": []
+                      },
+                      {
+                        "type": "ia.display.view",
+                        "meta": {
+                          "name": "PhaseTile"
+                        },
+                        "props": {
+                          "path": "Views/Tile",
+                          "params": {
+                            "title": "Phase",
+                            "valueText": "Pre-charge",
+                            "unit": "",
+                            "accent": "#16a34a",
+                            "valueClass": "roast-value-md"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "148px"
+                        },
+                        "propConfig": {
+                          "props.params.valueText": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.phaseText"
+                              }
+                            }
+                          }
+                        },
+                        "children": []
+                      },
+                      {
+                        "type": "ia.display.view",
+                        "meta": {
+                          "name": "TargetTile"
+                        },
+                        "props": {
+                          "path": "Views/Tile",
+                          "params": {
+                            "title": "Target Drop",
+                            "valueText": "415",
+                            "unit": "deg F",
+                            "accent": "#64748b"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "148px"
+                        },
+                        "propConfig": {
+                          "props.params.valueText": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/TargetDropTempF",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "children": []
+                      },
+                      {
+                        "type": "ia.display.view",
+                        "meta": {
+                          "name": "TpTile"
+                        },
+                        "props": {
+                          "path": "Views/Tile",
+                          "params": {
+                            "title": "Turning Point",
+                            "valueText": "--",
+                            "unit": "deg F",
+                            "accent": "#f59e0b"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "148px"
+                        },
+                        "propConfig": {
+                          "props.params.valueText": {
+                            "binding": {
+                              "type": "expr",
+                              "config": {
+                                "expression": "if({[default]Roastery/CurrentBatch/TurningPointElapsedSec} >= 0, numberFormat({[default]Roastery/CurrentBatch/TurningPointTempF}, '0') + ' @ ' + numberFormat(floor({[default]Roastery/CurrentBatch/TurningPointElapsedSec} / 60), '00') + ':' + numberFormat({[default]Roastery/CurrentBatch/TurningPointElapsedSec} % 60, '00'), '--')"
+                              }
+                            }
+                          }
+                        },
+                        "children": []
+                      },
+                      {
+                        "type": "ia.display.view",
+                        "meta": {
+                          "name": "AucTile"
+                        },
+                        "props": {
+                          "path": "Views/Tile",
+                          "params": {
+                            "title": "AUC",
+                            "valueText": "--",
+                            "unit": "F min",
+                            "accent": "#8b5cf6"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "148px"
+                        },
+                        "propConfig": {
+                          "props.params.valueText": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/AucLiveFMin",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "children": []
+                      },
+                      {
+                        "type": "ia.display.view",
+                        "meta": {
+                          "name": "BgDevTile"
+                        },
+                        "props": {
+                          "path": "Views/Tile",
+                          "params": {
+                            "title": "Bg Deviation",
+                            "valueText": "--",
+                            "unit": "",
+                            "accent": "#64748b"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "148px"
+                        },
+                        "propConfig": {
+                          "props.params.valueText": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/CurrentBatch/BgDeviationText",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          }
+                        },
+                        "children": []
+                      }
+                    ],
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "auto"
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "0px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "RailCol"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-12"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.view",
+                    "meta": {
+                      "name": "ControlsEmbed"
+                    },
+                    "props": {
+                      "path": "Views/Controls",
+                      "params": {}
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "auto"
+                    },
+                    "children": []
+                  },
+                  {
+                    "type": "ia.display.view",
+                    "meta": {
+                      "name": "SummaryEmbed"
+                    },
+                    "props": {
+                      "path": "Views/Summary",
+                      "params": {}
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "auto"
+                    },
+                    "children": []
+                  },
+                  {
+                    "type": "ia.display.view",
+                    "meta": {
+                      "name": "MetaCardEmbed"
+                    },
+                    "props": {
+                      "path": "Views/MetaCard",
+                      "params": {}
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "auto"
+                    },
+                    "children": []
+                  }
+                ],
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "400px"
+                }
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            }
+          }
+        ],
+        "position": {
+          "size": "large"
+        }
+      },
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "SmallRoot"
+        },
+        "props": {
+          "direction": "column",
+          "style": {
+            "classes": "roast-app roast-h100"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "AlarmBannerMobile"
+            },
+            "props": {
+              "direction": "row",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-banner"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "AlarmBannerMobileText"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-banner-text"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "view.custom.alarmText"
+                      }
+                    }
+                  }
+                },
+                "children": []
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "38px"
+            },
+            "propConfig": {
+              "props.style.backgroundColor": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/AlarmActive}, '#991b1b', 'rgba(0,0,0,0)')"
+                  }
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/AlarmActive}, 'roast-banner', 'roast-banner roast-hidden')"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "PromptStripMobile"
+            },
+            "props": {
+              "direction": "row",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-banner"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "PromptStripMobileText"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-banner-text"
+                  }
+                },
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "0px"
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "view.custom.promptText"
+                      }
+                    }
+                  }
+                },
+                "children": []
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "PromptStripMobileDismiss"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive} || {[default]Roastery/CurrentBatch/SuggestionActive}, 'Dismiss', '')"
+                      }
+                    }
+                  },
+                  "props.style.classes": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive} || {[default]Roastery/CurrentBatch/SuggestionActive}, 'roast-btn roast-btn-sm roast-btn-ghost', 'roast-btn roast-btn-sm roast-btn-ghost roast-hidden')"
+                      }
+                    }
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core, roastery.batches\n\troastery.core.dismiss_prompt()\n"
+                      }
+                    }
+                  }
+                },
+                "children": [],
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "92px"
+                }
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "56px"
+            },
+            "propConfig": {
+              "props.style.backgroundColor": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive}, '#92400e', if({[default]Roastery/CurrentBatch/SuggestionActive}, '#1e40af', 'rgba(0,0,0,0)'))"
+                  }
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({[default]Roastery/CurrentBatch/PlaybackActive} || {[default]Roastery/CurrentBatch/SuggestionActive} || {[default]Roastery/BackgroundLabel} != '', 'roast-banner', 'roast-banner roast-hidden')"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "ScrollCol"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-content roast-gap-12 roast-scrollcol"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "BatchLine"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-chip"
+                  }
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "expr",
+                      "config": {
+                        "expression": "'Batch ' + {[default]Roastery/CurrentBatch/BatchNumber} + ' - ' + {[default]Roastery/CurrentBatch/BeanName}"
+                      }
+                    }
+                  }
+                },
+                "children": []
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "ChartCard"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-card roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "ChartHead"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "alignItems": "flex-start",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "ChartTitle"
+                        },
+                        "props": {
+                          "text": "Roast Curve",
+                          "style": {
+                            "classes": "roast-value-strong"
+                          }
+                        },
+                        "children": []
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "BgChip"
+                        },
+                        "props": {
+                          "text": "",
+                          "style": {
+                            "classes": "roast-note"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "expr",
+                              "config": {
+                                "expression": "if({[default]Roastery/BackgroundLabel} != '', 'Background: ' + {[default]Roastery/BackgroundLabel}, 'Background: none')"
+                              }
+                            }
+                          }
+                        },
+                        "children": []
+                      }
+                    ],
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "44px"
+                    }
+                  },
+                  {
+                    "type": "ia.canvas-charts.line",
+                    "meta": {
+                      "name": "RoastChart"
+                    },
+                    "props": {
+                      "appearance": {
+                        "animation": {
+                          "enabled": true,
+                          "entry": {
+                            "duration": 900,
+                            "easing": "cubicOut",
+                            "delay": 0
+                          },
+                          "transition": {
+                            "duration": 300,
+                            "easing": "cubicOut",
+                            "delay": 0
+                          }
+                        },
+                        "backgroundColor": "",
+                        "colorPalette": [
+                          "#eab308",
+                          "#f97316",
+                          "#dc2626",
+                          "#0284c7",
+                          "#64748b",
+                          "#64748b",
+                          "#94a3b8",
+                          "#3b82f6",
+                          "#14b8a6",
+                          "#f59e0b"
+                        ]
+                      },
+                      "axisPointer": {
+                        "enabled": true,
+                        "label": {
+                          "backgroundColor": "",
+                          "color": "",
+                          "elementStyle": {},
+                          "fontSize": "",
+                          "visible": false
+                        },
+                        "type": "line"
+                      },
+                      "data": [],
+                      "legend": {
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": 12,
+                        "interactive": true,
+                        "orientation": "horizontal",
+                        "position": "bottom",
+                        "visible": false
+                      },
+                      "liveData": false,
+                      "series": [
+                        {
+                          "advanced": {
+                            "connectNulls": true,
+                            "step": "",
+                            "tooltip": {
+                              "enabled": true,
+                              "formatter": {
+                                "template": "",
+                                "type": "value",
+                                "value": ""
+                              }
+                            },
+                            "yAxis": 0
+                          },
+                          "dataLabels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "format": "{value}",
+                            "position": "top",
+                            "visible": false
+                          },
+                          "label": "Drying",
+                          "line": {
+                            "type": "solid",
+                            "width": 0,
+                            "color": "#eab308"
+                          },
+                          "points": {
+                            "fillColor": "",
+                            "outlineColor": "transparent",
+                            "outlineWidth": 0,
+                            "shape": "circle",
+                            "size": 4,
+                            "visible": false
+                          },
+                          "referenceLines": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "delay": 0,
+                                "duration": 1000,
+                                "easing": "cubicOut"
+                              },
+                              "transition": {
+                                "delay": 0,
+                                "duration": 300,
+                                "easing": "cubicOut"
+                              }
+                            },
+                            "endpoints": {
+                              "points": [
+                                {
+                                  "shape": "circle",
+                                  "size": 4
+                                }
+                              ],
+                              "visible": true
+                            },
+                            "items": []
+                          },
+                          "smooth": false,
+                          "value": "bandDry",
+                          "visible": true,
+                          "area": {
+                            "fillStyle": "solid",
+                            "color": "#eab308",
+                            "opacity": 0.12,
+                            "gradientMode": "fade",
+                            "gradientStart": "#eab308",
+                            "gradientEnd": ""
+                          }
+                        },
+                        {
+                          "advanced": {
+                            "connectNulls": true,
+                            "step": "",
+                            "tooltip": {
+                              "enabled": true,
+                              "formatter": {
+                                "template": "",
+                                "type": "value",
+                                "value": ""
+                              }
+                            },
+                            "yAxis": 0
+                          },
+                          "dataLabels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "format": "{value}",
+                            "position": "top",
+                            "visible": false
+                          },
+                          "label": "Maillard",
+                          "line": {
+                            "type": "solid",
+                            "width": 0,
+                            "color": "#f97316"
+                          },
+                          "points": {
+                            "fillColor": "",
+                            "outlineColor": "transparent",
+                            "outlineWidth": 0,
+                            "shape": "circle",
+                            "size": 4,
+                            "visible": false
+                          },
+                          "referenceLines": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "delay": 0,
+                                "duration": 1000,
+                                "easing": "cubicOut"
+                              },
+                              "transition": {
+                                "delay": 0,
+                                "duration": 300,
+                                "easing": "cubicOut"
+                              }
+                            },
+                            "endpoints": {
+                              "points": [
+                                {
+                                  "shape": "circle",
+                                  "size": 4
+                                }
+                              ],
+                              "visible": true
+                            },
+                            "items": []
+                          },
+                          "smooth": false,
+                          "value": "bandMai",
+                          "visible": true,
+                          "area": {
+                            "fillStyle": "solid",
+                            "color": "#f97316",
+                            "opacity": 0.12,
+                            "gradientMode": "fade",
+                            "gradientStart": "#f97316",
+                            "gradientEnd": ""
+                          }
+                        },
+                        {
+                          "advanced": {
+                            "connectNulls": true,
+                            "step": "",
+                            "tooltip": {
+                              "enabled": true,
+                              "formatter": {
+                                "template": "",
+                                "type": "value",
+                                "value": ""
+                              }
+                            },
+                            "yAxis": 0
+                          },
+                          "dataLabels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "format": "{value}",
+                            "position": "top",
+                            "visible": false
+                          },
+                          "label": "Development",
+                          "line": {
+                            "type": "solid",
+                            "width": 0,
+                            "color": "#dc2626"
+                          },
+                          "points": {
+                            "fillColor": "",
+                            "outlineColor": "transparent",
+                            "outlineWidth": 0,
+                            "shape": "circle",
+                            "size": 4,
+                            "visible": false
+                          },
+                          "referenceLines": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "delay": 0,
+                                "duration": 1000,
+                                "easing": "cubicOut"
+                              },
+                              "transition": {
+                                "delay": 0,
+                                "duration": 300,
+                                "easing": "cubicOut"
+                              }
+                            },
+                            "endpoints": {
+                              "points": [
+                                {
+                                  "shape": "circle",
+                                  "size": 4
+                                }
+                              ],
+                              "visible": true
+                            },
+                            "items": []
+                          },
+                          "smooth": false,
+                          "value": "bandDev",
+                          "visible": true,
+                          "area": {
+                            "fillStyle": "solid",
+                            "color": "#dc2626",
+                            "opacity": 0.12,
+                            "gradientMode": "fade",
+                            "gradientStart": "#dc2626",
+                            "gradientEnd": ""
+                          }
+                        },
+                        {
+                          "advanced": {
+                            "connectNulls": true,
+                            "step": "",
+                            "tooltip": {
+                              "enabled": true,
+                              "formatter": {
+                                "template": "",
+                                "type": "value",
+                                "value": ""
+                              }
+                            },
+                            "yAxis": 0
+                          },
+                          "dataLabels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "format": "{value}",
+                            "position": "top",
+                            "visible": false
+                          },
+                          "label": "Cooling",
+                          "line": {
+                            "type": "solid",
+                            "width": 0,
+                            "color": "#0284c7"
+                          },
+                          "points": {
+                            "fillColor": "",
+                            "outlineColor": "transparent",
+                            "outlineWidth": 0,
+                            "shape": "circle",
+                            "size": 4,
+                            "visible": false
+                          },
+                          "referenceLines": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "delay": 0,
+                                "duration": 1000,
+                                "easing": "cubicOut"
+                              },
+                              "transition": {
+                                "delay": 0,
+                                "duration": 300,
+                                "easing": "cubicOut"
+                              }
+                            },
+                            "endpoints": {
+                              "points": [
+                                {
+                                  "shape": "circle",
+                                  "size": 4
+                                }
+                              ],
+                              "visible": true
+                            },
+                            "items": []
+                          },
+                          "smooth": false,
+                          "value": "bandCool",
+                          "visible": true,
+                          "area": {
+                            "fillStyle": "solid",
+                            "color": "#0284c7",
+                            "opacity": 0.12,
+                            "gradientMode": "fade",
+                            "gradientStart": "#0284c7",
+                            "gradientEnd": ""
+                          }
+                        },
+                        {
+                          "advanced": {
+                            "connectNulls": true,
+                            "step": "",
+                            "tooltip": {
+                              "enabled": true,
+                              "formatter": {
+                                "template": "",
+                                "type": "value",
+                                "value": ""
+                              }
+                            },
+                            "yAxis": 0
+                          },
+                          "dataLabels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "format": "{value}",
+                            "position": "top",
+                            "visible": false
+                          },
+                          "label": "Background",
+                          "line": {
+                            "type": "solid",
+                            "width": 2,
+                            "color": "#64748b"
+                          },
+                          "points": {
+                            "fillColor": "",
+                            "outlineColor": "transparent",
+                            "outlineWidth": 0,
+                            "shape": "circle",
+                            "size": 4,
+                            "visible": false
+                          },
+                          "referenceLines": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "delay": 0,
+                                "duration": 1000,
+                                "easing": "cubicOut"
+                              },
+                              "transition": {
+                                "delay": 0,
+                                "duration": 300,
+                                "easing": "cubicOut"
+                              }
+                            },
+                            "endpoints": {
+                              "points": [
+                                {
+                                  "shape": "circle",
+                                  "size": 4
+                                }
+                              ],
+                              "visible": true
+                            },
+                            "items": []
+                          },
+                          "smooth": true,
+                          "value": "bg",
+                          "visible": true
+                        },
+                        {
+                          "advanced": {
+                            "connectNulls": true,
+                            "step": "",
+                            "tooltip": {
+                              "enabled": true,
+                              "formatter": {
+                                "template": "",
+                                "type": "value",
+                                "value": ""
+                              }
+                            },
+                            "yAxis": 1
+                          },
+                          "dataLabels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "format": "{value}",
+                            "position": "top",
+                            "visible": false
+                          },
+                          "label": "Background RoR",
+                          "line": {
+                            "type": "solid",
+                            "width": 2,
+                            "color": "#64748b"
+                          },
+                          "points": {
+                            "fillColor": "",
+                            "outlineColor": "transparent",
+                            "outlineWidth": 0,
+                            "shape": "circle",
+                            "size": 4,
+                            "visible": false
+                          },
+                          "referenceLines": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "delay": 0,
+                                "duration": 1000,
+                                "easing": "cubicOut"
+                              },
+                              "transition": {
+                                "delay": 0,
+                                "duration": 300,
+                                "easing": "cubicOut"
+                              }
+                            },
+                            "endpoints": {
+                              "points": [
+                                {
+                                  "shape": "circle",
+                                  "size": 4
+                                }
+                              ],
+                              "visible": true
+                            },
+                            "items": []
+                          },
+                          "smooth": true,
+                          "value": "bgRor",
+                          "visible": true
+                        },
+                        {
+                          "advanced": {
+                            "connectNulls": true,
+                            "step": "",
+                            "tooltip": {
+                              "enabled": true,
+                              "formatter": {
+                                "template": "",
+                                "type": "value",
+                                "value": ""
+                              }
+                            },
+                            "yAxis": 0
+                          },
+                          "dataLabels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "format": "{value}",
+                            "position": "top",
+                            "visible": false
+                          },
+                          "label": "Target",
+                          "line": {
+                            "type": "dashed",
+                            "width": 2,
+                            "color": "#94a3b8"
+                          },
+                          "points": {
+                            "fillColor": "",
+                            "outlineColor": "transparent",
+                            "outlineWidth": 0,
+                            "shape": "circle",
+                            "size": 4,
+                            "visible": false
+                          },
+                          "referenceLines": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "delay": 0,
+                                "duration": 1000,
+                                "easing": "cubicOut"
+                              },
+                              "transition": {
+                                "delay": 0,
+                                "duration": 300,
+                                "easing": "cubicOut"
+                              }
+                            },
+                            "endpoints": {
+                              "points": [
+                                {
+                                  "shape": "circle",
+                                  "size": 4
+                                }
+                              ],
+                              "visible": true
+                            },
+                            "items": []
+                          },
+                          "smooth": true,
+                          "value": "plan",
+                          "visible": true
+                        },
+                        {
+                          "advanced": {
+                            "connectNulls": true,
+                            "step": "",
+                            "tooltip": {
+                              "enabled": true,
+                              "formatter": {
+                                "template": "",
+                                "type": "value",
+                                "value": ""
+                              }
+                            },
+                            "yAxis": 0
+                          },
+                          "dataLabels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "format": "{value}",
+                            "position": "top",
+                            "visible": false
+                          },
+                          "label": "Bean Temp",
+                          "line": {
+                            "type": "solid",
+                            "width": 3,
+                            "color": "#3b82f6"
+                          },
+                          "points": {
+                            "fillColor": "",
+                            "outlineColor": "transparent",
+                            "outlineWidth": 0,
+                            "shape": "circle",
+                            "size": 4,
+                            "visible": false
+                          },
+                          "referenceLines": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "delay": 0,
+                                "duration": 1000,
+                                "easing": "cubicOut"
+                              },
+                              "transition": {
+                                "delay": 0,
+                                "duration": 300,
+                                "easing": "cubicOut"
+                              }
+                            },
+                            "endpoints": {
+                              "points": [
+                                {
+                                  "shape": "circle",
+                                  "size": 4
+                                }
+                              ],
+                              "visible": true
+                            },
+                            "items": []
+                          },
+                          "smooth": true,
+                          "value": "bean",
+                          "visible": true
+                        },
+                        {
+                          "advanced": {
+                            "connectNulls": true,
+                            "step": "",
+                            "tooltip": {
+                              "enabled": true,
+                              "formatter": {
+                                "template": "",
+                                "type": "value",
+                                "value": ""
+                              }
+                            },
+                            "yAxis": 1
+                          },
+                          "dataLabels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "format": "{value}",
+                            "position": "top",
+                            "visible": false
+                          },
+                          "label": "Rate of Rise",
+                          "line": {
+                            "type": "solid",
+                            "width": 2,
+                            "color": "#14b8a6"
+                          },
+                          "points": {
+                            "fillColor": "",
+                            "outlineColor": "transparent",
+                            "outlineWidth": 0,
+                            "shape": "circle",
+                            "size": 4,
+                            "visible": false
+                          },
+                          "referenceLines": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "delay": 0,
+                                "duration": 1000,
+                                "easing": "cubicOut"
+                              },
+                              "transition": {
+                                "delay": 0,
+                                "duration": 300,
+                                "easing": "cubicOut"
+                              }
+                            },
+                            "endpoints": {
+                              "points": [
+                                {
+                                  "shape": "circle",
+                                  "size": 4
+                                }
+                              ],
+                              "visible": true
+                            },
+                            "items": []
+                          },
+                          "smooth": true,
+                          "value": "ror",
+                          "visible": true,
+                          "area": {
+                            "fillStyle": "solid",
+                            "color": "#14b8a6",
+                            "opacity": 0.0,
+                            "gradientMode": "fade",
+                            "gradientStart": "#14b8a6",
+                            "gradientEnd": ""
+                          }
+                        },
+                        {
+                          "advanced": {
+                            "connectNulls": true,
+                            "step": "",
+                            "tooltip": {
+                              "enabled": true,
+                              "formatter": {
+                                "template": "",
+                                "type": "value",
+                                "value": ""
+                              }
+                            },
+                            "yAxis": 0
+                          },
+                          "dataLabels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "format": "{value}",
+                            "position": "top",
+                            "visible": false
+                          },
+                          "label": "Projection",
+                          "line": {
+                            "type": "dashed",
+                            "width": 2,
+                            "color": "#f59e0b"
+                          },
+                          "points": {
+                            "fillColor": "",
+                            "outlineColor": "transparent",
+                            "outlineWidth": 0,
+                            "shape": "circle",
+                            "size": 4,
+                            "visible": false
+                          },
+                          "referenceLines": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "delay": 0,
+                                "duration": 1000,
+                                "easing": "cubicOut"
+                              },
+                              "transition": {
+                                "delay": 0,
+                                "duration": 300,
+                                "easing": "cubicOut"
+                              }
+                            },
+                            "endpoints": {
+                              "points": [
+                                {
+                                  "shape": "circle",
+                                  "size": 4
+                                }
+                              ],
+                              "visible": true
+                            },
+                            "items": []
+                          },
+                          "smooth": true,
+                          "value": "proj",
+                          "visible": true
+                        }
+                      ],
+                      "stackGroups": [],
+                      "title": {
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": "",
+                        "gap": 5,
+                        "position": "top-left",
+                        "subtitle": {
+                          "color": "",
+                          "elementStyle": {},
+                          "fontSize": "",
+                          "text": ""
+                        },
+                        "text": "",
+                        "visible": false
+                      },
+                      "tooltip": {
+                        "enabled": true,
+                        "formatter": {
+                          "template": "",
+                          "type": "value",
+                          "value": "{value}"
+                        },
+                        "trigger": "axis"
+                      },
+                      "visualMap": {
+                        "dimension": "y",
+                        "enabled": false,
+                        "legend": {
+                          "color": "",
+                          "elementStyle": {},
+                          "fontSize": "",
+                          "interactive": true,
+                          "orientation": "horizontal",
+                          "position": "bottom",
+                          "visible": true
+                        },
+                        "outOfRange": {},
+                        "pieces": []
+                      },
+                      "xAxis": {
+                        "advanced": {
+                          "axisPointer": {
+                            "enabled": "auto",
+                            "label": {
+                              "backgroundColor": "",
+                              "color": "",
+                              "elementStyle": {},
+                              "fontSize": "",
+                              "visible": "auto"
+                            },
+                            "type": "auto"
+                          }
+                        },
+                        "axisLine": {
+                          "color": "",
+                          "visible": true,
+                          "width": 1
+                        },
+                        "boundaryGap": false,
+                        "field": "t_label",
+                        "gridLines": {
+                          "color": "",
+                          "visible": false,
+                          "width": 1
+                        },
+                        "labels": {
+                          "color": "",
+                          "elementStyle": {},
+                          "fontSize": 11,
+                          "overflow": "none",
+                          "position": "bottom",
+                          "rotation": 35,
+                          "visible": true
+                        },
+                        "max": "auto",
+                        "min": "auto",
+                        "position": "bottom",
+                        "title": {
+                          "color": "",
+                          "elementStyle": {},
+                          "fontSize": 11,
+                          "gap": 15,
+                          "position": "middle",
+                          "rotation": 0,
+                          "text": "",
+                          "visible": true
+                        },
+                        "type": "category",
+                        "visible": true
+                      },
+                      "yAxis": [
+                        {
+                          "advanced": {
+                            "axisPointer": {
+                              "enabled": "auto",
+                              "label": {
+                                "backgroundColor": "",
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "visible": "auto"
+                              },
+                              "type": "auto"
+                            }
+                          },
+                          "axisLine": {
+                            "visible": true
+                          },
+                          "boundaryGap": true,
+                          "gridLines": {
+                            "visible": true,
+                            "color": "",
+                            "width": 1
+                          },
+                          "labels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": 11,
+                            "overflow": "none",
+                            "rotation": 0,
+                            "visible": true,
+                            "width": null,
+                            "gap": 2
+                          },
+                          "max": 520,
+                          "min": 150,
+                          "ticks": {
+                            "displayInside": false,
+                            "majorSplit": 6,
+                            "minorSplit": 0,
+                            "visible": true
+                          },
+                          "title": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": 11,
+                            "gap": 15,
+                            "position": "middle",
+                            "rotation": 0,
+                            "text": "Bean Temp (F)",
+                            "visible": true
+                          },
+                          "visible": true
+                        },
+                        {
+                          "advanced": {
+                            "axisPointer": {
+                              "enabled": "auto",
+                              "label": {
+                                "backgroundColor": "",
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "visible": "auto"
+                              },
+                              "type": "auto"
+                            }
+                          },
+                          "axisLine": {
+                            "visible": true
+                          },
+                          "boundaryGap": true,
+                          "gridLines": {
+                            "visible": false,
+                            "color": "",
+                            "width": 1
+                          },
+                          "labels": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": 11,
+                            "overflow": "none",
+                            "rotation": 0,
+                            "visible": true,
+                            "width": null,
+                            "gap": 2
+                          },
+                          "max": 47,
+                          "min": 0,
+                          "ticks": {
+                            "displayInside": false,
+                            "majorSplit": 4,
+                            "minorSplit": 0,
+                            "visible": true
+                          },
+                          "title": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": 11,
+                            "gap": 15,
+                            "position": "middle",
+                            "rotation": 0,
+                            "text": "RoR (deg F/min)",
+                            "visible": true
+                          },
+                          "visible": true,
+                          "position": "right"
+                        }
+                      ],
+                      "zoom": {
+                        "axis": "x",
+                        "backgroundColor": "",
+                        "enabled": false,
+                        "height": 30,
+                        "type": "slider",
+                        "width": 30,
+                        "xPosition": "bottom",
+                        "yPosition": "right"
+                      },
+                      "style": {
+                        "classes": "roast-chart"
+                      }
+                    },
+                    "propConfig": {
+                      "props.data": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/LiveCurveDS",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[7].referenceLines.items": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/EventMarksDS",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false,
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.event_reference_lines_compact()\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.series[7].line.width": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispBtWidth",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[7].line.type": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispBtStyle",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[8].line.width": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispRorWidth",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[8].line.type": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispRorStyle",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[4].line.width": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispGhostWidth",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[4].line.type": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispGhostStyle",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[5].line.width": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispGhostWidth",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[5].line.type": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispGhostStyle",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.series[8].area.opacity": {
+                        "binding": {
+                          "type": "expr",
+                          "config": {
+                            "expression": "if({[default]Roastery/CurrentBatch/DispRorFill}, 0.22, 0.0)"
+                          }
+                        }
+                      },
+                      "props.series[7].referenceLines.endpoints.points[0].size": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/DispMarkerSize",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      },
+                      "props.xAxis.labels.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.xAxis.advanced.axisPointer.label.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[0].labels.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[0].title.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[0].advanced.axisPointer.label.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[1].labels.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[1].title.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[1].advanced.axisPointer.label.color": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.xAxis.advanced.axisPointer.label.backgroundColor": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[0].advanced.axisPointer.label.backgroundColor": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.yAxis[1].advanced.axisPointer.label.backgroundColor": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.series[0].area.opacity": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.series[1].area.opacity": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.series[2].area.opacity": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                            }
+                          ]
+                        }
+                      },
+                      "props.series[3].area.opacity": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "session.custom.chartDark"
+                          },
+                          "transforms": [
+                            {
+                              "type": "script",
+                              "code": "\treturn roastery.core.chart_band_opacity(self, value)\n"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "0px"
+                    },
+                    "children": []
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "StatsLine"
+                    },
+                    "props": {
+                      "text": "",
+                      "style": {
+                        "classes": "roast-stats-line"
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "20px"
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/StatsLineText",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      }
+                    },
+                    "children": []
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "AnalyzerStrip"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "AnalyzerCapRow"
+                        },
+                        "props": {
+                          "direction": "row",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "16px"
+                        },
+                        "children": [
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "AnalyzerCap"
+                            },
+                            "props": {
+                              "text": "Analyzer",
+                              "style": {
+                                "classes": "roast-caption"
+                              }
+                            },
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "auto"
+                            },
+                            "children": []
+                          }
+                        ]
+                      },
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "AnalyzerControls"
+                        },
+                        "props": {
+                          "direction": "row",
+                          "alignItems": "center",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.input.button",
+                            "meta": {
+                              "name": "AnalyzerMinus"
+                            },
+                            "props": {
+                              "text": "-10s",
+                              "style": {
+                                "classes": "roast-btn-ghost roast-btn-compact"
+                              }
+                            },
+                            "events": {
+                              "dom": {
+                                "onClick": {
+                                  "scope": "G",
+                                  "type": "script",
+                                  "config": {
+                                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.analyzer_step(-10)\n"
+                                  }
+                                }
+                              }
+                            },
+                            "children": [],
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "auto"
+                            }
+                          },
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "AnalyzerTime"
+                            },
+                            "props": {
+                              "text": "--:--",
+                              "style": {
+                                "classes": "roast-value-strong"
+                              }
+                            },
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "52px"
+                            },
+                            "propConfig": {
+                              "props.text": {
+                                "binding": {
+                                  "type": "tag",
+                                  "config": {
+                                    "tagPath": "[default]Roastery/CurrentBatch/AnalyzerTimeText",
+                                    "mode": "direct",
+                                    "bidirectional": false
+                                  },
+                                  "bidirectional": false
+                                }
+                              }
+                            },
+                            "children": []
+                          },
+                          {
+                            "type": "ia.input.button",
+                            "meta": {
+                              "name": "AnalyzerPlus"
+                            },
+                            "props": {
+                              "text": "+10s",
+                              "style": {
+                                "classes": "roast-btn-ghost roast-btn-compact"
+                              }
+                            },
+                            "events": {
+                              "dom": {
+                                "onClick": {
+                                  "scope": "G",
+                                  "type": "script",
+                                  "config": {
+                                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.analyzer_step(10)\n"
+                                  }
+                                }
+                              }
+                            },
+                            "children": [],
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "auto"
+                            }
+                          },
+                          {
+                            "type": "ia.input.button",
+                            "meta": {
+                              "name": "AnalyzerLatest"
+                            },
+                            "props": {
+                              "text": "Latest",
+                              "style": {
+                                "classes": "roast-btn-ghost roast-btn-compact"
+                              }
+                            },
+                            "events": {
+                              "dom": {
+                                "onClick": {
+                                  "scope": "G",
+                                  "type": "script",
+                                  "config": {
+                                    "script": "\timport roastery.core, roastery.batches\n\troastery.core.analyzer_latest()\n"
+                                  }
+                                }
+                              }
+                            },
+                            "children": [],
+                            "position": {
+                              "grow": 0,
+                              "shrink": 0,
+                              "basis": "auto"
+                            }
+                          }
+                        ],
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "36px"
+                        }
+                      },
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "AnalyzerValues"
+                        },
+                        "props": {
+                          "direction": "row",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.container.flex",
+                            "meta": {
+                              "name": "AnalyzerBt"
+                            },
+                            "props": {
+                              "direction": "column",
+                              "style": {
+                                "classes": "roast-gap-8"
+                              }
+                            },
+                            "children": [
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerBtCap"
+                                },
+                                "props": {
+                                  "text": "BT (F)",
+                                  "style": {
+                                    "classes": "roast-caption"
+                                  }
+                                },
+                                "children": []
+                              },
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerBtVal"
+                                },
+                                "props": {
+                                  "text": "--",
+                                  "style": {
+                                    "classes": "roast-value"
+                                  }
+                                },
+                                "propConfig": {
+                                  "props.text": {
+                                    "binding": {
+                                      "type": "tag",
+                                      "config": {
+                                        "tagPath": "[default]Roastery/CurrentBatch/AnalyzerBtText",
+                                        "mode": "direct",
+                                        "bidirectional": false
+                                      },
+                                      "bidirectional": false
+                                    }
+                                  }
+                                },
+                                "children": []
+                              }
+                            ],
+                            "position": {
+                              "grow": 1,
+                              "shrink": 1,
+                              "basis": "0px"
+                            }
+                          },
+                          {
+                            "type": "ia.container.flex",
+                            "meta": {
+                              "name": "AnalyzerRor"
+                            },
+                            "props": {
+                              "direction": "column",
+                              "style": {
+                                "classes": "roast-gap-8"
+                              }
+                            },
+                            "children": [
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerRorCap"
+                                },
+                                "props": {
+                                  "text": "RoR",
+                                  "style": {
+                                    "classes": "roast-caption"
+                                  }
+                                },
+                                "children": []
+                              },
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerRorVal"
+                                },
+                                "props": {
+                                  "text": "--",
+                                  "style": {
+                                    "classes": "roast-value"
+                                  }
+                                },
+                                "propConfig": {
+                                  "props.text": {
+                                    "binding": {
+                                      "type": "tag",
+                                      "config": {
+                                        "tagPath": "[default]Roastery/CurrentBatch/AnalyzerRorText",
+                                        "mode": "direct",
+                                        "bidirectional": false
+                                      },
+                                      "bidirectional": false
+                                    }
+                                  }
+                                },
+                                "children": []
+                              }
+                            ],
+                            "position": {
+                              "grow": 1,
+                              "shrink": 1,
+                              "basis": "0px"
+                            }
+                          },
+                          {
+                            "type": "ia.container.flex",
+                            "meta": {
+                              "name": "AnalyzerBg"
+                            },
+                            "props": {
+                              "direction": "column",
+                              "style": {
+                                "classes": "roast-gap-8"
+                              }
+                            },
+                            "children": [
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerBgCap"
+                                },
+                                "props": {
+                                  "text": "Ghost (F)",
+                                  "style": {
+                                    "classes": "roast-caption"
+                                  }
+                                },
+                                "children": []
+                              },
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerBgVal"
+                                },
+                                "props": {
+                                  "text": "--",
+                                  "style": {
+                                    "classes": "roast-value"
+                                  }
+                                },
+                                "propConfig": {
+                                  "props.text": {
+                                    "binding": {
+                                      "type": "tag",
+                                      "config": {
+                                        "tagPath": "[default]Roastery/CurrentBatch/AnalyzerBgText",
+                                        "mode": "direct",
+                                        "bidirectional": false
+                                      },
+                                      "bidirectional": false
+                                    }
+                                  }
+                                },
+                                "children": []
+                              }
+                            ],
+                            "position": {
+                              "grow": 1,
+                              "shrink": 1,
+                              "basis": "0px"
+                            }
+                          },
+                          {
+                            "type": "ia.container.flex",
+                            "meta": {
+                              "name": "AnalyzerDev"
+                            },
+                            "props": {
+                              "direction": "column",
+                              "style": {
+                                "classes": "roast-gap-8"
+                              }
+                            },
+                            "children": [
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerDevCap"
+                                },
+                                "props": {
+                                  "text": "Dev (F)",
+                                  "style": {
+                                    "classes": "roast-caption"
+                                  }
+                                },
+                                "children": []
+                              },
+                              {
+                                "type": "ia.display.label",
+                                "meta": {
+                                  "name": "AnalyzerDevVal"
+                                },
+                                "props": {
+                                  "text": "--",
+                                  "style": {
+                                    "classes": "roast-value"
+                                  }
+                                },
+                                "propConfig": {
+                                  "props.text": {
+                                    "binding": {
+                                      "type": "tag",
+                                      "config": {
+                                        "tagPath": "[default]Roastery/CurrentBatch/AnalyzerDevText",
+                                        "mode": "direct",
+                                        "bidirectional": false
+                                      },
+                                      "bidirectional": false
+                                    }
+                                  }
+                                },
+                                "children": []
+                              }
+                            ],
+                            "position": {
+                              "grow": 1,
+                              "shrink": 1,
+                              "basis": "0px"
+                            }
+                          }
+                        ],
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "44px"
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "112px"
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "518px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "TilesRow"
+                },
+                "props": {
+                  "direction": "row",
+                  "wrap": "wrap",
+                  "style": {
+                    "classes": "roast-gap-12 roast-flexmin"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.view",
+                    "meta": {
+                      "name": "BeanTile"
+                    },
+                    "props": {
+                      "path": "Views/Tile",
+                      "params": {
+                        "title": "Bean Temp",
+                        "valueText": "0.0",
+                        "unit": "deg F",
+                        "accent": "#3b82f6"
+                      }
+                    },
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "38%"
+                    },
+                    "propConfig": {
+                      "props.params.valueText": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/BeanTempF",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false,
+                          "transforms": [
+                            {
+                              "type": "format",
+                              "formatType": "numeric",
+                              "formatValue": "0.0"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "children": []
+                  },
+                  {
+                    "type": "ia.display.view",
+                    "meta": {
+                      "name": "RorTile"
+                    },
+                    "props": {
+                      "path": "Views/Tile",
+                      "params": {
+                        "title": "Rate of Rise",
+                        "valueText": "0.0",
+                        "unit": "F/min",
+                        "accent": "#14b8a6"
+                      }
+                    },
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "38%"
+                    },
+                    "propConfig": {
+                      "props.params.valueText": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/RateOfRiseDisplayText",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false
+                        }
+                      }
+                    },
+                    "children": []
+                  },
+                  {
+                    "type": "ia.display.view",
+                    "meta": {
+                      "name": "FanTile"
+                    },
+                    "props": {
+                      "path": "Views/Tile",
+                      "params": {
+                        "title": "Fan",
+                        "valueText": "5",
+                        "unit": "/ 9",
+                        "accent": "#3b82f6"
+                      }
+                    },
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "38%"
+                    },
+                    "propConfig": {
+                      "props.params.valueText": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/FanLevel",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false,
+                          "transforms": [
+                            {
+                              "type": "format",
+                              "formatType": "numeric",
+                              "formatValue": "0"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "children": []
+                  },
+                  {
+                    "type": "ia.display.view",
+                    "meta": {
+                      "name": "HeatTile"
+                    },
+                    "props": {
+                      "path": "Views/Tile",
+                      "params": {
+                        "title": "Heat",
+                        "valueText": "5",
+                        "unit": "/ 9",
+                        "accent": "#ef4444"
+                      }
+                    },
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "38%"
+                    },
+                    "propConfig": {
+                      "props.params.valueText": {
+                        "binding": {
+                          "type": "tag",
+                          "config": {
+                            "tagPath": "[default]Roastery/CurrentBatch/HeatLevel",
+                            "mode": "direct",
+                            "bidirectional": false
+                          },
+                          "bidirectional": false,
+                          "transforms": [
+                            {
+                              "type": "format",
+                              "formatType": "numeric",
+                              "formatValue": "0"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "children": []
+                  }
+                ],
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "auto"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "TraceCard"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-card roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "TraceCardCap"
+                    },
+                    "props": {
+                      "text": "Fan / Heat Levels",
+                      "style": {
+                        "classes": "roast-caption"
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "16px"
+                    },
+                    "children": []
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "TraceWrapMobile"
+                    },
+                    "props": {
+                      "direction": "row"
+                    },
+                    "children": [
+                      {
+                        "type": "ia.canvas-charts.line",
+                        "meta": {
+                          "name": "TraceChart"
+                        },
+                        "props": {
+                          "appearance": {
+                            "animation": {
+                              "enabled": true,
+                              "entry": {
+                                "duration": 900,
+                                "easing": "cubicOut",
+                                "delay": 0
+                              },
+                              "transition": {
+                                "duration": 300,
+                                "easing": "cubicOut",
+                                "delay": 0
+                              }
+                            },
+                            "backgroundColor": "",
+                            "colorPalette": [
+                              "#3b82f6",
+                              "#ef4444"
+                            ]
+                          },
+                          "axisPointer": {
+                            "enabled": true,
+                            "label": {
+                              "backgroundColor": "",
+                              "color": "",
+                              "elementStyle": {},
+                              "fontSize": "",
+                              "visible": false
+                            },
+                            "type": "line"
+                          },
+                          "data": [],
+                          "legend": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": 12,
+                            "interactive": true,
+                            "orientation": "horizontal",
+                            "position": "bottom",
+                            "visible": true
+                          },
+                          "liveData": false,
+                          "series": [
+                            {
+                              "advanced": {
+                                "connectNulls": true,
+                                "step": "start",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 0
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Fan",
+                              "line": {
+                                "type": "solid",
+                                "width": 2,
+                                "color": "#3b82f6"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": true,
+                              "value": "fan",
+                              "visible": true
+                            },
+                            {
+                              "advanced": {
+                                "connectNulls": true,
+                                "step": "start",
+                                "tooltip": {
+                                  "enabled": true,
+                                  "formatter": {
+                                    "template": "",
+                                    "type": "value",
+                                    "value": ""
+                                  }
+                                },
+                                "yAxis": 0
+                              },
+                              "dataLabels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "format": "{value}",
+                                "position": "top",
+                                "visible": false
+                              },
+                              "label": "Heat",
+                              "line": {
+                                "type": "solid",
+                                "width": 2,
+                                "color": "#ef4444"
+                              },
+                              "points": {
+                                "fillColor": "",
+                                "outlineColor": "transparent",
+                                "outlineWidth": 0,
+                                "shape": "circle",
+                                "size": 4,
+                                "visible": false
+                              },
+                              "referenceLines": {
+                                "animation": {
+                                  "enabled": true,
+                                  "entry": {
+                                    "delay": 0,
+                                    "duration": 1000,
+                                    "easing": "cubicOut"
+                                  },
+                                  "transition": {
+                                    "delay": 0,
+                                    "duration": 300,
+                                    "easing": "cubicOut"
+                                  }
+                                },
+                                "endpoints": {
+                                  "points": [
+                                    {
+                                      "shape": "circle",
+                                      "size": 4
+                                    }
+                                  ],
+                                  "visible": true
+                                },
+                                "items": []
+                              },
+                              "smooth": true,
+                              "value": "heat",
+                              "visible": true
+                            }
+                          ],
+                          "stackGroups": [],
+                          "title": {
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "gap": 5,
+                            "position": "top-left",
+                            "subtitle": {
+                              "color": "",
+                              "elementStyle": {},
+                              "fontSize": "",
+                              "text": ""
+                            },
+                            "text": "",
+                            "visible": false
+                          },
+                          "tooltip": {
+                            "enabled": true,
+                            "formatter": {
+                              "template": "",
+                              "type": "value",
+                              "value": "{value}"
+                            },
+                            "trigger": "axis"
+                          },
+                          "visualMap": {
+                            "dimension": "y",
+                            "enabled": false,
+                            "legend": {
+                              "color": "",
+                              "elementStyle": {},
+                              "fontSize": "",
+                              "interactive": true,
+                              "orientation": "horizontal",
+                              "position": "bottom",
+                              "visible": true
+                            },
+                            "outOfRange": {},
+                            "pieces": []
+                          },
+                          "xAxis": {
+                            "advanced": {
+                              "axisPointer": {
+                                "enabled": "auto",
+                                "label": {
+                                  "backgroundColor": "",
+                                  "color": "",
+                                  "elementStyle": {},
+                                  "fontSize": "",
+                                  "visible": "auto"
+                                },
+                                "type": "auto"
+                              }
+                            },
+                            "axisLine": {
+                              "color": "",
+                              "visible": true,
+                              "width": 1
+                            },
+                            "boundaryGap": false,
+                            "field": "t_label",
+                            "gridLines": {
+                              "color": "",
+                              "visible": false,
+                              "width": 1
+                            },
+                            "labels": {
+                              "color": "",
+                              "elementStyle": {},
+                              "fontSize": "",
+                              "overflow": "none",
+                              "position": "bottom",
+                              "rotation": 35,
+                              "visible": true
+                            },
+                            "max": "auto",
+                            "min": "auto",
+                            "position": "bottom",
+                            "title": {
+                              "color": "",
+                              "elementStyle": {},
+                              "fontSize": "",
+                              "gap": 15,
+                              "position": "middle",
+                              "rotation": 0,
+                              "text": "",
+                              "visible": false
+                            },
+                            "type": "category",
+                            "visible": true
+                          },
+                          "yAxis": [
+                            {
+                              "advanced": {
+                                "axisPointer": {
+                                  "enabled": "auto",
+                                  "label": {
+                                    "backgroundColor": "",
+                                    "color": "",
+                                    "elementStyle": {},
+                                    "fontSize": "",
+                                    "visible": "auto"
+                                  },
+                                  "type": "auto"
+                                }
+                              },
+                              "axisLine": {
+                                "visible": true
+                              },
+                              "boundaryGap": true,
+                              "gridLines": {
+                                "visible": true,
+                                "color": "",
+                                "width": 1
+                              },
+                              "labels": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": "",
+                                "overflow": "none",
+                                "rotation": 0,
+                                "visible": true,
+                                "width": null
+                              },
+                              "max": 10,
+                              "min": 0,
+                              "ticks": {
+                                "displayInside": false,
+                                "majorSplit": 5,
+                                "minorSplit": 0,
+                                "visible": true
+                              },
+                              "title": {
+                                "color": "",
+                                "elementStyle": {},
+                                "fontSize": 11,
+                                "gap": 15,
+                                "position": "middle",
+                                "rotation": 0,
+                                "text": "Level",
+                                "visible": true
+                              },
+                              "visible": true
+                            }
+                          ],
+                          "zoom": {
+                            "axis": "x",
+                            "backgroundColor": "",
+                            "enabled": false,
+                            "height": 30,
+                            "type": "slider",
+                            "width": 30,
+                            "xPosition": "bottom",
+                            "yPosition": "right"
+                          },
+                          "style": {
+                            "classes": "roast-chart"
+                          }
+                        },
+                        "propConfig": {
+                          "props.data": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/LiveCurveDS",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          },
+                          "props.xAxis.labels.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.xAxis.advanced.axisPointer.label.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].labels.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].title.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].advanced.axisPointer.label.color": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.xAxis.advanced.axisPointer.label.backgroundColor": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                                }
+                              ]
+                            }
+                          },
+                          "props.yAxis[0].advanced.axisPointer.label.backgroundColor": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "session.custom.chartDark"
+                              },
+                              "transforms": [
+                                {
+                                  "type": "script",
+                                  "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        },
+                        "children": []
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "0px"
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "280px"
+                }
+              },
+              {
+                "type": "ia.display.view",
+                "meta": {
+                  "name": "EventsStripEmbed"
+                },
+                "props": {
+                  "path": "Views/EventsStrip",
+                  "params": {}
+                },
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "auto"
+                },
+                "children": []
+              },
+              {
+                "type": "ia.display.view",
+                "meta": {
+                  "name": "PhasesBarEmbed"
+                },
+                "props": {
+                  "path": "Views/PhasesBar",
+                  "params": {}
+                },
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "auto"
+                },
+                "children": []
+              },
+              {
+                "type": "ia.display.view",
+                "meta": {
+                  "name": "ControlsEmbedMobile"
+                },
+                "props": {
+                  "path": "Views/Controls",
+                  "params": {}
+                },
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "auto"
+                },
+                "children": []
+              },
+              {
+                "type": "ia.display.view",
+                "meta": {
+                  "name": "SummaryEmbedMobile"
+                },
+                "props": {
+                  "path": "Views/Summary",
+                  "params": {}
+                },
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "auto"
+                },
+                "children": []
+              },
+              {
+                "type": "ia.display.view",
+                "meta": {
+                  "name": "MetaCardEmbedMobile"
+                },
+                "props": {
+                  "path": "Views/MetaCard",
+                  "params": {}
+                },
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "auto"
+                },
+                "children": []
+              }
+            ],
+            "position": {
+              "grow": 1,
+              "shrink": 1,
+              "basis": "0px"
+            }
+          },
+          {
+            "type": "ia.display.view",
+            "meta": {
+              "name": "ControlDockEmbed"
+            },
+            "props": {
+              "path": "Views/ControlDock",
+              "params": {}
+            },
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            },
+            "children": []
+          }
+        ],
+        "position": {
+          "size": "small"
+        }
+      }
+    ]
+  },
+  "events": {
+    "system": {
+      "onStartup": {
+        "scope": "G",
+        "type": "script",
+        "config": {
+          "script": "\timport roastery.core\n\troastery.core.main_startup(self)\n"
+        }
+      }
+    }
+  }
+}''')
 
 
 # ================================================================ Settings
@@ -11749,13 +18142,13 @@ def settings_targets_view():
                     TE + member, bidirectional=True)}}}
 
     plan_cols = [
-        {'field': 'idx', 'header': {'title': '#'}, 'width': 36},
+        {'field': 'idx', 'header': {'title': '#'}, 'width': 30},
         {'field': 'timeSec', 'header': {'title': 'Time (sec)'},
-         'width': 92},
+         'width': 88},
         {'field': 'timeText', 'header': {'title': 'Time'},
-         'width': 70},
+         'width': 66},
         {'field': 'tempF', 'header': {'title': 'Temp (F)'},
-         'width': 92},
+         'width': 88},
     ]
     plan_table = {'type': 'ia.display.table',
                   'meta': {'name': 'TargetPlanTable'},
@@ -11770,8 +18163,8 @@ def settings_targets_view():
                   # Fixed basis, not auto: a virtualized table at
                   # auto height renders zero rows in this build
                   # (the Tier 1 alarm table lesson).
-                  'position': {'grow': 0, 'shrink': 0,
-                               'basis': '190px'}}
+                  'position': {'grow': 0, 'shrink': 1,
+                               'basis': '210px'}}
     idx_options = [{'value': i, 'label': 'Point %d' % (i + 1)}
                    for i in range(12)]
     load_row = flex('TargetLoadRow', 'row', [
@@ -11823,7 +18216,7 @@ def settings_targets_view():
         'four fields above seed the default plan and the Reset '
         'button returns to them.',
         'roast-section-desc')
-    root = settings_section('SettingsTargetsRoot', 'Targets',
+    root = settings_section('TargetSection', 'Targets',
         'The target profile the deviation tile and target curve '
         'follow, and the phase bar targets. Phase durations drive '
         'the phase bar directly; the DTR target is the development '
@@ -12268,16 +18661,50 @@ def settings_metadata_view():
 
 
 def settings_customs_view():
+    # The Show field is a literal dict, not cfg_field: the
+    # gateway serializes this Designer-edited field with
+    # position before children, while flex() emits children
+    # first, and the checkbox carries its style before its
+    # text, while check_in() emits text first.
+    def show_field(i):
+        return {
+            'type': 'ia.container.flex',
+            'meta': {'name': 'CustomShowField%d' % i},
+            'props': {'direction': 'column',
+                      'style': {'classes': 'roast-gap-8'}},
+            'position': {'grow': 0, 'shrink': 0, 'basis': '140px'},
+            'children': [
+                label('CustomShowField%dCap' % i, 'Show on controls',
+                      'roast-form-caption'),
+                {'type': 'ia.input.checkbox',
+                 'meta': {'name': 'CustomShowIn%d' % i},
+                 'props': {'selected': True,
+                           'style': {'classes': 'roast-checkbox'},
+                           'text': ''},
+                 'propConfig': {'props.selected': {'binding': tag_binding(
+                     T('CustomEvent%dEnabled' % i), bidirectional=True)}}}]}
+
     rows = []
     for i in (1, 2, 3, 4):
         rows.append(cfg_row(f'CustomRow{i}', [
             cfg_field(f'CustomNameField{i}', f'Custom {i} name',
                       text_in(f'CustomNameIn{i}', f'CustomEvent{i}Name')),
             cfg_field(f'CustomKindField{i}', f'Custom {i} kind',
-                      text_in(f'CustomKindIn{i}', f'CustomEvent{i}Kind'))]))
-    root = settings_section('SettingsCustomsRoot', 'Custom Events',
-        'Names and kinds for the four custom event buttons. Kind '
-        'is a free label (Airflow, Note, Info, ...).', rows)
+                      text_in(f'CustomKindIn{i}', f'CustomEvent{i}Kind')),
+            show_field(i)]))
+    root = settings_section('CustomSection', 'Custom Events',
+        'Custom buttons are your own event markers for anything '
+        'the standard events do not cover, for example a fan '
+        'change you want to remember or a note about the beans. '
+        'During a roast they appear in the roast controls and in '
+        'the phone dock, next to the standard events. Stamping '
+        'one drops a labeled marker on the chart at that moment '
+        'and saves the event in the batch record. Use Show to '
+        'keep a button on the controls, or turn Show off to hide '
+        'it. Name and kind are free text: the name is the button '
+        'label and the marker text, the kind is a short category '
+        'note (Airflow, Note, Info, ...). Leave a name blank to '
+        'hide that button until you name it.', rows)
     return {'custom': {}, 'params': {}, 'propConfig': {},
             'props': {'defaultSize': {'width': 900, 'height': 300}},
             'root': root}
@@ -12656,224 +19083,4794 @@ def _calc_card():
 
 
 def batch_detail_view():
-    """Log detail: the batch curve (with its event marker lines),
-    events timeline, phases and DTR, metadata, and the captured
-    button presses audit. Data is staged by
-    roastery.batches.stage_detail; this view's custom props are
-    filled by detail_startup."""
-    back_btn = button('BackButton', 'Back to Log',
-                      'roast-btn roast-btn-sm roast-btn-ghost roast-back-btn',
-                      position={'grow': 0, 'shrink': 0,
-                                'basis': '118px'},
-                      events=script_event(
-                          "\tsystem.perspective.navigate(page='/log')\n"))
-    title = label('Title', 'Batch', 'roast-title-sm',
-                  prop_config={'props.text': {'binding': prop_binding(
-                      'view.custom.titleText')}})
-    sub = label('Sub', '', 'roast-subtitle',
-                prop_config={'props.text': {'binding': prop_binding(
-                    'view.custom.subText')}})
-    title_col = flex('TitleCol', 'column', [title, sub],
-                     classes='roast-gap-8')
-    ghost_btn = button('GhostButton', 'Use as Ghost',
-                       'roast-btn roast-btn-sm roast-btn-purple',
-                       events=lib_event(
-                           'roastery.batches.set_background(self)'))
-    edit_btn = button('EditButton', 'Edit',
-                      'roast-btn roast-btn-sm roast-btn-primary',
-                      events=lib_event(
-                          'roastery.batches.open_editor(self)'))
-    export_btn = button('ExportButton', 'Export .alog',
-                        'roast-btn roast-btn-sm roast-btn-ghost',
-                        events=script_event(
-                            "\timport roastery.artisan\n"
-                            "\troastery.artisan.export_download(self)\n"))
-    csv_btn = button('ExportCsvButton', 'Export CSV',
-                     'roast-btn roast-btn-sm roast-btn-ghost',
-                     events=lib_event(
-                         'roastery.batches.export_csv_download(self)'))
-    json_btn = button('ExportJsonButton', 'Export JSON',
-                      'roast-btn roast-btn-sm roast-btn-ghost',
-                      events=lib_event(
-                          'roastery.batches.export_json_download(self)'))
-    print_btn = button('PrintSummaryButton', 'Print Summary',
-                       'roast-btn roast-btn-sm roast-btn-ghost',
-                       events=lib_event(
-                           'roastery.batches.export_summary_download(self)'))
-    head = flex('HeadRow', 'row', [back_btn, title_col],
-                justify='space-between', align='center',
-                classes='roast-gap-12 roast-detail-head',
-                position={'grow': 0, 'shrink': 0, 'basis': '76px'})
-    actions = flex('ActionRow', 'row',
-                   [ghost_btn, edit_btn, export_btn, csv_btn,
-                    json_btn, print_btn],
-                   justify='flex-end', align='center', wrap='wrap',
-                   classes='roast-gap-12 roast-detail-actions',
-                   position={'grow': 0, 'shrink': 0,
-                             'basis': 'auto'})
-    # HUNT-24 (polish round 2 hunt): the seed note label sits
-    # between the action row and the chart card, bound to
-    # view.custom.dSeedNote and hidden by class when empty.
-    seed_note = label('SeedNoteLabel', '', 'roast-note',
-                      prop_config={
-                          'props.text': {'binding': prop_binding(
-                              'view.custom.dSeedNote')},
-                          'props.style.classes': {'binding':
-                              expr_binding(
-                                  "if(len({view.custom.dSeedNote}) = 0, "
-                                  "'roast-note roast-hidden', "
-                                  "'roast-note')")}})
-    # Statistics summary line (Tier 3 item 19) on the detail
-    # chart card too: the library computes it in detail_startup
-    # from the staged document phases (dStatsLine).
-    detail_stats = label('DetailStatsLine', '', 'roast-stats-line',
-                         position={'grow': 0, 'shrink': 0,
-                                   'basis': '20px'},
-                         prop_config={'props.text': {'binding':
-                             prop_binding('view.custom.dStatsLine')}})
-    chart_card = flex('ChartCard', 'column',
-                      [detail_chart(), detail_stats,
-                       _analyzer_strip(detail=True)],
-                      classes='roast-card roast-gap-8',
-                      position={'grow': 0, 'shrink': 0,
-                                'basis': '538px'})
-    events_card = flex('EventsCard', 'column', [
-        label('EventsHead', 'Events Timeline', 'roast-section-title'),
-        _ds_table('EventsTable', 'eventsDs', [
-            {'field': 'event', 'header': {'title': 'Event'}},
-            {'field': 'time', 'header': {'title': 'Time'}},
-            {'field': 'temp', 'header': {'title': 'Temp'}}])],
-        classes='roast-card roast-gap-10',
-        position={'grow': 1, 'shrink': 1, 'basis': '320px'})
-    analysis_table = _ds_table('AnalysisTable', 'analysisDs', [
-        {'field': 'phase', 'header': {'title': 'Phase'}},
-        {'field': 'time', 'header': {'title': 'Time'}},
-        {'field': 'share', 'header': {'title': 'Share'}},
-        {'field': 'gain', 'header': {'title': 'Gain'}},
-        {'field': 'avgRor', 'header': {'title': 'Avg RoR'}},
-        {'field': 'auc', 'header': {'title': 'AUC'}}])
-    analysis_table['props']['style']['classes'] = (
-        'roast-table-sm roast-cols-full')
-    analysis_wrap = phone_cols_wrap(
-        'AnalysisTablePhoneWrap', 'AnColsToggleButton',
-        analysis_table, [
-            {'field': 'phase', 'header': {'title': 'Phase'},
-             'width': 78},
-            {'field': 'time', 'header': {'title': 'Time'},
-             'width': 58},
-            {'field': 'share', 'header': {'title': 'Share'},
-             'width': 50},
-            {'field': 'avgRor', 'header': {'title': 'Avg RoR'},
-             'width': 62}],
-        'roast-table-sm')
-    summary_card = flex('SummaryCard', 'column', [
-        label('SummaryHead', 'Summary', 'roast-section-title'),
-        _kv_line('Total', 'Total time', 'dTotal'),
-        _kv_line('Dtr', 'Dev ratio (DTR)', 'dDtr'),
-        _kv_line('DropT', 'Drop temp', 'dDropTemp'),
-        _kv_line('Loss', 'Weight loss', 'dLoss'),
-        _kv_line('Auc', 'AUC', 'dAuc'),
-        _kv_line('Source', 'Source', 'dSource'),
-        label('PhasesVal', '', 'roast-note',
-              prop_config={'props.text': {'binding': prop_binding(
-                  'view.custom.dPhases')}}),
-        label('AnalysisHead', 'Phase Analysis',
-              'roast-section-title'),
-        analysis_table,
-        analysis_wrap,
-        _kv_line('Tp', 'Turning point', 'dTp'),
-        _kv_line('FcsRor', 'RoR at FC start', 'dFcsRor'),
-        _kv_line('TotalRor', 'Total RoR (TP to drop)', 'dTotalRor'),
-        _kv_line('Cool', 'Cool phase', 'dCool'),
-        _kv_line('Sim', 'BT similarity vs ghost', 'dSimilarity'),
-        label('LossHead', 'Loss, Yield and Density',
-              'roast-section-title'),
-        _kv_line('DefLoss', 'Defects loss', 'dDefectsLoss'),
-        _kv_line('TotLoss', 'Total loss', 'dTotalLoss'),
-        _kv_line('Yield', 'Total yield', 'dYield'),
-        _kv_line('VolGain', 'Volume gain', 'dVolumeGain'),
-        _kv_line('MoistLoss', 'Moisture loss', 'dMoistureLoss'),
-        _kv_line('OrgLoss', 'Organic loss', 'dOrganicLoss'),
-        _kv_line('GreenDens', 'Green density', 'dGreenDensity'),
-        _kv_line('RoastDens', 'Roasted density', 'dRoastedDensity'),
-        # Between batch line (Tier 3 item 20): the library
-        # fills dBbp only when the batch document carries a
-        # bbp subdocument; otherwise the line is empty.
-        label('BbpLine', '', 'roast-note',
-              prop_config={'props.text': {'binding': prop_binding(
-                  'view.custom.dBbp')}})],
-        classes='roast-card roast-gap-8',
-        position={'grow': 1, 'shrink': 1, 'basis': '320px'})
-    meta_card = flex('MetaCard', 'column', [
-        label('MetaHead', 'Metadata', 'roast-section-title'),
-        _ds_table('MetaTable', 'metaDs', [
-            {'field': 'field', 'header': {'title': 'Field'}},
-            {'field': 'value', 'header': {'title': 'Value'}}])],
-        classes='roast-card roast-gap-10',
-        position={'grow': 0, 'shrink': 0, 'basis': '300px'})
-    mid_row = flex('MidRow', 'row', [events_card, summary_card],
-                   wrap='wrap', classes='roast-gap-12',
-                   position={'grow': 0, 'shrink': 0,
-                             'basis': '820px'})
-    press_card = flex('PressCard', 'column', [
-        label('PressHead', 'Captured Button Presses',
-              'roast-section-title'),
-        label('PressNote',
-              'One row per control press, captured when it happened '
-              '(batch_events). This is the audit trail behind the '
-              'events above.', 'roast-note-sm'),
-        _ds_table('PressTable', 'pressDs', [
-            {'field': 'action', 'header': {'title': 'Action'}},
-            {'field': 'time', 'header': {'title': 'Time'}},
-            {'field': 'tempF', 'header': {'title': 'Temp (F)'}},
-            {'field': 'fan', 'header': {'title': 'Fan'}},
-            {'field': 'heat', 'header': {'title': 'Heat'}}])],
-        classes='roast-card roast-gap-10',
-        position={'grow': 0, 'shrink': 0, 'basis': '316px'},
-        prop_config={'props.style.classes': {'binding': expr_binding(
-            "if({view.custom.hasPresses}, 'roast-card roast-gap-10', "
-            "'roast-card roast-gap-10 roast-hidden')")}})
-    calc_card = _calc_card()
-    content = flex('Content', 'column',
-                   [head, actions, seed_note, chart_card, mid_row,
-                    meta_card, calc_card, press_card],
-                   classes='roast-content roast-gap-12')
-    root = flex('root', 'column', [content], classes='roast-app',
-                scripts={'messageHandlers': [{
-                    'messageType': 'roastery-detail-refresh',
-                    'script': ("\timport roastery.batches\n"
-                               "\troastery.batches.detail_startup(self)\n"),
-                    'sessionScope': True, 'pageScope': True,
-                    'viewScope': False}]})
-    return {'custom': {'showAllCols': False,
-                       'detailMaxMs': 946710601000,
-                       'batchNumber': 0, 'titleText': '',
-                       'subText': '', 'dTotal': '--', 'dDtr': '--',
-                       'dDropTemp': '--', 'dLoss': '--', 'dAuc': '--',
-                       'dSource': '--', 'dPhases': '',
-                       'eventsDs': None, 'metaDs': None,
-                       'pressDs': None, 'hasPresses': False,
-                       'analysisDs': None, 'dTp': '--',
-                       'dFcsRor': '--', 'dTotalRor': '--',
-                       'dCool': '--', 'dSimilarity': '--',
-                       'dDefectsLoss': '--', 'dTotalLoss': '--',
-                       'dYield': '--', 'dVolumeGain': '--',
-                       'dMoistureLoss': '--', 'dOrganicLoss': '--',
-                       'dGreenDensity': '--',
-                       'dRoastedDensity': '--',
-                       'dBbp': '',
-                       'dSeedNote': '',
-                       'dStatsLine': ''},
-            'params': {}, 'propConfig': {},
-            'props': {'defaultSize': {'width': 1440, 'height': 1500}},
-            'events': {'system': {'onStartup': {
-                'scope': 'G', 'type': 'script',
-                'config': {'script':
-                    "\timport roastery.batches\n"
-                    "\troastery.batches.detail_startup(self)\n"}}}},
-            'root': root}
+# Resynced 2026-11-23 (round 14 worker D): the live view is
+# Designer edited well past what the helpers in this file can
+# build (leaf components carry empty children arrays, chart
+# dark mode bindings, alarm bindings, the gear button, and the
+# removed background upload), so the function returns the live
+# view.json verbatim, the same way CORE_CODE carries the live
+# library. A rebuild from the builder reproduces the live file
+# byte for byte.
+    return json.loads(r'''{
+  "custom": {
+    "batchNumber": 0,
+    "titleText": "",
+    "subText": "",
+    "dTotal": "--",
+    "dDtr": "--",
+    "dDropTemp": "--",
+    "dLoss": "--",
+    "dAuc": "--",
+    "dSource": "--",
+    "dPhases": "",
+    "eventsDs": null,
+    "metaDs": null,
+    "pressDs": null,
+    "hasPresses": false,
+    "analysisDs": null,
+    "dTp": "--",
+    "dFcsRor": "--",
+    "dTotalRor": "--",
+    "dCool": "--",
+    "dSimilarity": "--",
+    "dDefectsLoss": "--",
+    "dTotalLoss": "--",
+    "dYield": "--",
+    "dVolumeGain": "--",
+    "dMoistureLoss": "--",
+    "dOrganicLoss": "--",
+    "dGreenDensity": "--",
+    "dRoastedDensity": "--",
+    "dBbp": "",
+    "dStatsLine": "",
+    "showAllCols": false,
+    "dSeedNote": ""
+  },
+  "params": {},
+  "propConfig": {},
+  "props": {
+    "defaultSize": {
+      "width": 1440,
+      "height": 1500
+    }
+  },
+  "events": {
+    "system": {
+      "onStartup": {
+        "scope": "G",
+        "type": "script",
+        "config": {
+          "script": "\timport roastery.batches\n\troastery.batches.detail_startup(self)\n"
+        }
+      }
+    }
+  },
+  "root": {
+    "type": "ia.container.flex",
+    "meta": {
+      "name": "BatchDetailRoot"
+    },
+    "props": {
+      "direction": "column",
+      "style": {
+        "classes": "roast-app"
+      }
+    },
+    "children": [
+      {
+        "type": "ia.container.flex",
+        "meta": {
+          "name": "Content"
+        },
+        "props": {
+          "direction": "column",
+          "style": {
+            "classes": "roast-content roast-gap-12"
+          }
+        },
+        "children": [
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "HeadRow"
+            },
+            "props": {
+              "direction": "row",
+              "justify": "space-between",
+              "alignItems": "center",
+              "style": {
+                "classes": "roast-gap-12 roast-detail-head"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "BackButton"
+                },
+                "props": {
+                  "text": "Back to Log",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost roast-back-btn"
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\tsystem.perspective.navigate(page='/log')\n"
+                      }
+                    }
+                  }
+                },
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "118px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "TitleCol"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8 roast-detail-titlecol"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "Title"
+                    },
+                    "props": {
+                      "text": "Batch",
+                      "style": {
+                        "classes": "roast-title-sm"
+                      }
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "view.custom.titleText"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "Sub"
+                    },
+                    "props": {
+                      "text": "",
+                      "style": {
+                        "classes": "roast-subtitle"
+                      }
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "view.custom.subText"
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "GearButton"
+                },
+                "props": {
+                  "text": "",
+                  "image": {
+                    "icon": {
+                      "path": "material/settings"
+                    },
+                    "width": 22,
+                    "height": 22
+                  },
+                  "style": {
+                    "classes": "roast-btn roast-btn-ghost roast-gear-btn"
+                  }
+                },
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "40px"
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core\n\troastery.core.toggle_app_settings(self)\n"
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "76px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "ActionRow"
+            },
+            "props": {
+              "direction": "row",
+              "justify": "flex-end",
+              "alignItems": "center",
+              "wrap": "wrap",
+              "style": {
+                "classes": "roast-gap-12 roast-detail-actions"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "GhostButton"
+                },
+                "props": {
+                  "text": "Use as Ghost",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-purple"
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core, roastery.batches\n\troastery.batches.set_background(self)\n"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "EditButton"
+                },
+                "props": {
+                  "text": "Edit",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-primary"
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core, roastery.batches\n\troastery.batches.open_editor(self)\n"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "ExportButton"
+                },
+                "props": {
+                  "text": "Export .alog",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.artisan\n\troastery.artisan.export_download(self)\n"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "ExportCsvButton"
+                },
+                "props": {
+                  "text": "Export CSV",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core, roastery.batches\n\troastery.batches.export_csv_download(self)\n"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "ExportJsonButton"
+                },
+                "props": {
+                  "text": "Export JSON",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core, roastery.batches\n\troastery.batches.export_json_download(self)\n"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "ia.input.button",
+                "meta": {
+                  "name": "PrintSummaryButton"
+                },
+                "props": {
+                  "text": "Print Summary",
+                  "style": {
+                    "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                  }
+                },
+                "events": {
+                  "dom": {
+                    "onClick": {
+                      "scope": "G",
+                      "type": "script",
+                      "config": {
+                        "script": "\timport roastery.core, roastery.batches\n\troastery.batches.export_summary_download(self)\n"
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            }
+          },
+          {
+            "type": "ia.display.label",
+            "meta": {
+              "name": "SeedNoteLabel"
+            },
+            "props": {
+              "text": "",
+              "style": {
+                "classes": "roast-note"
+              }
+            },
+            "propConfig": {
+              "props.text": {
+                "binding": {
+                  "type": "property",
+                  "config": {
+                    "path": "view.custom.dSeedNote"
+                  }
+                }
+              },
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if(len({view.custom.dSeedNote}) = 0, 'roast-note roast-hidden', 'roast-note')"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "ChartCard"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-card roast-gap-8"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.canvas-charts.line",
+                "meta": {
+                  "name": "DetailChart"
+                },
+                "props": {
+                  "appearance": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "duration": 900,
+                        "easing": "cubicOut",
+                        "delay": 0
+                      },
+                      "transition": {
+                        "duration": 300,
+                        "easing": "cubicOut",
+                        "delay": 0
+                      }
+                    },
+                    "backgroundColor": "",
+                    "colorPalette": [
+                      "#3b82f6",
+                      "#14b8a6"
+                    ]
+                  },
+                  "axisPointer": {
+                    "enabled": true,
+                    "label": {
+                      "backgroundColor": "",
+                      "color": "",
+                      "elementStyle": {},
+                      "fontSize": "",
+                      "visible": false
+                    },
+                    "type": "line"
+                  },
+                  "data": [],
+                  "legend": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": 12,
+                    "interactive": true,
+                    "orientation": "horizontal",
+                    "position": "bottom",
+                    "visible": true
+                  },
+                  "liveData": false,
+                  "series": [
+                    {
+                      "advanced": {
+                        "connectNulls": true,
+                        "step": "",
+                        "tooltip": {
+                          "enabled": true,
+                          "formatter": {
+                            "template": "",
+                            "type": "value",
+                            "value": ""
+                          }
+                        },
+                        "yAxis": 0
+                      },
+                      "dataLabels": {
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": "",
+                        "format": "{value}",
+                        "position": "top",
+                        "visible": false
+                      },
+                      "label": "Bean Temp",
+                      "line": {
+                        "type": "solid",
+                        "width": 3,
+                        "color": "#3b82f6"
+                      },
+                      "points": {
+                        "fillColor": "",
+                        "outlineColor": "transparent",
+                        "outlineWidth": 0,
+                        "shape": "circle",
+                        "size": 4,
+                        "visible": false
+                      },
+                      "referenceLines": {
+                        "animation": {
+                          "enabled": true,
+                          "entry": {
+                            "delay": 0,
+                            "duration": 1000,
+                            "easing": "cubicOut"
+                          },
+                          "transition": {
+                            "delay": 0,
+                            "duration": 300,
+                            "easing": "cubicOut"
+                          }
+                        },
+                        "endpoints": {
+                          "points": [
+                            {
+                              "shape": "circle",
+                              "size": 4
+                            }
+                          ],
+                          "visible": true
+                        },
+                        "items": []
+                      },
+                      "smooth": true,
+                      "value": "bt",
+                      "visible": true
+                    },
+                    {
+                      "advanced": {
+                        "connectNulls": true,
+                        "step": "",
+                        "tooltip": {
+                          "enabled": true,
+                          "formatter": {
+                            "template": "",
+                            "type": "value",
+                            "value": ""
+                          }
+                        },
+                        "yAxis": 1
+                      },
+                      "dataLabels": {
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": "",
+                        "format": "{value}",
+                        "position": "top",
+                        "visible": false
+                      },
+                      "label": "Rate of Rise",
+                      "line": {
+                        "type": "solid",
+                        "width": 2,
+                        "color": "#14b8a6"
+                      },
+                      "points": {
+                        "fillColor": "",
+                        "outlineColor": "transparent",
+                        "outlineWidth": 0,
+                        "shape": "circle",
+                        "size": 4,
+                        "visible": false
+                      },
+                      "referenceLines": {
+                        "animation": {
+                          "enabled": true,
+                          "entry": {
+                            "delay": 0,
+                            "duration": 1000,
+                            "easing": "cubicOut"
+                          },
+                          "transition": {
+                            "delay": 0,
+                            "duration": 300,
+                            "easing": "cubicOut"
+                          }
+                        },
+                        "endpoints": {
+                          "points": [
+                            {
+                              "shape": "circle",
+                              "size": 4
+                            }
+                          ],
+                          "visible": true
+                        },
+                        "items": []
+                      },
+                      "smooth": true,
+                      "value": "ror",
+                      "visible": true
+                    }
+                  ],
+                  "stackGroups": [],
+                  "title": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "gap": 5,
+                    "position": "top-left",
+                    "subtitle": {
+                      "color": "",
+                      "elementStyle": {},
+                      "fontSize": "",
+                      "text": ""
+                    },
+                    "text": "",
+                    "visible": false
+                  },
+                  "tooltip": {
+                    "enabled": true,
+                    "formatter": {
+                      "template": "",
+                      "type": "value",
+                      "value": "{value}"
+                    },
+                    "trigger": "axis"
+                  },
+                  "visualMap": {
+                    "dimension": "y",
+                    "enabled": false,
+                    "legend": {
+                      "color": "",
+                      "elementStyle": {},
+                      "fontSize": "",
+                      "interactive": true,
+                      "orientation": "horizontal",
+                      "position": "bottom",
+                      "visible": true
+                    },
+                    "outOfRange": {},
+                    "pieces": []
+                  },
+                  "xAxis": {
+                    "advanced": {
+                      "axisPointer": {
+                        "enabled": "auto",
+                        "label": {
+                          "backgroundColor": "",
+                          "color": "",
+                          "elementStyle": {},
+                          "fontSize": "",
+                          "visible": "auto"
+                        },
+                        "type": "auto"
+                      }
+                    },
+                    "axisLine": {
+                      "color": "",
+                      "visible": true,
+                      "width": 1
+                    },
+                    "boundaryGap": false,
+                    "field": "t_label",
+                    "gridLines": {
+                      "color": "",
+                      "visible": false,
+                      "width": 1
+                    },
+                    "labels": {
+                      "color": "",
+                      "elementStyle": {},
+                      "fontSize": 11,
+                      "overflow": "none",
+                      "position": "bottom",
+                      "rotation": 30,
+                      "visible": true
+                    },
+                    "max": "auto",
+                    "min": "auto",
+                    "position": "bottom",
+                    "title": {
+                      "color": "",
+                      "elementStyle": {},
+                      "fontSize": 11,
+                      "gap": 15,
+                      "position": "middle",
+                      "rotation": 0,
+                      "text": "",
+                      "visible": true
+                    },
+                    "type": "category",
+                    "visible": true
+                  },
+                  "yAxis": [
+                    {
+                      "advanced": {
+                        "axisPointer": {
+                          "enabled": "auto",
+                          "label": {
+                            "backgroundColor": "",
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "visible": "auto"
+                          },
+                          "type": "auto"
+                        }
+                      },
+                      "axisLine": {
+                        "visible": true
+                      },
+                      "boundaryGap": true,
+                      "gridLines": {
+                        "visible": true,
+                        "color": "",
+                        "width": 1
+                      },
+                      "labels": {
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": 11,
+                        "overflow": "none",
+                        "rotation": 0,
+                        "visible": true,
+                        "width": null,
+                        "gap": 2
+                      },
+                      "max": 520,
+                      "min": 150,
+                      "ticks": {
+                        "displayInside": false,
+                        "majorSplit": 6,
+                        "minorSplit": 0,
+                        "visible": true
+                      },
+                      "title": {
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": 11,
+                        "gap": 15,
+                        "position": "middle",
+                        "rotation": 0,
+                        "text": "Bean Temp (deg F)",
+                        "visible": true
+                      },
+                      "visible": true
+                    },
+                    {
+                      "advanced": {
+                        "axisPointer": {
+                          "enabled": "auto",
+                          "label": {
+                            "backgroundColor": "",
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "visible": "auto"
+                          },
+                          "type": "auto"
+                        }
+                      },
+                      "axisLine": {
+                        "visible": true
+                      },
+                      "boundaryGap": true,
+                      "gridLines": {
+                        "visible": false,
+                        "color": "",
+                        "width": 1
+                      },
+                      "labels": {
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": 11,
+                        "overflow": "none",
+                        "rotation": 0,
+                        "visible": true,
+                        "width": null,
+                        "gap": 2
+                      },
+                      "max": 47,
+                      "min": 0,
+                      "ticks": {
+                        "displayInside": false,
+                        "majorSplit": 4,
+                        "minorSplit": 0,
+                        "visible": true
+                      },
+                      "title": {
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": 11,
+                        "gap": 15,
+                        "position": "middle",
+                        "rotation": 0,
+                        "text": "Rate of Rise (deg F/min)",
+                        "visible": true
+                      },
+                      "visible": true,
+                      "position": "right"
+                    }
+                  ],
+                  "zoom": {
+                    "axis": "x",
+                    "backgroundColor": "",
+                    "enabled": false,
+                    "height": 30,
+                    "type": "slider",
+                    "width": 30,
+                    "xPosition": "bottom",
+                    "yPosition": "right"
+                  },
+                  "style": {
+                    "classes": "roast-chart roast-cols-full"
+                  }
+                },
+                "propConfig": {
+                  "props.data": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/DetailDS",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false
+                    }
+                  },
+                  "props.series[0].referenceLines.items": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/DetailMarksDS",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false,
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.batches.detail_reference_lines()\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.xAxis.labels.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.xAxis.advanced.axisPointer.label.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[0].labels.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[0].title.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[0].advanced.axisPointer.label.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[1].labels.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[1].title.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[1].advanced.axisPointer.label.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.xAxis.advanced.axisPointer.label.backgroundColor": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[0].advanced.axisPointer.label.backgroundColor": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[1].advanced.axisPointer.label.backgroundColor": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "0px"
+                }
+              },
+              {
+                "type": "ia.canvas-charts.line",
+                "meta": {
+                  "name": "DetailChartPhone"
+                },
+                "props": {
+                  "appearance": {
+                    "animation": {
+                      "enabled": true,
+                      "entry": {
+                        "duration": 900,
+                        "easing": "cubicOut",
+                        "delay": 0
+                      },
+                      "transition": {
+                        "duration": 300,
+                        "easing": "cubicOut",
+                        "delay": 0
+                      }
+                    },
+                    "backgroundColor": "",
+                    "colorPalette": [
+                      "#3b82f6",
+                      "#14b8a6"
+                    ]
+                  },
+                  "axisPointer": {
+                    "enabled": true,
+                    "label": {
+                      "backgroundColor": "",
+                      "color": "",
+                      "elementStyle": {},
+                      "fontSize": "",
+                      "visible": false
+                    },
+                    "type": "line"
+                  },
+                  "data": [],
+                  "legend": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": 12,
+                    "interactive": true,
+                    "orientation": "horizontal",
+                    "position": "bottom",
+                    "visible": true
+                  },
+                  "liveData": false,
+                  "series": [
+                    {
+                      "advanced": {
+                        "connectNulls": true,
+                        "step": "",
+                        "tooltip": {
+                          "enabled": true,
+                          "formatter": {
+                            "template": "",
+                            "type": "value",
+                            "value": ""
+                          }
+                        },
+                        "yAxis": 0
+                      },
+                      "dataLabels": {
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": "",
+                        "format": "{value}",
+                        "position": "top",
+                        "visible": false
+                      },
+                      "label": "Bean Temp",
+                      "line": {
+                        "type": "solid",
+                        "width": 3,
+                        "color": "#3b82f6"
+                      },
+                      "points": {
+                        "fillColor": "",
+                        "outlineColor": "transparent",
+                        "outlineWidth": 0,
+                        "shape": "circle",
+                        "size": 4,
+                        "visible": false
+                      },
+                      "referenceLines": {
+                        "animation": {
+                          "enabled": true,
+                          "entry": {
+                            "delay": 0,
+                            "duration": 1000,
+                            "easing": "cubicOut"
+                          },
+                          "transition": {
+                            "delay": 0,
+                            "duration": 300,
+                            "easing": "cubicOut"
+                          }
+                        },
+                        "endpoints": {
+                          "points": [
+                            {
+                              "shape": "circle",
+                              "size": 4
+                            }
+                          ],
+                          "visible": true
+                        },
+                        "items": []
+                      },
+                      "smooth": true,
+                      "value": "bt",
+                      "visible": true
+                    },
+                    {
+                      "advanced": {
+                        "connectNulls": true,
+                        "step": "",
+                        "tooltip": {
+                          "enabled": true,
+                          "formatter": {
+                            "template": "",
+                            "type": "value",
+                            "value": ""
+                          }
+                        },
+                        "yAxis": 1
+                      },
+                      "dataLabels": {
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": "",
+                        "format": "{value}",
+                        "position": "top",
+                        "visible": false
+                      },
+                      "label": "Rate of Rise",
+                      "line": {
+                        "type": "solid",
+                        "width": 2,
+                        "color": "#14b8a6"
+                      },
+                      "points": {
+                        "fillColor": "",
+                        "outlineColor": "transparent",
+                        "outlineWidth": 0,
+                        "shape": "circle",
+                        "size": 4,
+                        "visible": false
+                      },
+                      "referenceLines": {
+                        "animation": {
+                          "enabled": true,
+                          "entry": {
+                            "delay": 0,
+                            "duration": 1000,
+                            "easing": "cubicOut"
+                          },
+                          "transition": {
+                            "delay": 0,
+                            "duration": 300,
+                            "easing": "cubicOut"
+                          }
+                        },
+                        "endpoints": {
+                          "points": [
+                            {
+                              "shape": "circle",
+                              "size": 4
+                            }
+                          ],
+                          "visible": true
+                        },
+                        "items": []
+                      },
+                      "smooth": true,
+                      "value": "ror",
+                      "visible": true
+                    }
+                  ],
+                  "stackGroups": [],
+                  "title": {
+                    "color": "",
+                    "elementStyle": {},
+                    "fontSize": "",
+                    "gap": 5,
+                    "position": "top-left",
+                    "subtitle": {
+                      "color": "",
+                      "elementStyle": {},
+                      "fontSize": "",
+                      "text": ""
+                    },
+                    "text": "",
+                    "visible": false
+                  },
+                  "tooltip": {
+                    "enabled": true,
+                    "formatter": {
+                      "template": "",
+                      "type": "value",
+                      "value": "{value}"
+                    },
+                    "trigger": "axis"
+                  },
+                  "visualMap": {
+                    "dimension": "y",
+                    "enabled": false,
+                    "legend": {
+                      "color": "",
+                      "elementStyle": {},
+                      "fontSize": "",
+                      "interactive": true,
+                      "orientation": "horizontal",
+                      "position": "bottom",
+                      "visible": true
+                    },
+                    "outOfRange": {},
+                    "pieces": []
+                  },
+                  "xAxis": {
+                    "advanced": {
+                      "axisPointer": {
+                        "enabled": "auto",
+                        "label": {
+                          "backgroundColor": "",
+                          "color": "",
+                          "elementStyle": {},
+                          "fontSize": "",
+                          "visible": "auto"
+                        },
+                        "type": "auto"
+                      }
+                    },
+                    "axisLine": {
+                      "color": "",
+                      "visible": true,
+                      "width": 1
+                    },
+                    "boundaryGap": false,
+                    "field": "t_label",
+                    "gridLines": {
+                      "color": "",
+                      "visible": false,
+                      "width": 1
+                    },
+                    "labels": {
+                      "color": "",
+                      "elementStyle": {},
+                      "fontSize": 11,
+                      "overflow": "none",
+                      "position": "bottom",
+                      "rotation": 30,
+                      "visible": true
+                    },
+                    "max": "auto",
+                    "min": "auto",
+                    "position": "bottom",
+                    "title": {
+                      "color": "",
+                      "elementStyle": {},
+                      "fontSize": 11,
+                      "gap": 15,
+                      "position": "middle",
+                      "rotation": 0,
+                      "text": "",
+                      "visible": true
+                    },
+                    "type": "category",
+                    "visible": true
+                  },
+                  "yAxis": [
+                    {
+                      "advanced": {
+                        "axisPointer": {
+                          "enabled": "auto",
+                          "label": {
+                            "backgroundColor": "",
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "visible": "auto"
+                          },
+                          "type": "auto"
+                        }
+                      },
+                      "axisLine": {
+                        "visible": true
+                      },
+                      "boundaryGap": true,
+                      "gridLines": {
+                        "visible": true,
+                        "color": "",
+                        "width": 1
+                      },
+                      "labels": {
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": 11,
+                        "overflow": "none",
+                        "rotation": 0,
+                        "visible": true,
+                        "width": null,
+                        "gap": 2
+                      },
+                      "max": 520,
+                      "min": 150,
+                      "ticks": {
+                        "displayInside": false,
+                        "majorSplit": 6,
+                        "minorSplit": 0,
+                        "visible": true
+                      },
+                      "title": {
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": 11,
+                        "gap": 15,
+                        "position": "middle",
+                        "rotation": 0,
+                        "text": "Bean Temp (F)",
+                        "visible": true
+                      },
+                      "visible": true
+                    },
+                    {
+                      "advanced": {
+                        "axisPointer": {
+                          "enabled": "auto",
+                          "label": {
+                            "backgroundColor": "",
+                            "color": "",
+                            "elementStyle": {},
+                            "fontSize": "",
+                            "visible": "auto"
+                          },
+                          "type": "auto"
+                        }
+                      },
+                      "axisLine": {
+                        "visible": true
+                      },
+                      "boundaryGap": true,
+                      "gridLines": {
+                        "visible": false,
+                        "color": "",
+                        "width": 1
+                      },
+                      "labels": {
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": 11,
+                        "overflow": "none",
+                        "rotation": 0,
+                        "visible": true,
+                        "width": null,
+                        "gap": 2
+                      },
+                      "max": 47,
+                      "min": 0,
+                      "ticks": {
+                        "displayInside": false,
+                        "majorSplit": 4,
+                        "minorSplit": 0,
+                        "visible": true
+                      },
+                      "title": {
+                        "color": "",
+                        "elementStyle": {},
+                        "fontSize": 11,
+                        "gap": 15,
+                        "position": "middle",
+                        "rotation": 0,
+                        "text": "RoR (deg F/min)",
+                        "visible": true
+                      },
+                      "visible": true,
+                      "position": "right"
+                    }
+                  ],
+                  "zoom": {
+                    "axis": "x",
+                    "backgroundColor": "",
+                    "enabled": false,
+                    "height": 30,
+                    "type": "slider",
+                    "width": 30,
+                    "xPosition": "bottom",
+                    "yPosition": "right"
+                  },
+                  "style": {
+                    "classes": "roast-chart roast-cols-phone"
+                  }
+                },
+                "propConfig": {
+                  "props.data": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/DetailDS",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false
+                    }
+                  },
+                  "props.series[0].referenceLines.items": {
+                    "binding": {
+                      "type": "tag",
+                      "config": {
+                        "tagPath": "[default]Roastery/DetailMarksDS",
+                        "mode": "direct",
+                        "bidirectional": false
+                      },
+                      "bidirectional": false,
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.batches.detail_reference_lines_compact()\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.xAxis.labels.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.xAxis.advanced.axisPointer.label.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[0].labels.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[0].title.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[0].advanced.axisPointer.label.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[1].labels.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[1].title.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[1].advanced.axisPointer.label.color": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_text_color(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.xAxis.advanced.axisPointer.label.backgroundColor": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[0].advanced.axisPointer.label.backgroundColor": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                        }
+                      ]
+                    }
+                  },
+                  "props.yAxis[1].advanced.axisPointer.label.backgroundColor": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "session.custom.chartDark"
+                      },
+                      "transforms": [
+                        {
+                          "type": "script",
+                          "code": "\treturn roastery.core.chart_pointer_bg(self, value)\n"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "0px"
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "DetailStatsLine"
+                },
+                "props": {
+                  "text": "",
+                  "style": {
+                    "classes": "roast-stats-line"
+                  }
+                },
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "20px"
+                },
+                "propConfig": {
+                  "props.text": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "view.custom.dStatsLine"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "DetailAnalyzerStrip"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "DetailAnalyzerCapRow"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "16px"
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "DetailAnalyzerCap"
+                        },
+                        "props": {
+                          "text": "Analyzer",
+                          "style": {
+                            "classes": "roast-caption"
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "auto"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "DetailAnalyzerControls"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "alignItems": "center",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.input.button",
+                        "meta": {
+                          "name": "DetailAnalyzerMinus"
+                        },
+                        "props": {
+                          "text": "-10s",
+                          "style": {
+                            "classes": "roast-btn-ghost roast-btn-compact"
+                          }
+                        },
+                        "events": {
+                          "dom": {
+                            "onClick": {
+                              "scope": "G",
+                              "type": "script",
+                              "config": {
+                                "script": "\timport roastery.core, roastery.batches\n\troastery.batches.detail_analyzer_step(-10)\n"
+                              }
+                            }
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "auto"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "DetailAnalyzerTime"
+                        },
+                        "props": {
+                          "text": "--:--",
+                          "style": {
+                            "classes": "roast-value-strong"
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "52px"
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/DetailAnalyzer/TimeText",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.button",
+                        "meta": {
+                          "name": "DetailAnalyzerPlus"
+                        },
+                        "props": {
+                          "text": "+10s",
+                          "style": {
+                            "classes": "roast-btn-ghost roast-btn-compact"
+                          }
+                        },
+                        "events": {
+                          "dom": {
+                            "onClick": {
+                              "scope": "G",
+                              "type": "script",
+                              "config": {
+                                "script": "\timport roastery.core, roastery.batches\n\troastery.batches.detail_analyzer_step(10)\n"
+                              }
+                            }
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "auto"
+                        }
+                      },
+                      {
+                        "type": "ia.input.button",
+                        "meta": {
+                          "name": "DetailAnalyzerLatest"
+                        },
+                        "props": {
+                          "text": "Latest",
+                          "style": {
+                            "classes": "roast-btn-ghost roast-btn-compact"
+                          }
+                        },
+                        "events": {
+                          "dom": {
+                            "onClick": {
+                              "scope": "G",
+                              "type": "script",
+                              "config": {
+                                "script": "\timport roastery.core, roastery.batches\n\troastery.batches.detail_analyzer_latest()\n"
+                              }
+                            }
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "auto"
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "36px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "DetailAnalyzerValues"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "style": {
+                        "classes": "roast-gap-8"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "DetailAnalyzerBt"
+                        },
+                        "props": {
+                          "direction": "column",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerBtCap"
+                            },
+                            "props": {
+                              "text": "BT (F)",
+                              "style": {
+                                "classes": "roast-caption"
+                              }
+                            }
+                          },
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerBtVal"
+                            },
+                            "props": {
+                              "text": "--",
+                              "style": {
+                                "classes": "roast-value"
+                              }
+                            },
+                            "propConfig": {
+                              "props.text": {
+                                "binding": {
+                                  "type": "tag",
+                                  "config": {
+                                    "tagPath": "[default]Roastery/DetailAnalyzer/BtText",
+                                    "mode": "direct",
+                                    "bidirectional": false
+                                  },
+                                  "bidirectional": false
+                                }
+                              }
+                            }
+                          }
+                        ],
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "DetailAnalyzerRor"
+                        },
+                        "props": {
+                          "direction": "column",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerRorCap"
+                            },
+                            "props": {
+                              "text": "RoR",
+                              "style": {
+                                "classes": "roast-caption"
+                              }
+                            }
+                          },
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerRorVal"
+                            },
+                            "props": {
+                              "text": "--",
+                              "style": {
+                                "classes": "roast-value"
+                              }
+                            },
+                            "propConfig": {
+                              "props.text": {
+                                "binding": {
+                                  "type": "tag",
+                                  "config": {
+                                    "tagPath": "[default]Roastery/DetailAnalyzer/RorText",
+                                    "mode": "direct",
+                                    "bidirectional": false
+                                  },
+                                  "bidirectional": false
+                                }
+                              }
+                            }
+                          }
+                        ],
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "DetailAnalyzerBg"
+                        },
+                        "props": {
+                          "direction": "column",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerBgCap"
+                            },
+                            "props": {
+                              "text": "Ghost (F)",
+                              "style": {
+                                "classes": "roast-caption"
+                              }
+                            }
+                          },
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerBgVal"
+                            },
+                            "props": {
+                              "text": "--",
+                              "style": {
+                                "classes": "roast-value"
+                              }
+                            },
+                            "propConfig": {
+                              "props.text": {
+                                "binding": {
+                                  "type": "tag",
+                                  "config": {
+                                    "tagPath": "[default]Roastery/DetailAnalyzer/BgText",
+                                    "mode": "direct",
+                                    "bidirectional": false
+                                  },
+                                  "bidirectional": false
+                                }
+                              }
+                            }
+                          }
+                        ],
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "DetailAnalyzerDev"
+                        },
+                        "props": {
+                          "direction": "column",
+                          "style": {
+                            "classes": "roast-gap-8"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerDevCap"
+                            },
+                            "props": {
+                              "text": "Dev (F)",
+                              "style": {
+                                "classes": "roast-caption"
+                              }
+                            }
+                          },
+                          {
+                            "type": "ia.display.label",
+                            "meta": {
+                              "name": "DetailAnalyzerDevVal"
+                            },
+                            "props": {
+                              "text": "--",
+                              "style": {
+                                "classes": "roast-value"
+                              }
+                            },
+                            "propConfig": {
+                              "props.text": {
+                                "binding": {
+                                  "type": "tag",
+                                  "config": {
+                                    "tagPath": "[default]Roastery/DetailAnalyzer/DevText",
+                                    "mode": "direct",
+                                    "bidirectional": false
+                                  },
+                                  "bidirectional": false
+                                }
+                              }
+                            }
+                          }
+                        ],
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "44px"
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "112px"
+                }
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "538px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "MidRow"
+            },
+            "props": {
+              "direction": "row",
+              "wrap": "wrap",
+              "style": {
+                "classes": "roast-gap-12"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "EventsCard"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-card roast-gap-10"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "EventsHead"
+                    },
+                    "props": {
+                      "text": "Events Timeline",
+                      "style": {
+                        "classes": "roast-section-title"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.display.table",
+                    "meta": {
+                      "name": "EventsTable"
+                    },
+                    "props": {
+                      "data": [],
+                      "columns": [
+                        {
+                          "field": "event",
+                          "header": {
+                            "title": "Event"
+                          },
+                          "width": 110
+                        },
+                        {
+                          "field": "time",
+                          "header": {
+                            "title": "Time"
+                          },
+                          "width": 70
+                        },
+                        {
+                          "field": "temp",
+                          "header": {
+                            "title": "Temp"
+                          },
+                          "width": 70
+                        }
+                      ],
+                      "pager": {
+                        "enabled": false
+                      },
+                      "rows": {
+                        "height": 32
+                      },
+                      "header": {
+                        "height": 32
+                      },
+                      "style": {
+                        "classes": "roast-table-sm"
+                      }
+                    },
+                    "propConfig": {
+                      "props.data": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "view.custom.eventsDs"
+                          }
+                        }
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "250px"
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "320px"
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "SummaryCard"
+                },
+                "props": {
+                  "direction": "column",
+                  "style": {
+                    "classes": "roast-card roast-gap-8"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "SummaryHead"
+                    },
+                    "props": {
+                      "text": "Summary",
+                      "style": {
+                        "classes": "roast-section-title"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "Total"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "TotalCap"
+                        },
+                        "props": {
+                          "text": "Total time",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "TotalVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dTotal"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "Dtr"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "DtrCap"
+                        },
+                        "props": {
+                          "text": "Dev ratio (DTR)",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "DtrVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dDtr"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "DropT"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "DropTCap"
+                        },
+                        "props": {
+                          "text": "Drop temp",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "DropTVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dDropTemp"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "Loss"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "LossCap"
+                        },
+                        "props": {
+                          "text": "Weight loss",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "LossVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dLoss"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "Auc"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "AucCap"
+                        },
+                        "props": {
+                          "text": "AUC",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "AucVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dAuc"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "Source"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "SourceCap"
+                        },
+                        "props": {
+                          "text": "Source",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "SourceVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dSource"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "PhasesVal"
+                    },
+                    "props": {
+                      "text": "",
+                      "style": {
+                        "classes": "roast-note"
+                      }
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "view.custom.dPhases"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "AnalysisHead"
+                    },
+                    "props": {
+                      "text": "Phase Analysis",
+                      "style": {
+                        "classes": "roast-section-title"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.display.table",
+                    "meta": {
+                      "name": "AnalysisTable"
+                    },
+                    "props": {
+                      "data": [],
+                      "columns": [
+                        {
+                          "field": "phase",
+                          "header": {
+                            "title": "Phase"
+                          }
+                        },
+                        {
+                          "field": "time",
+                          "header": {
+                            "title": "Time"
+                          }
+                        },
+                        {
+                          "field": "share",
+                          "header": {
+                            "title": "Share"
+                          }
+                        },
+                        {
+                          "field": "gain",
+                          "header": {
+                            "title": "Gain"
+                          }
+                        },
+                        {
+                          "field": "avgRor",
+                          "header": {
+                            "title": "Avg RoR"
+                          }
+                        },
+                        {
+                          "field": "auc",
+                          "header": {
+                            "title": "AUC"
+                          }
+                        }
+                      ],
+                      "pager": {
+                        "enabled": false
+                      },
+                      "rows": {
+                        "height": 32
+                      },
+                      "header": {
+                        "height": 32
+                      },
+                      "style": {
+                        "classes": "roast-table-sm roast-cols-full"
+                      }
+                    },
+                    "propConfig": {
+                      "props.data": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "view.custom.analysisDs"
+                          }
+                        }
+                      }
+                    },
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "250px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "AnalysisTablePhoneWrap"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-cols-phone"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.container.flex",
+                        "meta": {
+                          "name": "ColsToggleRow"
+                        },
+                        "props": {
+                          "direction": "row",
+                          "justify": "flex-end",
+                          "alignItems": "center",
+                          "style": {
+                            "classes": "roast-gap-12"
+                          }
+                        },
+                        "children": [
+                          {
+                            "type": "ia.input.button",
+                            "meta": {
+                              "name": "AnColsToggleButton"
+                            },
+                            "props": {
+                              "text": "All columns",
+                              "style": {
+                                "classes": "roast-btn roast-btn-sm roast-btn-ghost"
+                              }
+                            },
+                            "propConfig": {
+                              "props.text": {
+                                "binding": {
+                                  "type": "expr",
+                                  "config": {
+                                    "expression": "if({view.custom.showAllCols}, 'Fewer columns', 'All columns')"
+                                  }
+                                }
+                              }
+                            },
+                            "events": {
+                              "dom": {
+                                "onClick": {
+                                  "scope": "G",
+                                  "type": "script",
+                                  "config": {
+                                    "script": "\timport roastery.core\n\troastery.core.toggle_all_cols(self)\n"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "type": "ia.display.table",
+                        "meta": {
+                          "name": "AnalysisTablePhone"
+                        },
+                        "props": {
+                          "data": [],
+                          "columns": [
+                            {
+                              "field": "phase",
+                              "header": {
+                                "title": "Phase"
+                              },
+                              "width": 78
+                            },
+                            {
+                              "field": "time",
+                              "header": {
+                                "title": "Time"
+                              },
+                              "width": 58
+                            },
+                            {
+                              "field": "share",
+                              "header": {
+                                "title": "Share"
+                              },
+                              "width": 50
+                            },
+                            {
+                              "field": "avgRor",
+                              "header": {
+                                "title": "Avg RoR"
+                              },
+                              "width": 62
+                            }
+                          ],
+                          "pager": {
+                            "enabled": false
+                          },
+                          "rows": {
+                            "height": 32
+                          },
+                          "header": {
+                            "height": 32
+                          },
+                          "style": {
+                            "classes": "roast-table-sm"
+                          }
+                        },
+                        "propConfig": {
+                          "props.data": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.analysisDs"
+                              }
+                            }
+                          },
+                          "props.style.classes": {
+                            "binding": {
+                              "type": "expr",
+                              "config": {
+                                "expression": "if({view.custom.showAllCols}, 'roast-table-sm roast-hidden', 'roast-table-sm')"
+                              }
+                            }
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "250px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.table",
+                        "meta": {
+                          "name": "AnalysisTableFullPhone"
+                        },
+                        "props": {
+                          "data": [],
+                          "columns": [
+                            {
+                              "field": "phase",
+                              "header": {
+                                "title": "Phase"
+                              }
+                            },
+                            {
+                              "field": "time",
+                              "header": {
+                                "title": "Time"
+                              }
+                            },
+                            {
+                              "field": "share",
+                              "header": {
+                                "title": "Share"
+                              }
+                            },
+                            {
+                              "field": "gain",
+                              "header": {
+                                "title": "Gain"
+                              }
+                            },
+                            {
+                              "field": "avgRor",
+                              "header": {
+                                "title": "Avg RoR"
+                              }
+                            },
+                            {
+                              "field": "auc",
+                              "header": {
+                                "title": "AUC"
+                              }
+                            }
+                          ],
+                          "pager": {
+                            "enabled": false
+                          },
+                          "rows": {
+                            "height": 32
+                          },
+                          "header": {
+                            "height": 32
+                          },
+                          "style": {
+                            "classes": "roast-table-sm"
+                          }
+                        },
+                        "propConfig": {
+                          "props.data": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.analysisDs"
+                              }
+                            }
+                          },
+                          "props.style.classes": {
+                            "binding": {
+                              "type": "expr",
+                              "config": {
+                                "expression": "if({view.custom.showAllCols}, 'roast-table-sm', 'roast-table-sm roast-hidden')"
+                              }
+                            }
+                          }
+                        },
+                        "position": {
+                          "grow": 0,
+                          "shrink": 0,
+                          "basis": "250px"
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 0,
+                      "shrink": 0,
+                      "basis": "auto"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "Tp"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "TpCap"
+                        },
+                        "props": {
+                          "text": "Turning point",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "TpVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dTp"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "FcsRor"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "FcsRorCap"
+                        },
+                        "props": {
+                          "text": "RoR at FC start",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "FcsRorVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dFcsRor"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "TotalRor"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "TotalRorCap"
+                        },
+                        "props": {
+                          "text": "Total RoR (TP to drop)",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "TotalRorVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dTotalRor"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "Cool"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CoolCap"
+                        },
+                        "props": {
+                          "text": "Cool phase",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CoolVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dCool"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "Sim"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "SimCap"
+                        },
+                        "props": {
+                          "text": "BT similarity vs ghost",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "SimVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dSimilarity"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "LossHead"
+                    },
+                    "props": {
+                      "text": "Loss, Yield and Density",
+                      "style": {
+                        "classes": "roast-section-title"
+                      }
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "DefLoss"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "DefLossCap"
+                        },
+                        "props": {
+                          "text": "Defects loss",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "DefLossVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dDefectsLoss"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "TotLoss"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "TotLossCap"
+                        },
+                        "props": {
+                          "text": "Total loss",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "TotLossVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dTotalLoss"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "Yield"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "YieldCap"
+                        },
+                        "props": {
+                          "text": "Total yield",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "YieldVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dYield"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "VolGain"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "VolGainCap"
+                        },
+                        "props": {
+                          "text": "Volume gain",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "VolGainVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dVolumeGain"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "MoistLoss"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "MoistLossCap"
+                        },
+                        "props": {
+                          "text": "Moisture loss",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "MoistLossVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dMoistureLoss"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "OrgLoss"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "OrgLossCap"
+                        },
+                        "props": {
+                          "text": "Organic loss",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "OrgLossVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dOrganicLoss"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "GreenDens"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "GreenDensCap"
+                        },
+                        "props": {
+                          "text": "Green density",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "GreenDensVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dGreenDensity"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "RoastDens"
+                    },
+                    "props": {
+                      "direction": "row",
+                      "justify": "space-between",
+                      "alignItems": "baseline",
+                      "style": {
+                        "classes": "roast-gap-10"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "RoastDensCap"
+                        },
+                        "props": {
+                          "text": "Roasted density",
+                          "style": {
+                            "classes": "roast-kv-cap"
+                          }
+                        },
+                        "position": {
+                          "grow": 1,
+                          "shrink": 1,
+                          "basis": "0px"
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "RoastDensVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value-right"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "property",
+                              "config": {
+                                "path": "view.custom.dRoastedDensity"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ia.display.label",
+                    "meta": {
+                      "name": "BbpLine"
+                    },
+                    "props": {
+                      "text": "",
+                      "style": {
+                        "classes": "roast-note"
+                      }
+                    },
+                    "propConfig": {
+                      "props.text": {
+                        "binding": {
+                          "type": "property",
+                          "config": {
+                            "path": "view.custom.dBbp"
+                          }
+                        }
+                      }
+                    }
+                  }
+                ],
+                "position": {
+                  "grow": 1,
+                  "shrink": 1,
+                  "basis": "320px"
+                }
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "820px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "MetaCard"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-card roast-gap-10"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "MetaHead"
+                },
+                "props": {
+                  "text": "Metadata",
+                  "style": {
+                    "classes": "roast-section-title"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.table",
+                "meta": {
+                  "name": "MetaTable"
+                },
+                "props": {
+                  "data": [],
+                  "columns": [
+                    {
+                      "field": "field",
+                      "header": {
+                        "title": "Field"
+                      }
+                    },
+                    {
+                      "field": "value",
+                      "header": {
+                        "title": "Value"
+                      }
+                    }
+                  ],
+                  "pager": {
+                    "enabled": false
+                  },
+                  "rows": {
+                    "height": 32
+                  },
+                  "header": {
+                    "height": 32
+                  },
+                  "style": {
+                    "classes": "roast-table-sm"
+                  }
+                },
+                "propConfig": {
+                  "props.data": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "view.custom.metaDs"
+                      }
+                    }
+                  }
+                },
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "250px"
+                }
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "300px"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "CalcCard"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-card roast-gap-10 roast-calc-card"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "CalcHead"
+                },
+                "props": {
+                  "text": "Yield and Conversion Calculator",
+                  "style": {
+                    "classes": "roast-section-title"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "CalcNote"
+                },
+                "props": {
+                  "text": "Seeded from this batch weights. Edit any input and the readouts update live (expression tags in the Calculator folder).",
+                  "style": {
+                    "classes": "roast-note-sm"
+                  }
+                }
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "CalcRow1"
+                },
+                "props": {
+                  "direction": "row",
+                  "wrap": "wrap",
+                  "style": {
+                    "classes": "roast-gap-12 roast-calc-row"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcChargeField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-calc-field"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcChargeFieldCap"
+                        },
+                        "props": {
+                          "text": "Charge weight (g)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.numeric-entry-field",
+                        "meta": {
+                          "name": "CalcChargeIn"
+                        },
+                        "props": {
+                          "value": 0,
+                          "format": "0.0",
+                          "style": {
+                            "classes": "roast-input"
+                          }
+                        },
+                        "propConfig": {
+                          "props.value": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ChargeG",
+                                "mode": "direct",
+                                "bidirectional": true
+                              },
+                              "bidirectional": true
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcLossField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-calc-field"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcLossFieldCap"
+                        },
+                        "props": {
+                          "text": "Target loss (%)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.numeric-entry-field",
+                        "meta": {
+                          "name": "CalcLossIn"
+                        },
+                        "props": {
+                          "value": 0,
+                          "format": "0.0",
+                          "style": {
+                            "classes": "roast-input"
+                          }
+                        },
+                        "propConfig": {
+                          "props.value": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/LossPct",
+                                "mode": "direct",
+                                "bidirectional": true
+                              },
+                              "bidirectional": true
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcExpectedField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-calc-field"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcExpectedFieldCap"
+                        },
+                        "props": {
+                          "text": "Expected out (g)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcExpectedVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ExpectedOutG",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0.0"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcExpectedOzField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-calc-field"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcExpectedOzFieldCap"
+                        },
+                        "props": {
+                          "text": "Expected out (oz)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcExpectedOzVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ExpectedOutOz",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0.00"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "CalcRow2"
+                },
+                "props": {
+                  "direction": "row",
+                  "wrap": "wrap",
+                  "style": {
+                    "classes": "roast-gap-12 roast-calc-row"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcOutField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-calc-field"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcOutFieldCap"
+                        },
+                        "props": {
+                          "text": "Weight out (g)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.numeric-entry-field",
+                        "meta": {
+                          "name": "CalcOutIn"
+                        },
+                        "props": {
+                          "value": 0,
+                          "format": "0.0",
+                          "style": {
+                            "classes": "roast-input"
+                          }
+                        },
+                        "propConfig": {
+                          "props.value": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/OutG",
+                                "mode": "direct",
+                                "bidirectional": true
+                              },
+                              "bidirectional": true
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcActualLossField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-calc-field"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcActualLossFieldCap"
+                        },
+                        "props": {
+                          "text": "Loss from out (%)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcActualLossVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ActualLossPct",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0.0"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcTempFField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-calc-field"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcTempFFieldCap"
+                        },
+                        "props": {
+                          "text": "Temp (F)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.numeric-entry-field",
+                        "meta": {
+                          "name": "CalcTempFIn"
+                        },
+                        "props": {
+                          "value": 0,
+                          "format": "0.0",
+                          "style": {
+                            "classes": "roast-input"
+                          }
+                        },
+                        "propConfig": {
+                          "props.value": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/TempF",
+                                "mode": "direct",
+                                "bidirectional": true
+                              },
+                              "bidirectional": true
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcTempCField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-calc-field"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcTempCFieldCap"
+                        },
+                        "props": {
+                          "text": "Temp (C)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcTempCVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/TempC",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0.0"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "CalcRow3"
+                },
+                "props": {
+                  "direction": "row",
+                  "wrap": "wrap",
+                  "style": {
+                    "classes": "roast-gap-12 roast-calc-row"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcTempCInField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-calc-field"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcTempCInFieldCap"
+                        },
+                        "props": {
+                          "text": "Temp (C) in",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.numeric-entry-field",
+                        "meta": {
+                          "name": "CalcTempCInIn"
+                        },
+                        "props": {
+                          "value": 0,
+                          "format": "0.0",
+                          "style": {
+                            "classes": "roast-input"
+                          }
+                        },
+                        "propConfig": {
+                          "props.value": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/TempCIn",
+                                "mode": "direct",
+                                "bidirectional": true
+                              },
+                              "bidirectional": true
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcTempFOutField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-calc-field"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcTempFOutFieldCap"
+                        },
+                        "props": {
+                          "text": "Temp (F) out",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcTempFOutVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/TempFOut",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0.0"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcConvGField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-calc-field"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcConvGFieldCap"
+                        },
+                        "props": {
+                          "text": "Weight (g)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.numeric-entry-field",
+                        "meta": {
+                          "name": "CalcConvGIn"
+                        },
+                        "props": {
+                          "value": 0,
+                          "format": "0.0",
+                          "style": {
+                            "classes": "roast-input"
+                          }
+                        },
+                        "propConfig": {
+                          "props.value": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ConvG",
+                                "mode": "direct",
+                                "bidirectional": true
+                              },
+                              "bidirectional": true
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcConvOzField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-calc-field"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcConvOzFieldCap"
+                        },
+                        "props": {
+                          "text": "Weight (oz)",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcConvOzVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ConvOz",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0.00"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "ia.container.flex",
+                "meta": {
+                  "name": "CalcRow4"
+                },
+                "props": {
+                  "direction": "row",
+                  "wrap": "wrap",
+                  "style": {
+                    "classes": "roast-gap-12 roast-calc-row"
+                  }
+                },
+                "children": [
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcConvOzInField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-calc-field"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcConvOzInFieldCap"
+                        },
+                        "props": {
+                          "text": "Weight (oz) in",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.input.numeric-entry-field",
+                        "meta": {
+                          "name": "CalcConvOzInIn"
+                        },
+                        "props": {
+                          "value": 0,
+                          "format": "0.00",
+                          "style": {
+                            "classes": "roast-input"
+                          }
+                        },
+                        "propConfig": {
+                          "props.value": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ConvOzIn",
+                                "mode": "direct",
+                                "bidirectional": true
+                              },
+                              "bidirectional": true
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  },
+                  {
+                    "type": "ia.container.flex",
+                    "meta": {
+                      "name": "CalcConvGOutField"
+                    },
+                    "props": {
+                      "direction": "column",
+                      "style": {
+                        "classes": "roast-gap-8 roast-calc-field"
+                      }
+                    },
+                    "children": [
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcConvGOutFieldCap"
+                        },
+                        "props": {
+                          "text": "Weight (g) out",
+                          "style": {
+                            "classes": "roast-form-caption"
+                          }
+                        }
+                      },
+                      {
+                        "type": "ia.display.label",
+                        "meta": {
+                          "name": "CalcConvGOutVal"
+                        },
+                        "props": {
+                          "text": "--",
+                          "style": {
+                            "classes": "roast-value"
+                          }
+                        },
+                        "propConfig": {
+                          "props.text": {
+                            "binding": {
+                              "type": "tag",
+                              "config": {
+                                "tagPath": "[default]Roastery/Calculator/ConvGOut",
+                                "mode": "direct",
+                                "bidirectional": false
+                              },
+                              "bidirectional": false,
+                              "transforms": [
+                                {
+                                  "type": "format",
+                                  "formatType": "numeric",
+                                  "formatValue": "0.0"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "position": {
+                      "grow": 1,
+                      "shrink": 1,
+                      "basis": "150px"
+                    }
+                  }
+                ]
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "auto"
+            }
+          },
+          {
+            "type": "ia.container.flex",
+            "meta": {
+              "name": "PressCard"
+            },
+            "props": {
+              "direction": "column",
+              "style": {
+                "classes": "roast-card roast-gap-10"
+              }
+            },
+            "children": [
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "PressHead"
+                },
+                "props": {
+                  "text": "Captured Button Presses",
+                  "style": {
+                    "classes": "roast-section-title"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.label",
+                "meta": {
+                  "name": "PressNote"
+                },
+                "props": {
+                  "text": "One row per control press, captured when it happened (batch_events). This is the audit trail behind the events above.",
+                  "style": {
+                    "classes": "roast-note-sm"
+                  }
+                }
+              },
+              {
+                "type": "ia.display.table",
+                "meta": {
+                  "name": "PressTable"
+                },
+                "props": {
+                  "data": [],
+                  "columns": [
+                    {
+                      "field": "action",
+                      "header": {
+                        "title": "Action"
+                      }
+                    },
+                    {
+                      "field": "time",
+                      "header": {
+                        "title": "Time"
+                      }
+                    },
+                    {
+                      "field": "tempF",
+                      "header": {
+                        "title": "Temp (F)"
+                      }
+                    },
+                    {
+                      "field": "fan",
+                      "header": {
+                        "title": "Fan"
+                      }
+                    },
+                    {
+                      "field": "heat",
+                      "header": {
+                        "title": "Heat"
+                      }
+                    }
+                  ],
+                  "pager": {
+                    "enabled": false
+                  },
+                  "rows": {
+                    "height": 32
+                  },
+                  "header": {
+                    "height": 32
+                  },
+                  "style": {
+                    "classes": "roast-table-sm"
+                  }
+                },
+                "propConfig": {
+                  "props.data": {
+                    "binding": {
+                      "type": "property",
+                      "config": {
+                        "path": "view.custom.pressDs"
+                      }
+                    }
+                  }
+                },
+                "position": {
+                  "grow": 0,
+                  "shrink": 0,
+                  "basis": "250px"
+                }
+              }
+            ],
+            "position": {
+              "grow": 0,
+              "shrink": 0,
+              "basis": "316px"
+            },
+            "propConfig": {
+              "props.style.classes": {
+                "binding": {
+                  "type": "expr",
+                  "config": {
+                    "expression": "if({view.custom.hasPresses}, 'roast-card roast-gap-10', 'roast-card roast-gap-10 roast-hidden')"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "scripts": {
+      "messageHandlers": [
+        {
+          "messageType": "roastery-detail-refresh",
+          "script": "\timport roastery.batches\n\troastery.batches.detail_startup(self)\n",
+          "sessionScope": true,
+          "pageScope": true,
+          "viewScope": false
+        }
+      ]
+    }
+  }
+}''')
 
 # ================================================================ write out
+
+# Live view.json trailing newlines (round 14 worker D): four live
+# views end with a trailing newline and four do not. The builder
+# reproduces each live file byte for byte, so write_view appends
+# the newline only for the views that carry one.
+VIEW_TRAILING_NEWLINE = frozenset(
+    ('RoastPage', 'BatchDetail', 'SettingsTargets',
+     'SettingsCustoms'))
+
 
 def write_view(path_parts, doc):
     # Naming convention (polish phase 4): every view's root
@@ -12887,6 +23884,8 @@ def write_view(path_parts, doc):
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, 'view.json'), 'w') as f:
         json.dump(doc, f, indent=2)
+        if path_parts[-1] in VIEW_TRAILING_NEWLINE:
+            f.write('\n')
     with open(os.path.join(d, 'resource.json'), 'w') as f:
         json.dump(RES, f, indent=2)
 

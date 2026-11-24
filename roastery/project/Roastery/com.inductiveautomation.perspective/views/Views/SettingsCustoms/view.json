@@ -185,7 +185,7 @@
             "position": {
               "grow": 0,
               "shrink": 0,
-              "basis": "110px"
+              "basis": "140px"
             },
             "children": [
               {
@@ -371,7 +371,7 @@
             "position": {
               "grow": 0,
               "shrink": 0,
-              "basis": "110px"
+              "basis": "140px"
             },
             "children": [
               {
@@ -557,7 +557,7 @@
             "position": {
               "grow": 0,
               "shrink": 0,
-              "basis": "110px"
+              "basis": "140px"
             },
             "children": [
               {
@@ -743,7 +743,7 @@
             "position": {
               "grow": 0,
               "shrink": 0,
-              "basis": "110px"
+              "basis": "140px"
             },
             "children": [
               {
