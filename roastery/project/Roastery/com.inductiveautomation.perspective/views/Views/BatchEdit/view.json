@@ -39352,7 +39352,9 @@
                 "messageStyle": {},
                 "style": {}
               },
-              "style": {}
+              "style": {
+                "flexBasis": "auto"
+              }
             },
             "cancel": {
               "disabled": false,
@@ -39360,7 +39362,9 @@
               "icon": {},
               "fireComponentEvent": true,
               "reset": false,
-              "style": {}
+              "style": {
+                "flexBasis": "auto"
+              }
             },
             "style": {}
           },
