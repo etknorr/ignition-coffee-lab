@@ -402,8 +402,13 @@ def main():
             gaps.push(Math.round(els[i].x - els[i - 1].right));
           return gaps;
         }""")
+        # HUNT-108: the 8px floor went stale under HUNT-106,
+        # which cut the stylesheet .psc-roast-hud gap from 3px
+        # to 2px, so the measured value gaps are 7px now. The
+        # check still guards the same thing (values separated,
+        # not one blob), at the new designed spacing.
         check('HUD values are separated at 360px',
-              len(hud_gaps) >= 3 and min(hud_gaps) >= 8, hud_gaps)
+              len(hud_gaps) >= 3 and min(hud_gaps) >= 7, hud_gaps)
         tab_fit = mob360.evaluate("""() => {
           const bad = [];
           document.querySelectorAll('.psc-roast-tab-btn')
@@ -451,8 +456,15 @@ def main():
         check('mobile layout is stable mid roast',
               stab1_m == stab2_m,
               (stab1_m, stab2_m) if stab1_m != stab2_m else 'frozen')
-        check('state pill has a fixed 88px box',
-              any(p[2] == 88 for p in stab1_m['pills']),
+        # HUNT-108: the 88px box went stale under HUNT-106,
+        # which cut the HudState basis from 88px to 80px.
+        # The measured element is the pill itself, so it
+        # reads the 80px basis, not the 64px text box the
+        # 8px padding leaves inside it. (A mid-edit probe
+        # once read 64 while worker B was iterating the
+        # basis; the settled design measures 80.)
+        check('state pill has a fixed 80px box',
+              any(p[2] == 80 for p in stab1_m['pills']),
               stab1_m['pills'])
         # Polish round 6 (HUNT-50): the empty banner collapses
         # (display none) instead of reserving 38px; Eric asked

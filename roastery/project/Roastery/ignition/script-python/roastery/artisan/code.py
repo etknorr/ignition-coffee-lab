@@ -344,6 +344,15 @@ def _fan_heat_series(p, timex, t0, mode):
     heat_events.sort()
 
     def level_at(events, t, default=5):
+        # HUNT-100: samples before the first slider event used
+        # to read the FIRST event's level, backfilling a
+        # future setting into the past (a file whose fan only
+        # moves at 60 s read that level from charge on). The
+        # level before the first recorded change is unknown:
+        # Artisan records changes only, and the slider holds
+        # whatever it held before the first change, so the
+        # honest value is the SR800 mid default, not the
+        # future level. Events at or before t still win.
         lvl = None
         for et, pct in events:
             if et <= t:
@@ -351,7 +360,7 @@ def _fan_heat_series(p, timex, t0, mode):
             else:
                 break
         if lvl is None:
-            lvl = _level_from_pct(events[0][1]) if events else default
+            lvl = default
         return lvl
 
     merged = sorted(set([t for t, _ in fan_events] +
@@ -1390,16 +1399,25 @@ def batch_to_profile(batch):
     else:
         dry_t = (events.get('dryEnd') or {}).get('tempF')
         fc_t = (events.get('fcStart') or {}).get('tempF')
+        # HUNT-101: the C mode branch used to write the dry
+        # and FC temps in F (the document stores every temp
+        # in F) into a profile whose mode is C, so an imported
+        # C mode batch without phasesRaw exported phases of
+        # [100, 300, 390, 230] where Artisan expects about
+        # [100, 150, 200, 230]. The event temps convert to
+        # mode units here, like every other temp this
+        # function writes; the F branch is unchanged.
         if mode == 'F':
             profile['phases'] = [212, int(round(dry_t)) if dry_t
                                  else 300,
                                  int(round(fc_t)) if fc_t else 390,
                                  450]
         else:
-            profile['phases'] = [100, int(round(dry_t)) if dry_t
-                                 else 150,
-                                 int(round(fc_t)) if fc_t else 200,
-                                 230]
+            profile['phases'] = [
+                100,
+                int(round(_from_f(dry_t, 'C'))) if dry_t else 150,
+                int(round(_from_f(fc_t, 'C'))) if fc_t else 200,
+                230]
 
     if settings.get('weightRaw'):
         profile['weight'] = list(settings['weightRaw'])

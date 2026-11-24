@@ -4232,8 +4232,22 @@ def bbp_compute(points):
     t_last = points[-1][0]
     if t_last <= t_first:
         return None
-    bottom = min(v for _t, v in points)
-    t_b = [t for t, v in points if v == bottom][0]
+    # HUNT-97: the bottom search used to run over every sample
+    # including the last one (the CHARGE sample finalize
+    # appends) and kept the EARLIEST sample holding the
+    # minimum. Artisan finds the BBP bottom with findTPint
+    # over a fake timeindex whose CHARGE index caps the scan,
+    # so the scan runs over the samples BEFORE charge and
+    # scans backward with a strict less-than, keeping the
+    # LATEST tied sample. The search below mirrors that:
+    # points[:-1] (everything before the charge sample),
+    # latest tied minimum. On a flat-bottomed window the old
+    # form put the bottom at the first sample; Artisan puts
+    # it at the last sample before charge, and the two RoR
+    # legs change with it.
+    search = points[:-1]
+    bottom = min(v for _t, v in search)
+    t_b = [t for t, v in search if v == bottom][-1]
     if t_b > t_first:
         ror_in = ((bottom - points[0][1]) * 60.0
                   / (t_b - t_first))
@@ -4308,14 +4322,20 @@ def bbp_clear_staged():
 
 def bbp_staged_metrics():
     """The staged BBP metrics for the batch document, as the
-    four value bbp subdocument, or None when no window was
-    finalized at this batch charge."""
+    five value bbp subdocument, or None when no window was
+    finalized at this batch charge. HUNT-98: the subdocument
+    used to carry only four values; BottomSec was computed,
+    staged on the tag and then dropped here, so a saved
+    batch lost when its bottom happened (Artisan's BBP
+    report prints the begin to bottom time beside the bottom
+    temp). The staged BottomSec rides into the document now."""
     vals = _bbp_read(['HasMetrics', 'TimeSec', 'BottomTempF',
-                      'RorInFMin', 'RorOutFMin'])
+                      'BottomSec', 'RorInFMin', 'RorOutFMin'])
     if not vals['HasMetrics']:
         return None
     return {'time_sec': float(vals['TimeSec'] or 0.0),
             'bottom_temp_f': float(vals['BottomTempF'] or 0.0),
+            'bottom_sec': float(vals['BottomSec'] or 0.0),
             'ror_in_f_min': float(vals['RorInFMin'] or 0.0),
             'ror_out_f_min': float(vals['RorOutFMin'] or 0.0)}
 

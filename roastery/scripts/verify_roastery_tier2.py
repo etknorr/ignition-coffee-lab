@@ -973,10 +973,25 @@ def main():
             return 'Background: Drop now' in seen
 
         done = wait_until(collect_prompt, timeout=240, step=1.5)
+        # HUNT-111: the old seen[:3] assumed item 11 starts
+        # after the first two ghost prompts fired and expired
+        # unrecorded, which depends on roast pace. On a fast
+        # roast the Fan 9 prompt is recorded before the FC
+        # Start dismiss and Heat 8 is collected by this loop,
+        # so the app fires all five prompts in exact ghost
+        # order and seen[:3] still fails. Assert instead that
+        # the seen sequence follows the ghost order (a prefix
+        # may be missing when it fired before item 11) and
+        # ends with the last three events in order.
+        full = ['Background: Fan 9', 'Background: Heat 8',
+                'Background: Fan 3', 'Background: Heat 4',
+                'Background: Drop now']
+        order = [full.index(x) for x in seen if x in full]
         check('playback prompts fire in ghost order (Fan, Heat, Drop)',
-              bool(done) and seen[:3] == ['Background: Fan 3',
-                                          'Background: Heat 4',
-                                          'Background: Drop now'],
+              bool(done) and len(seen) >= 3
+              and seen[-3:] == full[-3:]
+              and len(order) == len(seen)
+              and all(a < b for a, b in zip(order, order[1:])),
               seen)
         check('playback never wrote Fan or Heat and never dropped '
               'the roast',

@@ -227,8 +227,13 @@ def bbp_expected(samples):
     are full-leg averages, HUNT-87: ror_in from the first
     sample to the bottom, ror_out from the bottom to the last
     sample, matching Artisan calcBBPMetrics)."""
-    bottom = min(v for _t, v in samples)
-    tb = [t for t, v in samples if v == bottom][0]
+    # HUNT-97: the bottom is the LATEST tied sample before
+    # the charge sample (Artisan findTPint caps its scan at
+    # the charge index); the final sample is the charge
+    # sample and is not a bottom candidate.
+    search = samples[:-1]
+    bottom = min(v for _t, v in search)
+    tb = [t for t, v in search if v == bottom][-1]
     t_first, t_last = samples[0][0], samples[-1][0]
     if tb > t_first:
         ror_in = (bottom - samples[0][1]) * 60.0 / (tb - t_first)
@@ -650,6 +655,7 @@ def main():
             bbp_doc = doc2.get('bbp') or {}
             check('roast 2 document carries the bbp subdocument',
                   set(bbp_doc.keys()) == {'time_sec', 'bottom_temp_f',
+                                          'bottom_sec',
                                           'ror_in_f_min',
                                           'ror_out_f_min'},
                   bbp_doc)

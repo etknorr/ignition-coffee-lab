@@ -1724,8 +1724,32 @@ def _phase_analysis(doc, points):
                 tp = (t, bt)
     # AUC base: the saved AUC detail base when present, else
     # the charge temp (the base curve_auc uses for the batch).
+    # HUNT-99: this used to read baseF unconditionally, so
+    # with AucBaseFromEvent set the phase AUCs were computed
+    # above the fixed base while the live AUC and the .alog
+    # export used the bean temp at the begin event (Artisan
+    # AUCbaseFlag: the base is the BT at the begin event).
+    # The base below resolves the same way _computed_for
+    # does, from the recorded event temps: Charge, Dry End
+    # and FC Start from their event temps, TP from the saved
+    # turning point temp, falling back to the fixed base and
+    # then the charge temp when the event temp is missing.
     auc_detail = doc.get('aucDetail') or {}
-    base = auc_detail.get('baseF')
+    base = None
+    if auc_detail.get('fromEvent'):
+        _begin = auc_detail.get('begin') or 'TP'
+        if _begin == 'Charge':
+            base = ev('charge', 'tempF')
+        elif _begin == 'Dry End':
+            base = ev('dryEnd', 'tempF')
+        elif _begin == 'FC Start':
+            base = ev('fcStart', 'tempF')
+        else:
+            base = (saved_tp.get('tempF')
+                    if saved_tp.get('tempF') is not None
+                    else (tp[1] if tp is not None else None))
+    if base is None:
+        base = auc_detail.get('baseF')
     if base is None:
         base = ev('charge', 'tempF') or 0.0
     greens = 0.0
@@ -2002,11 +2026,19 @@ def detail_startup(self):
     # preceding drop show nothing.
     _bbp_doc = doc.get('bbp') or {}
     if _bbp_doc:
+        # HUNT-98: the line now names the bottom time from
+        # the saved bbp subdocument (bottom_sec, restored to
+        # the document by the same fix), so the detail page
+        # shows when the bottom happened, not just how hot
+        # it was. Older saved batches carry no bottom_sec
+        # and read '--' here, which is the honest gap, not
+        # a measured time.
         self.view.custom.dBbp = (
-            'Between batch (BBP): %s, bottom %.0f F, '
+            'Between batch (BBP): %s, bottom %.0f F at %s, '
             'RoR in %.1f F/min, RoR out %.1f F/min' % (
                 _mmss(_bbp_doc.get('time_sec')),
                 float(_bbp_doc.get('bottom_temp_f') or 0),
+                _mmss(_bbp_doc.get('bottom_sec')) or '--',
                 float(_bbp_doc.get('ror_in_f_min') or 0),
                 float(_bbp_doc.get('ror_out_f_min') or 0)))
     else:

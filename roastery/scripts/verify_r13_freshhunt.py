@@ -246,9 +246,15 @@ def static_bbp_full_leg():
           first and first['ror_in_f_min'] == 0.0
           and approx(first['ror_out_f_min'], 106.0, 0.01), first)
     last = fn([(0.0, 415.0), (60.0, 300.0), (120.0, 180.0)])
-    check('HUNT-87 bottom-last edge reads RoR out 0.0',
-          last and last['ror_out_f_min'] == 0.0
-          and approx(last['ror_in_f_min'], -117.5, 0.01), last)
+    # HUNT-97: the last sample is the CHARGE sample, which
+    # Artisan's findTPint scan excludes (it caps at the
+    # charge index), so the bottom is 300 F at 60 s, not the
+    # 180 F charge sample: RoR in -115.0, RoR out -120.0.
+    check('HUNT-97 bottom-last edge excludes the charge sample',
+          last and last['bottom_temp_f'] == 300.0
+          and last['bottom_sec'] == 60.0
+          and approx(last['ror_in_f_min'], -115.0, 0.01)
+          and approx(last['ror_out_f_min'], -120.0, 0.01), last)
     check('HUNT-87 a single point returns None',
           fn([(0.0, 400.0)]) is None)
     src = open(CORE).read()
@@ -993,18 +999,23 @@ def import_tie_live(pw):
 def bbp_full_leg(samples):
     """Independent full-leg recompute of the BBP metrics from
     staged samples (Artisan calcBBPMetrics shape). None when
-    the window cannot support them."""
+    the window cannot support them. HUNT-97: the bottom is
+    the LATEST tied sample before the charge sample (the
+    final sample is the CHARGE sample, which Artisan's
+    findTPint scan excludes)."""
     if len(samples) < 2 or samples[-1][0] <= samples[0][0]:
         return None
-    bottom = min(v for _t, v in samples)
-    tb = [t for t, v in samples if v == bottom][0]
+    search = samples[:-1]
+    bottom = min(v for _t, v in search)
+    tb = [t for t, v in search if v == bottom][-1]
     t_first, t_last = samples[0][0], samples[-1][0]
     ror_in = ((bottom - samples[0][1]) * 60.0 / (tb - t_first)
               if tb > t_first else 0.0)
     ror_out = ((samples[-1][1] - bottom) * 60.0 / (t_last - tb)
                if t_last > tb else 0.0)
     return {'time_sec': t_last - t_first,
-            'bottom_temp_f': bottom, 'ror_in_f_min': ror_in,
+            'bottom_temp_f': bottom, 'bottom_sec': tb,
+            'ror_in_f_min': ror_in,
             'ror_out_f_min': ror_out}
 
 
@@ -1224,6 +1235,7 @@ def bbp_live(pw):
         bbp_doc = doc2.get('bbp') or {}
         check('HUNT-87 roast 2 doc carries the bbp subdocument',
               set(bbp_doc.keys()) == {'time_sec', 'bottom_temp_f',
+                                      'bottom_sec',
                                       'ror_in_f_min',
                                       'ror_out_f_min'}, bbp_doc)
         check('HUNT-87 bbp values match the staged metrics',
