@@ -10355,3 +10355,613 @@ TIME axis retest and HUNT-46 retest stay beta-gated on
 the next Ignition beta; Docker boot test stays
 Eric-side only; HUNT-58 live proof still rests on the
 wipe simulation only.
+
+### Polish round 14: fresh hunting pass, HUNT-97 to HUNT-101 (worker A, 2026-11-23)
+
+New suite `roastery/scripts/verify_r14_freshhunt.py`. Static run:
+33 PASS, 0 FAIL. Live run: the shared lab was held by the worker C
+staleness battery for the whole session, so a gated watcher
+(`~/workspace/ignition-lab/r14-watch-and-run.sh`) ran the full suite
+once the lab went idle: run 1, 130 PASS, 2 FAIL, both HUNT-97 live
+tie checks (the change-driven BBP capture drops a repeated 328 F
+sample, fixed by worker C as HUNT-109); rerun after HUNT-109:
+132 PASS, 0 FAIL.
+
+#### HUNT-97 (minor, fixed): the BBP bottom kept the earliest tied sample and could be the CHARGE sample
+
+`roastery.core.bbp_compute` searched every sample including the last
+one (the CHARGE sample `_bbp_finalize_charge` appends) and kept the
+first sample holding the minimum. Artisan finds the BBP bottom with
+`findTPint` over a fake timeindex whose CHARGE index caps the scan:
+the scan runs over the samples before charge and walks backward with
+a strict less-than, so the latest tied sample wins and the charge
+sample itself never wins. Evidence: static, on a synthetic window
+(415 F drop, 180 F bottom at 120 s, 392 F charge at 150 s reads
+-117.5 in and 424.0 out, unchanged), a tied window (328 F at 60 s
+and 90 s reads the bottom at 90 s, RoR in -58.0, RoR out 64.0, where
+the old form read 60 s, -87.0 and 42.7), a bottom-last edge (the
+180 F charge sample is not the bottom; the bottom is 300 F at 60 s,
+RoR in -115.0, RoR out -120.0), a two-point edge and a flat window
+(bottom at the last sample before charge, 30 s); live, a curved
+falling then rising window with the bottom tied at 328 F on two
+samples, where the staged BottomSec is the later tied sample and
+the staged RoRs match an independent full-leg recompute. Fix: the
+search runs over `points[:-1]` and keeps the last tied sample. The
+r13 static bottom-last edge and the r13 and tier3c independent
+recomputes are updated to the same rule (harness, see below).
+
+#### HUNT-98 (minor, fixed): the saved BBP document dropped bottom_sec
+
+`roastery.core.bbp_staged_metrics` read only four tags and returned
+only four values, so the `bottom_sec` that `bbp_compute` returned
+and the BBP tags staged never reached the saved batch document: a
+saved batch lost when its bottom happened, while Artisan's BBP report
+prints the begin-to-bottom time beside the bottom temp. Evidence:
+static, by source (the staged metrics now read the BottomSec tag and
+return `bottom_sec`); live, the saved roast 2 document carries
+`bottom_sec` matching the staged tag, and the BatchDetail BBP line
+reads "bottom 328 F at 00:10" (the later tied sample's time). Fix:
+the staged metrics carry `bottom_sec`, and the detail line names
+it. Older saved batches carry no `bottom_sec` and read "--" there,
+which is the honest gap, not a measured time. The r13 and tier3c
+suites now expect the five-value bbp subdocument (harness, see
+below).
+
+#### HUNT-99 (minor, fixed): the phase analysis AUC base ignored AucBaseFromEvent
+
+`roastery.batches._phase_analysis` resolved the AUC base from the
+fixed `baseF` unconditionally, so with AucBaseFromEvent set the
+BatchDetail phase AUCs integrated above the fixed base while the
+live AUC and the .alog export used the bean temp at the begin event
+(Artisan AUCbaseFlag: the base is the BT at the begin event,
+`profileAUC`). On a curve with Dry End at 380 F and a fixed base of
+212 F the Drying AUC read 450.0 F-min instead of 0.0. Evidence:
+static, on the crafted curve (Dry End begin with fromEvent: Drying
+0.0, Maillard 41.5, Development 131.0; the fixed-base control reads
+450.0, 545.5, 803.0; a TP begin with fromEvent takes the turning
+point temp 340 F for a Drying AUC of 66.0); live, a saved roast with
+AucBegin Dry End and AucBaseFromEvent set, where the saved Drying
+AUC matches the independent recompute above the Dry End temp and
+differs from the 212 F recompute by more than 5 F-min. Fix: the base
+resolves the same way `_computed_for` does (Charge, Dry End, FC
+Start from their event temps, TP from the saved turning point temp),
+falling back to the fixed base and then the charge temp when the
+event temp is missing.
+
+#### HUNT-100 (minor, fixed): imported slider levels backfilled the first event into the past
+
+`roastery.artisan._fan_heat_series.level_at` returned the first
+event's level for every sample before that event, so an imported
+file whose fan only moves at 60 s read that level from charge on.
+Artisan records slider changes only; the level before the first
+recorded change is unknown, and the honest value is the SR800 mid
+default (5), not a future setting. Evidence: static, on a crafted
+event list (fan to 100 percent at 60 s, heat to 100 percent at 90 s:
+fan 5 before 60 s and 9 after, heat 5 before 90 s and 9 after, one
+trace entry per change); live, an imported .alog whose first fan
+event lands at 270 s: the stored series rows read fan 5 before
+270 s and 7 from 270 s (the 80 percent event), and the trace
+carries the change. Fix: `level_at` returns the default before the
+first event.
+
+#### HUNT-101 (minor, fixed): the .alog export wrote F temps into a C mode phases list
+
+`roastery.artisan.batch_to_profile` built the phases list from the
+document event temps, which are always in F, and the C mode branch
+wrote them as-is, so an imported C mode batch without `phasesRaw`
+exported phases like [100, 300, 390, 230] where Artisan expects
+about [100, 150, 200, 230] (the first and last entries, 100 C
+boiling and 230 C drop, were already in C). Evidence: static, on a
+C mode batch (Dry End 380 F, FC Start 405 F: phases [100, 193, 207,
+230]) with the F mode control unchanged at [212, 380, 405, 450];
+live, a C mode .alog imported and exported back, where the phases
+read [100, 149, 207, 230] from the imported Dry End and FC Start
+temps (149 C is the fixture Dry End temp 299.7 F). Fix: the C mode
+branch converts the event temps with `_from_f`, like every other
+temp this function writes.
+
+Harness updates (no app change): HUNT-97 and HUNT-98 changed the
+BBP contract, so the two suites that pin it are updated to the new
+contract, the same precedent as HUNT-93 to HUNT-96:
+`roastery/scripts/verify_r13_freshhunt.py` (the static bottom-last
+edge now expects the charge sample excluded from the bottom search;
+the independent `bbp_full_leg` recompute now uses the latest tie
+before the charge sample; the roast 2 doc check expects the
+five-value bbp subdocument) and
+`roastery/scripts/verify_roastery_tier3c.py` (the independent
+recompute uses the latest tie before the charge sample; the roast 2
+doc check expects the five-value bbp subdocument). No other suite
+pins the BBP document shape.
+
+Items checked and dismissed, no HUNT filed: the saved document
+`auc` (charge-temp base over the whole curve) disagrees with the
+live AUC and the export AUC by the deliberate v2/v3 definition
+pinned by the round 10 AUC suite, not a drift. Artisan
+`profileAUC` integrates one sample earlier than the nominal range;
+Roastery implements the exact integral instead (the HUNT-62
+decision) and the live, phase and export AUCs all agree on that
+shape. `bt_similarity` locates its dry boundary at the recorded Dry
+End event where Artisan scans back from DROP; the two agree
+whenever the event is stamped at the crossing, which is the normal
+case, and the adaptation is documented in the function. The compare
+fallback when the reference slot itself lacks the align event is a
+deliberate, documented difference from HUNT-84, not a defect.
+
+Files changed (worker A, uncommitted at the time of writing):
+`roastery/project/Roastery/ignition/script-python/roastery/core/code.py`
+(HUNT-97, HUNT-98),
+`roastery/project/Roastery/ignition/script-python/roastery/batches/code.py`
+(HUNT-98 detail line, HUNT-99),
+`roastery/project/Roastery/ignition/script-python/roastery/artisan/code.py`
+(HUNT-100, HUNT-101),
+`roastery/scripts/verify_r14_freshhunt.py` (new),
+`roastery/scripts/verify_r13_freshhunt.py` and
+`roastery/scripts/verify_roastery_tier3c.py` (harness updates).
+Next HUNT number is HUNT-102.
+
+### Polish round 14: fresh hunting pass, UI/UX focus, HUNT-102 to HUNT-106 (worker B, 2026-11-23)
+
+Fresh hunting pass across the whole app, walking Roast,
+Configure/Settings, Log, BatchDetail and compare at 360px and
+1360px, in light and dark, live in real sessions. Every find was
+reproduced live, fixed, and proved with before/after screenshots.
+The suite is `roastery/scripts/verify_r14_ui.py`.
+
+#### HUNT-102 (minor, fixed): Target Plan Designer table last row clipped by the pagination footer
+
+The Target Plan table (SettingsTargets, `TargetPlanTable`, basis
+190px) showed rows 0, 1 and 2 fully and row 3 ("3 / 630 / 10:30 /
+415") half cut by the "25 rows" footer bar. Measured before the fix
+at 1360px: table height 190, header about 31px, rows 32px each,
+footer 42px starting at page y 202, row 3 text bottom 207, so the
+footer overlapped the last row. Total needed is 31 + 128 + 42 =
+201px. Fix: `SettingsTargets/view.json`, TargetPlanTable position
+basis 190px to 210px (position config only). Verified live at 1360px
+and 360px: table height 210, content fits its box (scrollHeight 208,
+clientHeight 208), all four rows fully visible above the footer.
+Screenshots: `r14-focus2-targetplan-1360.png` (before),
+`r14-fix-targetplan-1360.png` (after).
+
+#### HUNT-103 (minor, fixed): analyzer "Ghost BT (F)" caption wrapped to two lines at 360px
+
+On the Roast page and BatchDetail at 360px, the analyzer caption
+"Ghost BT (F)" wrapped to two lines ("GHOST BT" / "(F)"), because
+the four analyzer columns share equal flex width and "Ghost BT (F)"
+is the longest caption. Fix: caption shortened to "Ghost (F)" in
+`RoastPage/view.json` (two instances, large and small) and
+`BatchDetail/view.json` (one instance). Verified live at 360px dark:
+all four analyzer captions measure 72px wide and 15px tall (one
+line) on both pages. Screenshots: `r14-fix-analyzer-360-dark.png`
+and `r14-fix-detail-analyzer-360-dark.png`. Note: the detail chart
+event marker labels were also investigated under this number and
+found not defective. A properly staged batch shows only the thinned
+labels: `detail_reference_lines_compact()` for batch 1042 returns
+CHARGE visible and DROP hidden, and the 360px dark detail screenshot
+for 1042 shows only "CHARGE" at the top of the chart. An earlier
+screenshot that showed overlapping labels was taken while a
+concurrent worker re-staged a different batch mid-probe, so it is
+not an app defect and no chart change was made.
+
+#### HUNT-104 (minor, fixed): form action buttons squeezed to 65px, submit label wrapped to three lines
+
+On the Settings metadata form the "Save Batch Details" button
+measured 65px wide and 71px tall, wrapping to three lines, next to
+a 63px wide Cancel button. Root cause, from the live DOM: the
+ia.input.form action button carries computed flex `0 0 40px` (class
+`ia_form__button`), so the button sizes to its longest word instead
+of its text. Fix: set the per-button `style` prop in the form
+actions config to `{"flexBasis": "auto"}`. This is the form
+component's own styling hook for its internal buttons, since no
+component exists to attach a style class to. Applied to submit only
+on the MetaForm first and verified live, then to submit and cancel
+on the BatchEdit form. Files: `SettingsMetadata/view.json` (submit
+style) and `BatchEdit/view.json` (submit and cancel styles).
+Verified live: the MetaForm button became 144px wide and 40px tall,
+one line, with Cancel unchanged; the BatchEdit "Save Batch" button
+measured one line at 360px dark in the slide-over editor, which
+closes without saving. Screenshots: `r14-focus2-metaform-1360.png`
+(before), `r14-fix-metaform-1360.png` (after).
+
+#### HUNT-105 (minor, fixed): "Show on controls" caption wrapped to two lines in the Custom Events rows
+
+All four "Show on controls" captions measured 110px wide and 30px
+tall (two lines) in a 110px field, at 1360px light and dark. Fix:
+`SettingsCustoms/view.json`, all four `CustomShowField` position
+basis 110px to 140px. Verified live at 1360px and 360px: all four
+captions measure 140px wide and 15px tall (one line).
+
+#### HUNT-106 (minor, fixed): phone HUD captions wrapped at 360px
+
+At 360px the HUD captions "BEAN F" and "ROAST TIME" wrapped to two
+lines (each 28px tall at 10px font). "ROR" and "PHASE" fit on one
+line. Root cause: the captions render bold at 10px with 0.08em
+letter spacing (style class `roast-hud-cap`), so "ROAST TIME" needs
+about 74px in a 52px cell. Widening the clock cell enough would
+steal width from the Phase cell, where "Development" (77px at 12px
+monospace bold) already nearly fills its cell, so the captions were
+shortened instead. A second sub-issue surfaced in the suite run: the
+state pill text ("Roasting", "Complete") overflowed its box, because
+the `roast-pill` class pads the pill 14px each side, leaving only
+44px for the text in a 72px cell. Fixes, all in `HudBar/view.json`
+unless noted: Bean basis 38px to 48px ("BEAN F" now one line);
+HudState basis 88px to 72px, then to 80px (the pill fix below);
+clock basis stays 52px; the phone clock caption shortened to "TIME"
+(and "DROP" after Drop) in the HudBar only: `view.custom.clockCaption`
+default, the expression binding, and the `ClockCap` label text. The
+desktop RoastPage header keeps "ROAST TIME" and "SINCE DROP".
+Stylesheet `.psc-roast-hud` gap 3px to 2px. `roast-pill` style class
+padding 4px 14px to 4px 8px, so the pill text box is 64px in the 80px
+cell and fits "Complete" (58px live) with room. Verified live at
+360px: in Idle all captions are one line ("BEAN F", "TIME", "PHASE",
+14px tall) and the gear sits inside the viewport; in the live roast
+the "Roasting" pill fits its box, the "TIME" caption stays one line,
+and after Drop the "DROP" caption is one line. The Phase cell is 87px
+and "Pre-charge" (82px) and "Development" (77px) both fit.
+Screenshot: `r14-focus6-hud-360.png` (before).
+
+Other checks in the suite: four-page walk at 1360px and 360px, light
+and dark: no horizontal overflow, no clipped leaf text, no inner
+horizontal scroller, no visible reconnect banner on Roast, Log,
+compare row, BatchDetail and Settings. App Settings slide-over opens
+from the gear and closes with its Close button at 360px and 1360px,
+staying inside the viewport. Toast: saving the metadata form with
+unchanged values fires the "Batch details saved" toast in Light and
+in Dark. Cross-session theme: setting Dark on the Roast page reaches
+an already open Log session without a reload, and setting Light
+reaches it back. Live roast at 360px dark: Charge, Dry End, FC
+Start, FC End, SC Start, SC End, Drop, Cool, Finish, Save as the
+next batch number, Reset, and delete through the Log UI, with phase
+shares summing to 100 and 0 press rows after 30s.
+
+Checked and dismissed (no HUNT filed): Roast page MetaCard button
+peeking below the Summary card at 1360px is not a defect, the page
+scrolls and the buttons are reachable. Log table at 360px is fine
+with the seeded short bean names; with long test-data bean names the
+rows get taller and the table body scrolls, which is correct table
+behavior. Compare dropdown truncation with long bean names is
+ellipsis by design and the option list stays inside the viewport.
+Roast header clock "ROAST TIME 00:00" at 1360px is fully visible.
+"View Not Found" seen once on `/roast` was the wrong URL; the Roast
+page lives at `/`. "No Connection to Gateway" body text is the
+dormant platform reconnect banner parked above the viewport, never
+rendered.
+
+Suite results: `roastery/scripts/verify_r14_ui.py`, run 3, TOTAL
+243 PASS, 0 FAIL, ALL CHECKS PASS (log
+`~/workspace/ignition-lab/r14-ui-run3.log`). Run 1 (221 PASS, 15
+FAIL) found the HUNT-106 state pill sub-issue and a 360px footer
+locator miss; run 2 died mid-walk on a ScratchV3 race with a
+concurrent worker. `validate_roastery_artisan.py`: VALIDATION PASS.
+`verify_r13_ui.py` rerun after the round 14 changes: partial,
+84 PASS, 0 FAIL through the 360-light walk before the browser died
+from the known concurrent-worker failure mode; later attempts died at
+startup (rc 120, no output) while worker C's battery ran its own
+copies of the same suites and the VM sat near out of memory, so it
+is an environment capacity issue, not a test failure. The r13 live
+roast, editor and alarms sections were not re-proven by a completed
+r13 run, but the round 14 suite (243 PASS) covers the same ground
+with these changes in place.
+
+Files changed (worker B): `views/Views/SettingsTargets/view.json`
+(HUNT-102), `views/Views/RoastPage/view.json` (HUNT-103),
+`views/Views/BatchDetail/view.json` (HUNT-103),
+`views/Views/SettingsMetadata/view.json` (HUNT-104),
+`views/Views/BatchEdit/view.json` (HUNT-104),
+`views/Views/SettingsCustoms/view.json` (HUNT-105),
+`views/Views/HudBar/view.json` (HUNT-106),
+`stylesheet/stylesheet.css` (HUNT-106),
+`style-classes/roast-pill/style.json` (HUNT-106), plus the new suite
+`roastery/scripts/verify_r14_ui.py`. All under
+`roastery/project/Roastery/`, each copied to the matching gateway
+path with identical md5 and followed by POST `/scan/projects`
+returning 200. Next HUNT number is HUNT-107.
+
+### Polish round 14: observations and builder resync (worker C, 2026-11-23)
+
+Builder resync: extraction proof, same method as round 13
+(`r14c-scratch/proof.py`, `resync_all.py`). The builder literals
+are compared byte for byte against the repo project tree and
+against the live gateway library, with md5 and char counts
+recorded. Nothing is ever rebuilt from the builder; the repo
+project tree stays the source of truth. Proof 16/16 PASS at the
+round 13 head, after the resync, and again at the end of the round
+(2026-11-23 about 08:02 UTC), same md5s, so no app library drifted
+during the sweep.
+
+| Literal | Chars | md5 |
+|---|---|---|
+| CORE_CODE | 177,805 | 8978491a0a66ad5d740fcb9a2a202f6c |
+| ARTISAN_CODE | 60,340 | a84c2dac5cbf8aca6a5c52f72574f6b2 |
+| BATCHES_CODE | 107,428 | 89edab158328e3c2ecbb36262ffc3be1 |
+| STYLESHEET_CSS | 15,437 emitted | b67e8e93d5432102ddb02a95e8b40e7b |
+| SettingsPage view.json | 8,045 | a88bb1301330273039f0242679f7265f |
+
+Also proven: 92 style classes parsed-identical including the
+roast-pill padding fix, all four resource.json identical, live
+gateway md5s agree with the builder for all three libraries. Scope
+flag for the coordinator: the builder's other view literals
+(HudBar, SettingsTargets, SettingsCustoms, SettingsMetadata,
+BatchEdit, RoastPage, BatchDetail) are stale, as they were in round
+13, plus newly stale from HUNT-102 through HUNT-106; resyncing them
+is worker D's job in this round. The builder was not mirrored to the
+lab (the lab copy is staler, as in rounds 10 to 12; leave it alone).
+
+UDT diff: 0 differences. `verify_r9_v4_udt.py` run twice: v4 scalar
+members 203 (live 203), Sources folder present, RoasterSource
+members 7 (live 7). Total 204 members, as in round 13.
+`setup_roastery_v4_tags.py` needs no resync.
+
+Suite staleness sweep: all 40 `verify_*.py` files in
+`roastery/scripts/` covered in the first battery pass (started
+2026-11-22 23:18 UTC), plus the two new round 14 suites in their
+workers' own runs and in reruns. Passing on first run (rc=0): ror,
+tier1, tier2, tier3a, tier3b, tier3c, polish1, polish2, polish3,
+r6_customs, dark, r6_hunt, pressburst, pressfault, deletecascade,
+round3_passes, round3_views, r7_hunt55, r8_align, r9_style,
+r9_v4_udt, r9_freshhunt, r10_auc. Failing on first run, all later
+proven to be contamination from workers A and B landing fixes and
+running live suites in the same lab at the same time: v4, axis, v2,
+v3, r8_freshhunt, r9_theme_align, r10_calc_gap. Interrupted by the
+VM write lock about 00:52 to 00:57 UTC (rc=120): r13_freshhunt
+(partial), r13_ui (0-byte log), r10/r11/r12_freshhunt (logs
+truncated, no DONE line). Battery resume after recovery 1
+(2026-11-23 01:47 UTC): r10/r11/r12_freshhunt rc=0, r4hunt_a
+through r4hunt_e rc=0. Rerun set, clean lab: axis, r8_freshhunt,
+r9_theme_align, r10_calc_gap, tier1, r13_freshhunt (211 PASS, 0
+FAIL), r13_ui (229 PASS, 0 FAIL), r14_freshhunt (132 PASS, 0 FAIL,
+after the HUNT-109 fix), v4 (ALL CHECKS PASSED, after the HUNT-108
+fix). Final state of the five fixed suites: v2 ALL CHECKS PASS
+(rerun5 and rerun11), v3 ALL CHECKS PASS, 51 PASS lines (rerun13),
+tier2 ALL TIER 2 CHECKS PASSED, 88 PASS lines (rerun14, clean lab),
+v4 ALL CHECKS PASSED (rerun2), r14_freshhunt TOTAL 132 PASS, 0 FAIL
+(rerun2). The sweep is clean at the end: 40 suites in the battery
+plus the 2 new round 14 suites, all green.
+
+#### HUNT-107 (harness, no app change): v2 and v3 wrote into the repo tree and read a stale password file
+
+`verify_roastery_v2.py` and `verify_roastery_v3.py` resolved paths
+from `__file__`, so running the repo copies wrote screenshots into
+the repo tree (v2 wrote
+`roastery/scripts/showcase/shots/roastery-v2-light-desktop.png`,
+deleted) and v3 crashed with FileNotFoundError for
+`pg-lab-password.txt`. Fix: both now point at the lab dir
+(`/home/hatch/workspace/ignition-lab/showcase/shots` and LAB),
+matching every other suite. Extended: v3's `sql()` also read the
+stale duplicate `pg-lab-password.txt` instead of `.roastery-pgpass`;
+the role password comes from `.roastery-pgpass` since the recovery
+path creates it from that file. Fix: v3 `sql()` now reads
+`.roastery-pgpass` like `verify_roastery_polish2.py`'s `psql()`.
+Before: v2 crashed on the theme button, v3 crashed on startup.
+After: v2 ALL CHECKS PASS, v3 ALL CHECKS PASS.
+
+#### HUNT-108 (harness, no app change): v4 HUD expectations stale under HUNT-106
+
+Gap floor changed 8 to 7 (stylesheet gap 3px to 2px); the rerun
+proved gaps PASS at [7,7,7]. Pill box: the first fix set 64px, but
+the clean rerun measured the pill element at 80px, so 64 was wrong.
+The measured element is the pill itself at its 80px flex basis; the
+64 measured in the contaminated first run was a transient
+intermediate basis while worker B iterated. Correction: the check
+expects 80px ("state pill has a fixed 80px box"). Before: v4 2
+FAILs (HUD gaps, pill). After: v4 ALL CHECKS PASSED.
+
+#### HUNT-109 (harness, no app change): r14_freshhunt live HUNT-97 tie checks cannot pass as written
+
+The fixture wrote 328 F twice in a row, but BBP capture is
+change-driven, so the second identical write fires no valueChanged
+event and the window held only one 328 sample (run 1: tied
+[10.707]). The static tie proofs all pass, and the staged bottom
+matched the full-leg recompute. Fix: the sequence now repeats the
+minimum after an intervening 329 F write (328, 329, 328), with the
+stale dedup comment replaced. Before: worker A run 1, 130 PASS, 2
+FAIL (both HUNT-97 live tie checks). After: 132 PASS, 0 FAIL.
+
+#### HUNT-110 (harness, no app change): v2 and v3 still drove the pre-v4 shell
+
+Proven by live probes and by the v2/v3 reruns. The stale controls,
+each verified against the live app and the project tree: the header
+'Theme: light' / 'Theme: dark' button no longer exists anywhere in
+the project; theme lives in App Settings behind the gear. Fix: new
+`set_theme_ui(page, theme)` helper modeled on `verify_r13_ui.py`,
+replacing the toggle clicks, plus a System restore at the end of
+each mobile pass. The fan stepper `get_by_role('button', name='+')`
+matched the analyzer '+10s' button first; fix: `name='+',
+exact=True` in both v2 and v3. The 'Roast Setup' button no longer
+exists anywhere; the live-batch metadata form moved to the Settings
+page as the SettingsMetadata MetaForm. Fix: new `meta_form_fields`
+helper and the form round trips use it. The old persistent 'Reset'
+button is gone; the dock offers Reset only at Complete. Fix: new
+`reset_via_dock` helper driving the remaining steps. The bottom tab
+bar is a horizontalmenu, not buttons; items are 'Roast' (/),
+'Settings' (/settings), 'Log' (/log). Fix: new `click_tab` helper.
+'View as Background' is now 'Use as Ghost'. Fix in both v2 and v3.
+The BatchEdit editor is a slide-over dock, not a popup; v3's
+`form_fields` selected `.ia_popup` (0 fields in the dock). Fix:
+scope to `.psc-roast-dock-editor`; the form grew from 17 fields to
+51, the first 17 keep their order. Drive-by hardenings in the same
+files: Charge state polling instead of a single immediate read; the
+stepper log baseline read after Charge (charge() calls
+`_clear_log()`); Log page `.ia_table` uses `.first` (three tables
+render); `click_row` verifies the selection and retries; the Delete
+arm waits for the confirm banner and re-arms once; `click_button`
+takes `exact` (a plain 'Delete' matches the hidden 'Confirm Delete'
+first); long-session click flakes fixed with DOM-click alternates
+(`js_click_button`) and outcome polling with retries; `save_meta_form`
+retries up to 4 times with a form re-mount on the last attempt and
+presses Tab out of the WeightOutG field before submit (number fields
+only commit on blur). Probe evidence: probe9 proves the form, the
+fill, and the submit all work when the interaction lands; the
+failures are intermittent in long sessions with no deterministic
+trigger isolated, so the hardening is harness robustness, not an app
+fix. Before: v2 and v3 had never passed since the v4 rebuild. After:
+v2 ALL CHECKS PASS, v3 ALL CHECKS PASS, 51 PASS lines.
+
+#### HUNT-111 (harness, no app change): tier2 playback-prompts check used `seen[:3]`
+
+The check assumed item 11 starts after the first two ghost prompts
+fired and expired unrecorded, which depends on roast pace. On a fast
+roast the app fires all five prompts in exact ghost order and
+`seen[:3]` still fails. Fix: assert the seen sequence follows the
+ghost order (a prefix may be missing when it fired before item 11)
+and ends with the last three events in order. Before: tier2 failed
+the playback order check on the battery pass. After: the playback
+order check passed in every run after the fix (six consecutive
+runs), and tier2 is ALL TIER 2 CHECKS PASSED, 88 PASS lines.
+
+Observations recheck: (a) "No Connection to Gateway" banner stays
+closed. Fresh measured proof from `r14c-scratch/banner_probe.py`
+(2026-11-23 08:01 UTC): on both the Roast and Settings pages the
+`.connection-banner` element sits entirely above the viewport (x 0,
+y -32, w 1360, h 32, bottom 0, inViewport False, class
+'connection-banner banner-inactive no-print'). It is a dormant
+platform banner, not a live disconnect. (b) r11 flakes stay
+unreproduced (`verify_r11_freshhunt.py` passed clean on the battery
+resume, rc=0, 2026-11-23 02:10:10 UTC). r13 suites still pass on
+current code: `verify_r13_freshhunt.py` TOTAL 211 PASS, 0 FAIL;
+`verify_r13_ui.py` TOTAL 229 PASS, 0 FAIL.
+
+Lab incidents during the round: VM write lock about 00:52 to 00:57
+UTC 2026-11-23 (rc=120 on r13_freshhunt, r13_ui, r10/r11/r12
+truncated). VM replacement 1 about 01:06 to 01:13 UTC, recovery 1
+ended 01:17:35 UTC, trial reset 0 to 7199s about 01:18 UTC, reseed
+to 7/101/0 by the lab watch. VM replacement 2 about 03:17 UTC
+(tier2 killed mid-run), recovery 2 ended 03:32:34 UTC, trial 7154s.
+VM replacement 3 about 05:17 UTC, recovery 3 failed its apt step
+(the OS-intent replay held the apt lock), recovery 3b ended
+05:33:47 UTC (postgresql-16 16.15 installed, DDL applied, gateway
+RUNNING). Trial expiry about 07:16 UTC, inside the v3/tier2 rerun11
+window (both crashed on navigation hangs); trial reset to 7199s at
+07:19:51 UTC. Lesson for future rounds: reset the trial before
+starting a long rerun block, and treat a run that straddles the 2
+hour trial window as suspect. VM replacement 4 about 07:21 UTC,
+the lab watch ran recovery at 07:31 and 07:34, then reseeded to
+7/101/0. Postgres 16.15 was installed from the local apt cache.
+Tag state survived the replacement (Roasting, BatchNumber 2001, Fan
+6, Theme Dark from the killed v3 run); the roast was driven to Idle
+through the UI and the defaults restored before rerunning.
+
+Files changed (worker C): `roastery/scripts/build_roastery_v4.py`
+(resync: CORE_CODE, ARTISAN_CODE, BATCHES_CODE, STYLESHEET_CSS
+literals; roast-pill padding in STYLE_CLASSES),
+`roastery/scripts/verify_roastery_v2.py` (HUNT-107, HUNT-110),
+`roastery/scripts/verify_roastery_v3.py` (HUNT-107, HUNT-110),
+`roastery/scripts/verify_roastery_v4.py` (HUNT-108),
+`roastery/scripts/verify_r14_freshhunt.py` (HUNT-109),
+`roastery/scripts/verify_roastery_tier2.py` (HUNT-111). Lab mirrors
+of the six suite files are identical (diff zero). The builder file
+was not mirrored to the lab. Deleted (own stray output):
+`roastery/scripts/showcase/shots/roastery-v2-light-desktop.png`.
+
+Final lab state (2026-11-23 08:01 UTC): Idle, BatchNumber 1042,
+Fan 5, Heat 5, Farm 'Buku Abel', WeightOutG 0.0, ThemeMode System,
+BackgroundLabel '' (cleared), BackgroundCurveJson empty, 7 batches
+(1042-1048), 101 series rows, 0 events, all 16 PressSlots empty.
+Trial healthy. The BackgroundDS dataset still holds rows from
+tier2's ghost playback fixture; that is tier2's normal end state.
+Next HUNT number is HUNT-112.
+
+### Polish round 14: builder view-function resync (worker D, 2026-11-23)
+
+Worker D scope: resync the seven stale builder view functions in
+`roastery/scripts/build_roastery_v4.py` (HudBar, RoastPage,
+BatchDetail, SettingsTargets, SettingsCustoms, SettingsMetadata,
+BatchEdit) so the JSON each emits is byte-identical to the live
+repo view.json, plus keep SettingsPage byte-identical. No HUNT
+number (maintenance work). Method: extraction proof, same as round
+13 and round 14 worker C (`~/workspace/ignition-lab/r14d-scratch/proof.py`,
+log `proof.log`): AST-extract the literals, writers, helpers and
+view builders from the repo builder, execute with PROJ pointed at
+scratch, never at the gateway tree, and compare every emitted file
+against the live repo tree with chars and md5. The builder compiles
+(`py_compile` passes).
+
+All eight views byte-identical, gateway md5s agree, 36 proof
+checks, 0 failures.
+
+| View | Chars | md5 | Method |
+|---|---|---|---|
+| HudBar | 12,456 | 1e118cbc248c96b519aa792c9c334d12 | hand fixed |
+| RoastPage | 265,831 | 0015d1c8308cc7862220e2fe69dc583e | verbatim literal |
+| BatchDetail | 170,305 | 279afcf4f92e6c0890c5c8b85ba05af6 | verbatim literal |
+| SettingsTargets | 35,046 | 3238433ba6bfbf2812549a0f75732432 | hand fixed |
+| SettingsCustoms | 22,827 | 4b76e405a117415faf9374c998456653 | hand fixed |
+| SettingsMetadata | 1,229,884 | eadd2f7825f64334002fbd05e7d6aee9 | hand fixed |
+| BatchEdit | 1,640,381 | 8380953e5186c1095d5a320d4df0ae6a | hand fixed |
+| SettingsPage | 8,045 | a88bb1301330273039f0242679f7265f | unchanged |
+
+Worker C resync intact (same md5s worker C reported): CORE_CODE
+177,805 chars, ARTISAN_CODE 60,340 chars, BATCHES_CODE 107,428
+chars, STYLESHEET_CSS 15,437 chars; 92 style classes, same set,
+parsed JSON identical. Library and stylesheet resource.json files
+identical, and all eight view resource.json files identical.
+
+How it was done: hand fixed five views (HudBar: themeMode binding,
+GearButton plus two brightness probe buttons, onStartup, pill 88 to
+80px, clock caption to TIME, Ror binding to RateOfRiseDisplayText;
+SettingsTargets: TargetSection names, plan table widths, table
+position; SettingsCustoms: CustomSection names, long description,
+Show checkbox field per row; SettingsMetadata: form submit style
+flexBasis auto; BatchEdit: form submit and cancel styles flexBasis
+auto). Verbatim literal two views: RoastPage (125 hunks) and
+BatchDetail (27 hunks, incl. a 745-line chart dark-mode block) now
+return `json.loads` of the live view.json as a raw string literal,
+the same way CORE_CODE carries the live library. Hand fixing was
+rejected for these two because RoastPage alone carries 77 empty
+`children` arrays the gateway added to leaf components (no other
+live view has them) plus extensive chart-binding drift the helpers
+cannot express without per-view variants. Trailing newline: four
+live view.json files end with a newline (RoastPage, BatchDetail,
+SettingsTargets, SettingsCustoms) and four do not; `write_view`
+now appends `\n` only for the views in the new
+`VIEW_TRAILING_NEWLINE` frozenset, so each file reproduces byte
+for byte. Shared constants: `state_pill` 88 to 80px and
+`CLOCK_CAPTION_EXPR` wording to DROP/TIME. Note: live RoastPage
+still reads SINCE DROP/ROAST TIME while HudBar reads DROP/TIME;
+the literal keeps RoastPage's own wording. `PHASE_EXPR` is now
+unused and was left in place.
+
+Scope flag for the next round: a read-only probe of the other
+builder views found four more already byte-identical (EventCell,
+PhasesBar, MetaCard, Summary) and fourteen still stale: Tile,
+EventsStrip, Controls, BatchesPanel, LogPage, TabBar, ControlDock,
+SettingsRoaster, SettingsRor, SettingsAuc, SettingsProjection,
+SettingsPlayback, SettingsDisplay, SettingsAlarms. Most settings
+diffs look like the same section-head rename fixed here (live
+heads read RoasterSectionHead, RorSectionHead, etc.).
+SettingsBackground and AppSettings have no builder function at
+all. Resyncing any of these is a future round's work.
+
+Files changed (worker D): `roastery/scripts/build_roastery_v4.py`
+only (13,041 to 23,970 lines, +11,375/-376; almost all of it the
+two verbatim view literals). No live view, library, stylesheet,
+style class, or suite file was touched. The lab copy of the builder
+was left alone.
+
+### Polish round 14: closing (coordinator, 2026-11-24)
+
+Closing battery: 50 of 50 suites green, every suite rc=0
+(`~/workspace/ignition-lab/r14-battery/results.txt`, final run
+completed 2026-11-24 04:13 UTC, ending with cleanup_workspace
+and the r7_udt_diff at 0 differences). The battery was resumed
+and finished by the round 15 coordinator after two VM
+replacements interrupted earlier passes.
+
+One battery failure along the way was a stale lab harness copy,
+not an app defect: `verify_roastery_tier3c` failed its roast 2
+BBP document check because the lab copy of the suite still
+expected the four-value bbp subdocument while the repo copy
+carries the HUNT-98 five-value contract (with `bottom_sec`).
+The repo copies of `verify_roastery_tier3c.py`,
+`verify_r13_freshhunt.py`, and the new `verify_r14_ui.py` were
+synced to the lab; tier3c then passed rc=0 with the staged BBP
+values matching the independent recompute.
+
+Checkpoint: this round is committed locally on Eric's word
+(2026-11-23, "push everything to the repo so it's not lost") as
+a checkpoint of round 14 in its finished, battery-green state.
+Round 15 items not yet started at this checkpoint: the y-axis
+tick labels rotated vertical on every canvas chart (Eric,
+2026-11-23) and the resync of the fourteen stale builder views
+flagged by worker D above. HUNT-53's ring-clearing app fix
+remains unbuilt, awaiting Eric's word; the PressSlots lab
+mitigation stays in effect. Next HUNT number is HUNT-111.
